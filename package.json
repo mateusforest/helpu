@@ -1,0 +1,20 @@
+{
+  "name": "helpu-portal",
+  "version": "2.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Portal de operação de marketing Helpu",
+  "scripts": {
+    "start": "node scripts/start.mjs",
+    "dev": "node scripts/dev.mjs",
+    "doctor": "node scripts/doctor.mjs",
+    "check": "node scripts/check.mjs",
+    "test": "node tests/run.mjs"
+  },
+  "engines": {
+    "node": ">=22.13.0"
+  },
+  "dependencies": {
+    "playwright-core": "1.63.0"
+  }
+}

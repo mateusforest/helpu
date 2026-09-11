@@ -1,0 +1,8 @@
+.local-data/
+node_modules/
+.env
+.env.*
+!.env.example
+.sites-runtime/
+*.log
+.superdesign/

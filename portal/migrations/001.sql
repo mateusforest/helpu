@@ -1,0 +1,13 @@
+CREATE TABLE IF NOT EXISTS companies(id TEXT PRIMARY KEY,name TEXT NOT NULL,profile TEXT NOT NULL DEFAULT '{}',policy TEXT NOT NULL DEFAULT '{}',created_at INTEGER NOT NULL,updated_at INTEGER NOT NULL);
+CREATE TABLE IF NOT EXISTS memberships(org_id TEXT NOT NULL REFERENCES companies(id),user_id INTEGER NOT NULL REFERENCES users(id),role TEXT NOT NULL DEFAULT 'owner',PRIMARY KEY(org_id,user_id));
+CREATE INDEX IF NOT EXISTS idx_memberships_user ON memberships(user_id);
+CREATE TABLE IF NOT EXISTS records(id TEXT PRIMARY KEY,org_id TEXT NOT NULL REFERENCES companies(id),kind TEXT NOT NULL,data TEXT NOT NULL,external_id TEXT,created_at INTEGER NOT NULL,updated_at INTEGER NOT NULL,version INTEGER NOT NULL DEFAULT 1,UNIQUE(org_id,kind,external_id));
+CREATE INDEX IF NOT EXISTS idx_records_org_kind ON records(org_id,kind,created_at);
+CREATE TABLE IF NOT EXISTS integrations(org_id TEXT NOT NULL REFERENCES companies(id),provider TEXT NOT NULL,sealed TEXT NOT NULL,verified_at INTEGER,error TEXT,updated_at INTEGER NOT NULL,PRIMARY KEY(org_id,provider));
+CREATE TABLE IF NOT EXISTS assets(id TEXT PRIMARY KEY,org_id TEXT NOT NULL REFERENCES companies(id),name TEXT NOT NULL,mime TEXT NOT NULL,size INTEGER NOT NULL,path TEXT NOT NULL,source_url TEXT,created_at INTEGER NOT NULL);
+CREATE INDEX IF NOT EXISTS idx_assets_org ON assets(org_id,created_at);
+CREATE TABLE IF NOT EXISTS jobs(id TEXT PRIMARY KEY,org_id TEXT NOT NULL REFERENCES companies(id),user_id INTEGER REFERENCES users(id),kind TEXT NOT NULL,payload TEXT NOT NULL,state TEXT NOT NULL DEFAULT 'queued',scheduled_at INTEGER NOT NULL,attempts INTEGER NOT NULL DEFAULT 0,lease_until INTEGER,external TEXT,output TEXT,error TEXT,idempotency_key TEXT NOT NULL,created_at INTEGER NOT NULL,updated_at INTEGER NOT NULL,UNIQUE(org_id,idempotency_key));
+CREATE INDEX IF NOT EXISTS idx_jobs_due ON jobs(state,scheduled_at);
+CREATE INDEX IF NOT EXISTS idx_jobs_org ON jobs(org_id,created_at);
+CREATE TABLE IF NOT EXISTS audit(id TEXT PRIMARY KEY,org_id TEXT NOT NULL,actor TEXT NOT NULL,action TEXT NOT NULL,resource_id TEXT,note TEXT NOT NULL DEFAULT '',created_at INTEGER NOT NULL);
+CREATE INDEX IF NOT EXISTS idx_audit_org ON audit(org_id,created_at);
