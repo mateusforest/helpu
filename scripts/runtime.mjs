@@ -57,12 +57,12 @@ export function checkDependencies(directory = project) {
 
 export function checkFiles(directory = project) {
   const files = ['server.mjs', 'portal/core.mjs', 'portal/providers.mjs', 'portal/browser.mjs', 'portal/publication.mjs',
-    'portal/conversation.mjs', 'portal/catalog.mjs', 'portal/google-presence.mjs',
+    'portal/studio.mjs', 'portal/conversation.mjs', 'portal/catalog.mjs', 'portal/google-presence.mjs',
     'portal/migrations/001.sql', 'portal/migrations/002.sql', 'portal/migrations/003.sql', 'portal/migrations/004.sql', 'portal/kernel.mjs',
     'dist/index.html', 'dist/portal.html', 'dist/entrar.html', 'dist/cadastro.html', 'dist/conta.html',
     'dist/assets/app.js', 'dist/assets/auth.js', 'dist/assets/portal.js', 'dist/assets/conversation-ui.js',
     'dist/assets/capture.js', 'dist/assets/styles.css', 'dist/assets/portal.css', 'dist/assets/auth.css',
-    'dist/assets/conversation.css', 'dist/assets/motion.css', 'dist/assets/favicon.svg',
+    'dist/assets/studio-ui.js', 'dist/assets/conversation.css', 'dist/assets/motion.css', 'dist/assets/favicon.svg',
     'dist/assets/helpu-motion.mp4', 'dist/assets/helpu-motion-poster.webp'];
   for (const name of files) {
     if (!fs.existsSync(path.join(directory, name))) throw new Error(`Arquivo necessário ausente: ${name}. Restaure os arquivos do projeto.`);

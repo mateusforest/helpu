@@ -38,7 +38,16 @@ export function inspectApprovedAsset(db, assetPath, org, assetId) {
 }
 
 export function suppliedAssetApproved(text) {
-  return /aprovad[oa]/i.test(text)&&!/(n[aã]o|sem|ainda|pendente|precisa).{0,35}aprov|aprov.{0,25}(pendente|necess[aá]ria)/i.test(text);
+  return /\baprovad[oa]\b/i.test(text)&&!/(n[aã]o|sem|ainda|pendente|precisa|desaprovad[oa]).{0,35}aprov|\bdesaprovad[oa]\b|aprov.{0,25}(pendente|necess[aá]ria)/i.test(text);
+}
+
+export async function withSourceDeadline(run,timeoutMs=20000){
+  const controller=new AbortController();
+  const failure=new ProviderError('A conferência da mídia excedeu o prazo permitido.','blocked');
+  let timer;
+  const expired=new Promise((_,reject)=>{timer=setTimeout(()=>{controller.abort(failure);reject(failure);},timeoutMs);});
+  try{return await Promise.race([Promise.resolve().then(()=>run(controller.signal)),expired]);}
+  finally{clearTimeout(timer);controller.abort();}
 }
 
 export const EME_CONTEXT = {
@@ -66,18 +75,28 @@ export function createPublicationWorkflow({db,kernel,company,record,inspectAsset
     const url=value.item.mediaUrl;
     if(!publicUrl(url))throw new ProviderError('A API do Instagram precisa da mesma mídia em uma URL HTTPS pública. A biblioteca privada não é publicada automaticamente.','blocked');
     const host=new URL(url).hostname;
-    const addresses=await resolve(host,{all:true,family:4});
+    return withSourceDeadline(async signal=>{
+    let req,response,reader;
+    const cleanup=()=>{req?.destroy();if(reader)void reader.cancel().catch(()=>{});else if(response?.body?.destroy)response.body.destroy();else if(response?.body?.cancel)void response.body.cancel().catch(()=>{});};
+    signal.addEventListener('abort',cleanup,{once:true});
+    try{
+    const addresses=await resolve(host,{all:true,family:4});signal.throwIfAborted();
     if(!addresses.length||addresses.some(x=>!/^\d+\.\d+\.\d+\.\d+$/.test(x.address)||/^(0|10|127|169\.254|192\.168|224|240)\./.test(x.address)||Number(x.address.split('.')[0])>=224||/^100\.(6[4-9]|[7-9]\d|1[01]\d|12[0-7])\./.test(x.address)||/^172\.(1[6-9]|2\d|3[01])\./.test(x.address)))throw new ProviderError('A URL da mídia não aponta para um endereço público permitido.','blocked');
-    let response;try{response=fetcher?await fetcher(url,{signal:AbortSignal.timeout(20000),redirect:'error'}):await new Promise((accept,reject)=>{
+    response=fetcher?await fetcher(url,{signal,redirect:'error'}):await new Promise((accept,reject)=>{
       // Pin the validated address so a second DNS lookup cannot reach a private host.
-      const req=https.get(url,{headers:{'Accept-Encoding':'identity'},lookup:(name,options,done)=>done(null,options.all?[{address:addresses[0].address,family:4}]:addresses[0].address,4)},res=>accept({ok:res.statusCode>=200&&res.statusCode<300,status:res.statusCode,body:res}));
-      req.setTimeout(20000,()=>req.destroy(new Error('timeout')));req.on('error',reject);
-    });}catch{throw new ProviderError('Não foi possível conferir a URL pública da mídia.','blocked');}
+      req=https.get(url,{signal,headers:{'Accept-Encoding':'identity'},lookup:(name,options,done)=>done(null,options.all?[{address:addresses[0].address,family:4}]:addresses[0].address,4)},res=>accept({ok:res.statusCode>=200&&res.statusCode<300,status:res.statusCode,body:res}));
+      req.on('error',reject);
+    });signal.throwIfAborted();
     if(!response.ok){response.body?.destroy?.();throw new ProviderError('O endereço público da mídia não está acessível ('+response.status+').','blocked');}
     const chunks=[];let size=0;
-    for await(const chunk of response.body){size+=chunk.length;if(size>8*1024*1024){response.body?.destroy?.();throw new ProviderError('A mídia pública excede o limite validado.','blocked');}chunks.push(chunk);}
+    const collect=chunk=>{signal.throwIfAborted();size+=chunk.length;if(size>8*1024*1024)throw new ProviderError('A mídia pública excede o limite validado.','blocked');chunks.push(chunk);};
+    if(response.body?.getReader){reader=response.body.getReader();for(;;){const next=await reader.read();signal.throwIfAborted();if(next.done)break;collect(next.value);}}
+    else for await(const chunk of response.body)collect(chunk);
+    signal.throwIfAborted();
     if(digest(Buffer.concat(chunks))!==value.asset.assetHash)throw new ProviderError('O arquivo na URL pública não corresponde ao hash da mídia aprovada.','blocked');
     return {type:'asset_hash_match',assetHash:value.asset.assetHash,checkedAt:Date.now()};
+    }finally{signal.removeEventListener('abort',cleanup);cleanup();}
+    }).catch(error=>{if(error instanceof ProviderError)throw error;throw new ProviderError('Não foi possível conferir a URL pública da mídia.','blocked');});
   }
   function assertSnapshot(org,op) {
     const value=current(org,op);

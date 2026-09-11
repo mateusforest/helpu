@@ -26,7 +26,7 @@ const edges = {
   requested:['understanding'],understanding:['planning'],planning:['producing','ready'],producing:['reviewing'],
   reviewing:['awaiting_approval','ready','producing'],awaiting_approval:['ready','producing','reviewing'],
   ready:['scheduled','executing','reviewing','completed'],scheduled:['executing','ready','reviewing'],
-  executing:['verifying','producing'],verifying:['completed','executing'],completed:['measuring'],measuring:['learned'],
+  executing:['verifying','producing'],verifying:['completed','executing','ready'],completed:['measuring'],measuring:['learned'],
   blocked:['understanding','planning','producing','reviewing','awaiting_approval','ready','scheduled','executing','verifying'],
   failed:['understanding','planning','producing','reviewing','awaiting_approval','ready','executing','verifying'],
   uncertain:['verifying'],cancelled:[],learned:[],
@@ -169,20 +169,23 @@ export function createKernel({db,company,record,list:records,saveRecord,systemUp
   const fingerprint = (org,op) => hash({context:{name:company(org).name,profile:company(org).profile},publication:op.firstInstagram?{snapshotId:op.publication?.snapshotId,account:integration(org,'instagram').accountId,identity:integrationState(org).find(x=>x.id==='instagram')?.identity,asset:op.approvedAsset&&inspectAsset(org,op.approvedAsset.assetId).assetHash}:null,artifacts:op.artifactIds.map(id=>{
     const row=db.prepare('SELECT data,kind FROM records WHERE org_id=? AND id=?').get(org,id);
     if (!row) error('Entrega da operação não encontrada.',404);
-    const d=parse(row.data);return {id,kind:row.kind,title:d.title,caption:d.caption,visualPrompt:d.visualPrompt,concept:d.concept,assetId:d.assetId,mediaUrl:d.mediaUrl,channel:d.channel,format:d.format,mediaType:d.mediaType,carouselUrls:d.carouselUrls,text:d.text};
+    const d=parse(row.data);return {id,kind:row.kind,title:d.title,caption:d.caption,visualPrompt:d.visualPrompt,concept:d.concept,assetId:d.assetId,mediaUrl:d.mediaUrl,channel:d.channel,format:d.format,mediaType:d.mediaType,carouselUrls:d.carouselUrls,text:d.text,description:d.description,buttonLabel:d.buttonLabel,active:d.active,campaignId:d.campaignId,leadId:d.leadId,template:d.template,language:d.language,parameters:d.parameters,direction:d.direction,source:d.source};
   })});
   function review(org,id) {
+    if(get(org,id).production) error('Esta entrega visual exige concluir as dependências no Estúdio antes de revisar ou aprovar a peça final.');
     let op=get(org,id);
     if (op.paused||['cancelled','uncertain'].includes(op.state)) return op;
-    const contents=op.artifactIds.map(a=>db.prepare("SELECT * FROM records WHERE org_id=? AND id=? AND kind='content'").get(org,a)).filter(Boolean).map(decode);
-    const checks=[{label:'Conceito, legenda e briefing registrados',passed:contents.length>0&&contents.every(c=>c.title&&c.caption&&(c.format==='text'||c.visualPrompt)&&(op.type!=='post'||c.concept))},
-      {label:'Contexto da marca disponível',passed:['description','audience','visualIdentity'].every(k=>!!text(company(org).profile[k]))},
+    const artifacts=op.artifactIds.map(a=>db.prepare('SELECT * FROM records WHERE org_id=? AND id=?').get(org,a));
+    const complete=row=>{if(!row)return false;const c=decode(row);if(row.kind==='content')return c.title&&c.caption&&(c.format==='text'||c.visualPrompt)&&(op.type!=='post'||c.concept);if(row.kind==='pages')return c.title&&c.description;if(row.kind==='knowledge')return c.title&&c.text;if(row.kind==='messages')return c.text&&c.leadId&&['instagram','whatsapp'].includes(c.channel)&&c.direction==='outgoing';return false;};
+    const needsBrand=op.type==='post'||artifacts.some(row=>row?.kind==='content');
+    const checks=[{label:'Entregas completas nos registros da operação',passed:artifacts.length>0&&artifacts.every(complete)},
+      {label:'Contexto da marca disponível quando necessário',passed:!needsBrand||['description','audience','visualIdentity'].every(k=>!!text(company(org).profile[k]))},
       {label:'Revisão humana dos fatos e da identidade',passed:false,requiresHuman:true}];
-    if (checks.some(c=>!c.requiresHuman&&!c.passed)) return block(org,id,'A entrega precisa de conceito, legenda, briefing e contexto da marca antes da aprovação.');
+    if (checks.some(c=>!c.requiresHuman&&!c.passed)) return block(org,id,'Complete as entregas e o contexto necessário antes da aprovação. Conteúdos precisam de legenda e briefing; páginas e documentos precisam de título e texto.');
     if (op.state!=='reviewing') op=transition(org,id,'reviewing');
     op=persist(org,id,{quality:{checks,checkedAt:Date.now(),scope:'completude; revisão semântica e visual exige aprovação humana'},reviewHash:fingerprint(org,op),approval:{status:'pending'},blockers:[]});
     event(op,'operation_quality','Controle de qualidade registrado',{checks});
-    return transition(org,id,'awaiting_approval','Revise a legenda e o briefing no Estúdio criativo.');
+    return transition(org,id,'awaiting_approval','Revise as entregas vinculadas antes de aprovar.');
   }
   function validateRules(rules) {
     if (!Array.isArray(rules)||rules.length>60) error('Informe até 60 regras de autonomia.',400);
@@ -242,6 +245,16 @@ export function createKernel({db,company,record,list:records,saveRecord,systemUp
     const org=op.companyId;
     if(op.firstInstagram&&job.kind==='publish'){const publicationState=state==='succeeded'&&output?.result?.status==='verified'?'published_verified':state==='uncertain'?'publication_uncertain':state==='failed'?'publication_failed':state==='blocked'?'blocked':state==='waiting_provider'?'verifying':op.publication?.status;persist(org,op.id,{publication:{...op.publication,status:publicationState,externalId:output?.result?.externalId||external?.publishedId||op.publication?.externalId,url:output?.result?.url||op.publication?.url}});}
     if (output?.result) evidence(org,op.id,output.result,job.id);
+    if(job.kind==='publish'&&state==='succeeded'&&output?.result?.status==='verified'){
+      const items=publicationContents(org,op),pending=items.filter(c=>c.status!=='published');
+      if(pending.length){
+        const live=get(org,op.id),published=items.filter(c=>c.status==='published');
+        const result={...live.result,summary:published.length+' de '+items.length+' publicações confirmadas. Execute ou agende a próxima entrega.',publishedContentIds:published.map(c=>c.id),pendingContentIds:pending.map(c=>c.id)};
+        persist(org,op.id,{result});event(get(org,op.id),'operation_progress','Publicação confirmada; existem entregas pendentes',{publishedContentIds:result.publishedContentIds,pendingContentIds:result.pendingContentIds},job.id);
+        if(!live.paused&&['executing','verifying'].includes(live.state)){if(live.state==='executing')transition(org,op.id,'verifying');transition(org,op.id,'ready','A próxima entrega aguarda execução autorizada.',{result,blockers:[]});}
+        return;
+      }
+    }
     if(['completed','measuring','learned'].includes(op.state)&&['blocked','failed','canceled'].includes(state))return;
     if (['publish','send','metaCampaign','googlePresence'].includes(job.kind)&&output?.result?.status==='verified'&&state==='succeeded'&&!['executing','verifying'].includes(op.state)) {
       // A pause cannot undo a mutation already accepted by the service. Preserve its confirmation.
@@ -300,7 +313,7 @@ export function createKernel({db,company,record,list:records,saveRecord,systemUp
     const op=get(org,content.operationId);
     if (['completed','measuring','learned','cancelled','uncertain'].includes(op.state)||op.paused) return;
     if (op.approval.status==='approved'&&op.approval.fingerprint!==fingerprint(org,op)) {
-      syncing=true;try {systemUpdate(org,'content',id,{status:'review',scheduledAt:''});}finally{syncing=false;}
+      syncing=true;try {if(content.status!=='published')systemUpdate(org,'content',id,{status:'review',scheduledAt:''});}finally{syncing=false;}
       db.prepare("UPDATE jobs SET state='canceled',cancel_requested=1,error='Entrega alterada; aprovação revogada.',updated_at=? WHERE org_id=? AND json_extract(payload,'$.operationId')=? AND state='queued' AND kind='publish'").run(Date.now(),org,op.id);
       transition(org,op.id,['executing','verifying'].includes(op.state)?'blocked':'reviewing','A entrega ou a marca mudou; aprovação revogada.',{approval:{status:'revoked'},executionAuthorization:null,blockers:[],plan:op.plan.map(s=>s.id==='review'?{...s,status:'working'}:s)});
       review(org,op.id);
@@ -358,15 +371,14 @@ export function createKernel({db,company,record,list:records,saveRecord,systemUp
       if(op.reviewHash!==fingerprint(org,op)) {review(org,id);op=get(org,id);}
       if(op.state==='blocked')error('Complete a revisão antes de aprovar.');
       const approval={status:'approved',actor:userId,at:Date.now(),fingerprint:fingerprint(org,op)};
-      syncing=true;try{for(const aid of op.artifactIds){const r=db.prepare('SELECT kind FROM records WHERE org_id=? AND id=?').get(org,aid);if(r?.kind==='content')systemUpdate(org,'content',aid,{status:'approved'});}}finally{syncing=false;}
+      syncing=true;try{for(const aid of op.artifactIds){const r=db.prepare('SELECT kind,data FROM records WHERE org_id=? AND id=?').get(org,aid);if(r?.kind==='content'&&parse(r.data).status!=='published')systemUpdate(org,'content',aid,{status:'approved'});}}finally{syncing=false;}
       op=transition(org,id,'ready','Entrega aprovada pelo usuário.',{approval,blockers:[],plan:op.plan.map(s=>s.id==='review'?{...s,status:'completed'}:s)});
       event(op,'operation_decision','Aprovação registrada',{actor:userId,fingerprint:approval.fingerprint});return op;
     }
     if (['execute','schedule'].includes(d.action)) {
       if(!['ready','scheduled','blocked'].includes(op.state)||op.approval.status!=='approved'||op.approval.fingerprint!==fingerprint(org,op))error('Revise e aprove a versão atual antes de executar.');
-      const content=op.artifactIds.map(a=>db.prepare("SELECT id FROM records WHERE id=? AND org_id=? AND kind='content'").get(a,org)).filter(Boolean)[0];
-      if(!content)error('Conteúdo não encontrado.');
-      const item=record(org,'content',content.id);
+      const items=publicationContents(org,op),item=items.find(c=>c.status!=='published');
+      if(!item)error(items.length?'Todas as publicações desta ordem já foram confirmadas.':'Esta ordem não possui conteúdo para publicação.');
       const when=d.action==='schedule'?new Date(d.scheduledAt).getTime():Date.now();
       if(!Number.isFinite(when)||(d.action==='schedule'&&when<=Date.now()))error('Escolha uma data futura válida.',400);
       persist(org,id,{executionAuthorization:{action:'publish',actor:userId,at:Date.now(),fingerprint:op.approval.fingerprint}});
@@ -376,7 +388,7 @@ export function createKernel({db,company,record,list:records,saveRecord,systemUp
         available(org,item);
       } catch(e) {return block(org,id,e.message);}
       if(op.state==='blocked')op=transition(org,id,'ready','Bloqueio resolvido.');
-      const job=queue(org,userId,'publish',{contentId:item.id,operationId:id},new Date(when).toISOString(),'publish:'+id+':'+op.approval.fingerprint);
+      const job=queue(org,userId,'publish',{contentId:item.id,operationId:id},new Date(when).toISOString(),'publish:'+id+':'+item.id+':'+op.approval.fingerprint);
       if(['failed','blocked','canceled'].includes(job.state)) {
         const previous=db.prepare('SELECT external FROM jobs WHERE id=? AND org_id=?').get(job.id,org);
         if(parse(previous.external).publishedId)error('Uma publicação já solicitada precisa de verificação, não de nova tentativa.');
@@ -413,12 +425,14 @@ export function createKernel({db,company,record,list:records,saveRecord,systemUp
     const op=get(org,id),labels={requested:'Pedido registrado',understanding:'Consultando contexto',planning:'Plano registrado',producing:'Produção em andamento',reviewing:'Em revisão',awaiting_approval:'Aguardando sua aprovação',ready:op.approval.status==='approved'?'Entrega aprovada e pronta para execução autorizada':'Registros preparados; execução externa depende de autorização',scheduled:'Publicação agendada',executing:'Execução em andamento',verifying:'Aguardando verificação do canal',completed:op.type==='general'&&!op.evidence.some(e=>e.status==='verified')?'Etapas locais concluídas':'Execução verificada',measuring:'Acompanhando resultados reais',learned:'Aprendizado registrado',blocked:'Operação bloqueada',uncertain:'Resultado incerto: precisa de conferência',failed:'A tentativa falhou',cancelled:'Operação cancelada'};
     return `${labels[op.state]}.\nObjetivo: ${op.objective}${op.artifactIds.length?'\nEntregas registradas: '+op.artifactIds.length+'. Consulte o Estúdio criativo.':''}${op.blockers.length?'\n'+op.blockers.map(b=>b.message).join('\n'):''}${op.type==='post'&&!['completed','measuring','learned'].includes(op.state)?'\nA publicação ainda não foi confirmada.':''}`;
   }
+  function publicationContents(org,op){return op.artifactIds.map(id=>db.prepare("SELECT * FROM records WHERE org_id=? AND id=? AND kind='content'").get(org,id)).filter(Boolean).map(decode);}
   function finishGeneral(job) {
     let op=jobOperation(job);if(!op||op.type==='post')return op;
     if(['blocked','uncertain','cancelled','failed'].includes(op.state)||op.paused)return op;
     if(op.state==='understanding')op=transition(op.companyId,op.id,'planning');
     if(db.prepare("SELECT 1 FROM jobs WHERE org_id=? AND id<>? AND json_extract(payload,'$.operationId')=? AND state IN ('queued','working','waiting_provider')").get(op.companyId,job.id,op.id))return transition(op.companyId,op.id,'producing','Há etapas de produção na fila existente.');
-    if(op.artifactIds.length||op.plan.length||op.campaignId||op.evidence.some(e=>e.executor==='local'&&e.status==='recorded')) return transition(op.companyId,op.id,'ready','Registros locais preparados; execução externa não confirmada.');
+    if(op.artifactIds.length){if(op.state==='planning')transition(op.companyId,op.id,'producing');return review(op.companyId,op.id);}
+    if(op.artifactIds.length||op.plan.length||op.campaignId||op.evidence.some(e=>e.executor==='local'&&e.status==='recorded')) {if(op.state==='producing')transition(op.companyId,op.id,'reviewing');return transition(op.companyId,op.id,'ready','Registros locais preparados; execução externa não confirmada.');}
     return block(op.companyId,op.id,'Nenhuma entrega foi registrada nesta tentativa. Detalhe o resultado esperado para continuar.');
   }
   return {list,get,register,jobOperation,transition,block,begin,preparePost:job=>atomic(()=>preparePost(job)),deliverPost:(job,draft)=>atomic(()=>deliverPost(job,draft)),linkRecord,review,validateRules,authorize,attachJob,beforeJob,afterJob,recover,onRecord,onBrand,action:(org,id,user,d)=>atomic(()=>action(org,id,user,d)),summary,finishGeneral,evidence,persist,fingerprint};

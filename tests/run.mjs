@@ -6,3 +6,6 @@ import './startup.test.mjs';
 import './kernel.test.mjs';
 import './instagram-operation.test.mjs';
 import './provider-validation.test.mjs';
+import './operation-regressions.test.mjs';
+import './conversation-ui.test.mjs';
+import './studio.test.mjs';
