@@ -4,3 +4,5 @@ import './ui.test.mjs';
 import './conversation.test.mjs';
 import './startup.test.mjs';
 import './kernel.test.mjs';
+import './instagram-operation.test.mjs';
+import './provider-validation.test.mjs';

@@ -1,5 +1,6 @@
 import {randomUUID, createHash} from 'node:crypto';
 import {ProviderError} from './providers.mjs';
+import {suppliedAssetApproved} from './publication.mjs';
 
 export const OPERATION_STATES = ['requested','understanding','planning','producing','reviewing','awaiting_approval','ready','scheduled','executing','verifying','completed','measuring','learned','blocked','uncertain','failed','cancelled'];
 export const COMPETENCIES = [
@@ -31,7 +32,7 @@ const edges = {
   uncertain:['verifying'],cancelled:[],learned:[],
 };
 
-export function createKernel({db,company,record,list:records,saveRecord,systemUpdate,queue,audit,integration,integrationState}) {
+export function createKernel({db,company,record,list:records,saveRecord,systemUpdate,queue,audit,integration,integrationState,inspectAsset}) {
   let syncing = false;
   let transactionId = 0;
   function atomic(fn) {
@@ -80,8 +81,10 @@ export function createKernel({db,company,record,list:records,saveRecord,systemUp
     if (!force&&!/\b(prepare|preparar|crie|criar|produza|produzir|planeje|planejar|publique|publicar|agende|agendar|envie|enviar|execute|organize|faça|fazer|monte|preciso|quero|gostaria|vamos)\b/i.test(objective)) return null;
     const existing=db.prepare("SELECT * FROM records WHERE org_id=? AND kind='operations' AND external_id=?").get(org,jobId);
     if (existing) return decode(existing);
-    const id=randomUUID(),now=Date.now(),type=!force&&/\b(publica[çc][aã]o|postagem|post)\b/i.test(objective)?'post':'general';
+    const firstInstagram=/\binstagram\b/i.test(objective)&&/\b(publique|publicar|publique|publica[çc][aã]o)\b/i.test(objective);
+    const id=randomUUID(),now=Date.now(),type=!force&&(/\b(publica[çc][aã]o|postagem|post)\b/i.test(objective)||firstInstagram)?'post':'general';
     const data={companyId:org,threadId,rootJobId:jobId,currentJobId:jobId,objective,type,state:'requested',paused:false,plan:[],competencies:COMPETENCIES.filter(c=>c.id==='director'),artifactIds:[],approval:{status:'pending'},blockers:[],evidence:[],result:{},createdBy:userId};
+    if(firstInstagram) data.firstInstagram=true;
     db.prepare('INSERT INTO records(id,org_id,kind,data,external_id,created_at,updated_at) VALUES(?,?,?,?,?,?,?)').run(id,org,'operations',JSON.stringify(data),jobId,now,now);
     db.prepare("UPDATE jobs SET payload=json_set(payload,'$.operationId',?) WHERE id=? AND org_id=?").run(id,jobId,org);
     const op=get(org,id);event(op,'operation_created','Ordem de trabalho criada',{objective});return op;
@@ -91,10 +94,10 @@ export function createKernel({db,company,record,list:records,saveRecord,systemUp
     if (!payload.operationId) return null;
     return get(job.org_id||job.companyId,payload.operationId);
   }
-  function block(org,id,message,state='blocked') {
+  function block(org,id,message,state='blocked',code=null) {
     const op=get(org,id);
     if (op.state==='uncertain' && state!=='uncertain') return op;
-    return transition(org,id,state,message,{blockers:[{message}],result:{...op.result,summary:message}});
+    return transition(org,id,state,message,{blockers:[{message,...(code?{code}:{})}],result:{...op.result,summary:message}});
   }
   function begin(job) {
     let op=jobOperation(job);if (!op) return null;
@@ -119,6 +122,7 @@ export function createKernel({db,company,record,list:records,saveRecord,systemUp
   function preparePost(job) {
     let op=begin(job);if (!op) return null;
     const org=op.companyId,c=company(org);
+    if(op.firstInstagram&&/\bEME\b/i.test(op.objective)&&c.name.trim().toLowerCase()!=='eme')return {blocked:block(org,op.id,'O pedido menciona a EME, mas outra empresa está ativa. Selecione a EME antes de preparar a publicação.','blocked','blocked_company_mismatch')};
     const missing=[['description','o que a empresa oferece'],['audience','o público'],['visualIdentity','a identidade visual']].filter(([key])=>!text(c.profile[key])).map(([,label])=>label);
     if (missing.length) return {blocked:block(org,op.id,'Complete em Marca e negócio: '+missing.join(', ')+'.')};
     if (op.artifactIds.length) { review(org,op.id); return {existing:true,operation:get(org,op.id)}; }
@@ -138,6 +142,14 @@ export function createKernel({db,company,record,list:records,saveRecord,systemUp
       op=persist(org,op.id,{plan,competencies:COMPETENCIES.filter(c=>['strategy','director','creative','copy','quality','distribution'].includes(c.id)),contextHash:hash({name:c.name,profile:c.profile})});
       event(op,'operation_plan','Plano e competências registrados',{taskIds:plan.map(s=>s.taskId)});
     }
+    if(op.firstInstagram&&!op.approvedAsset) {
+      const request=db.prepare("SELECT text,attachments FROM conversation_messages WHERE org_id=? AND job_id=? AND role='user'").get(org,op.rootJobId);
+      const assets=JSON.parse(request?.attachments||'[]');
+      if(assets.length!==1||!suppliedAssetApproved(request?.text||'')) return {blocked:block(org,op.id,'Selecione uma única mídia real da EME na conversa e confirme que ela está aprovada. Um briefing não é mídia pronta.','blocked','blocked_missing_approved_asset')};
+      const asset=inspectAsset(org,assets[0]);
+      if(!asset.passed)return {blocked:block(org,op.id,'A mídia selecionada não é compatível com esta primeira publicação: '+asset.checks.filter(c=>!c.passed).map(c=>c.label).join('; ')+'.','blocked',asset.code)};
+      op=persist(org,op.id,{approvedAsset:{...asset,source:'supplied_by_user',actor:job.user_id,at:Date.now(),messageJobId:op.rootJobId}});
+    }
     op=transition(org,op.id,'producing','Produzindo com o contexto atual.',{contextHash:hash({name:c.name,profile:c.profile})});
     return {operation:op,company:c,knowledge:records(org,'knowledge',30),channel:/\bgoogle\b/i.test(op.objective)?'google':'instagram'};
   }
@@ -149,12 +161,12 @@ export function createKernel({db,company,record,list:records,saveRecord,systemUp
     const c=company(org);if(op.contextHash!==hash({name:c.name,profile:c.profile}))throw new ProviderError('O contexto da marca mudou durante a produção. Retome para produzir com as informações atuais.','blocked');const channel=/\bgoogle\b/i.test(op.objective)?'google':'instagram';
     const content=saveRecord(org,'content',{title:text(draft.title,500),caption:text(draft.caption),visualPrompt:text(draft.visualBrief),notes:'Conceito: '+text(draft.concept)+'\nRevisar fatos e adequação da identidade antes de aprovar.',channel,format:'image',campaignId:op.campaignId,status:'review'},job.user_id);
     linkRecord(org,op.id,'content',content.id);
-    syncing=true;try{systemUpdate(org,'content',content.id,{concept:text(draft.concept),briefOnly:true});}finally{syncing=false;}
+    syncing=true;try{systemUpdate(org,'content',content.id,{concept:text(draft.concept),briefOnly:!op.approvedAsset,...(op.approvedAsset?{assetId:op.approvedAsset.assetId,mediaUrl:op.approvedAsset.sourceUrl||'',approvedAssetHash:op.approvedAsset.assetHash}: {})});}finally{syncing=false;}
     persist(org,op.id,{plan:op.plan.map(s=>({...s,status:['direction','copy'].includes(s.id)?'completed':s.id==='review'?'working':'pending'})),contextHash:hash({name:c.name,profile:c.profile})});
     transition(org,op.id,'reviewing');
     return review(org,op.id);
   }
-  const fingerprint = (org,op) => hash({context:{name:company(org).name,profile:company(org).profile},artifacts:op.artifactIds.map(id=>{
+  const fingerprint = (org,op) => hash({context:{name:company(org).name,profile:company(org).profile},publication:op.firstInstagram?{snapshotId:op.publication?.snapshotId,account:integration(org,'instagram').accountId,identity:integrationState(org).find(x=>x.id==='instagram')?.identity,asset:op.approvedAsset&&inspectAsset(org,op.approvedAsset.assetId).assetHash}:null,artifacts:op.artifactIds.map(id=>{
     const row=db.prepare('SELECT data,kind FROM records WHERE org_id=? AND id=?').get(org,id);
     if (!row) error('Entrega da operação não encontrada.',404);
     const d=parse(row.data);return {id,kind:row.kind,title:d.title,caption:d.caption,visualPrompt:d.visualPrompt,concept:d.concept,assetId:d.assetId,mediaUrl:d.mediaUrl,channel:d.channel,format:d.format,mediaType:d.mediaType,carouselUrls:d.carouselUrls,text:d.text};
@@ -215,6 +227,7 @@ export function createKernel({db,company,record,list:records,saveRecord,systemUp
       const next=payload.verificationOnly?'verifying':'executing';
       transition(op.companyId,op.id,next,'Iniciando tentativa '+job.attempts,{blockers:[]});
     }
+    if(op.firstInstagram&&job.kind==='publish')persist(op.companyId,op.id,{publication:{...op.publication,attempts:[...(op.publication?.attempts||[]),{attempt:job.attempts,jobId:job.id,startedAt:Date.now(),executor:'api',account:op.publication?.account,snapshotId:op.publication?.snapshotId,verificationOnly:!!payload.verificationOnly,idempotencyKey:job.idempotency_key}]}});
     event(get(op.companyId,op.id),'operation_attempt','Tentativa de execução registrada',{jobId:job.id,kind:job.kind,attempt:job.attempts},job.id);
   }
   function evidence(org,id,result,jobId) {
@@ -227,6 +240,7 @@ export function createKernel({db,company,record,list:records,saveRecord,systemUp
   function afterJob(job,state,{output,error:note,external}={}) {
     const op=jobOperation(job);if (!op) return;
     const org=op.companyId;
+    if(op.firstInstagram&&job.kind==='publish'){const publicationState=state==='succeeded'&&output?.result?.status==='verified'?'published_verified':state==='uncertain'?'publication_uncertain':state==='failed'?'publication_failed':state==='blocked'?'blocked':state==='waiting_provider'?'verifying':op.publication?.status;persist(org,op.id,{publication:{...op.publication,status:publicationState,externalId:output?.result?.externalId||external?.publishedId||op.publication?.externalId,url:output?.result?.url||op.publication?.url}});}
     if (output?.result) evidence(org,op.id,output.result,job.id);
     if(['completed','measuring','learned'].includes(op.state)&&['blocked','failed','canceled'].includes(state))return;
     if (['publish','send','metaCampaign','googlePresence'].includes(job.kind)&&output?.result?.status==='verified'&&state==='succeeded'&&!['executing','verifying'].includes(op.state)) {
@@ -308,6 +322,17 @@ export function createKernel({db,company,record,list:records,saveRecord,systemUp
   }
   function action(org,id,userId,d) {
     let op=get(org,id);
+    if(d.action==='select_asset') {
+      if(!op.firstInstagram||!['blocked','failed','awaiting_approval','reviewing','ready'].includes(op.state)||d.approved!==true)error('Selecione e confirme uma mídia aprovada antes de vinculá-la.');
+      if(d.expectedVersion!==op.version)error('A operação mudou. Atualize antes de selecionar a mídia.');
+      if(db.prepare("SELECT 1 FROM jobs WHERE org_id=? AND json_extract(payload,'$.operationId')=? AND state IN ('queued','working','waiting_provider','uncertain')").get(org,id))error('Pause e aguarde a execução atual antes de substituir a mídia.');
+      const asset=inspectAsset(org,d.assetId);if(!asset.passed)return block(org,id,'A mídia não passou pela verificação técnica.','blocked',asset.code);
+      op=persist(org,id,{approvedAsset:{...asset,source:'supplied_by_user',actor:userId,at:Date.now()},approval:{status:'revoked'},executionAuthorization:null,publication:null});
+      syncing=true;try{for(const aid of op.artifactIds)if(db.prepare("SELECT 1 FROM records WHERE org_id=? AND id=? AND kind='content'").get(org,aid))systemUpdate(org,'content',aid,{assetId:asset.assetId,approvedAssetHash:asset.assetHash,mediaUrl:asset.sourceUrl||'',briefOnly:false,status:'review',scheduledAt:''});}finally{syncing=false;}
+      event(op,'operation_decision','Mídia aprovada selecionada pelo usuário',{actor:userId,assetId:asset.assetId,assetHash:asset.assetHash});
+      return block(org,id,'Mídia aprovada vinculada. Retome a preparação desta operação.','blocked','blocked_preparation_pending');
+    }
+    if(op.firstInstagram&&['execute','schedule'].includes(d.action)&&!d.explicitPublication)error('Nesta primeira validação, use Aprovar e publicar agora na revisão final.');
     if(op.state==='uncertain'&&d.action==='cancel') error('Uma execução incerta precisa de verificação; não pode ser descartada.');
     if (d.action==='pause'||d.action==='cancel') {
       if (terminal.includes(op.state)) return op;
@@ -396,5 +421,5 @@ export function createKernel({db,company,record,list:records,saveRecord,systemUp
     if(op.artifactIds.length||op.plan.length||op.campaignId||op.evidence.some(e=>e.executor==='local'&&e.status==='recorded')) return transition(op.companyId,op.id,'ready','Registros locais preparados; execução externa não confirmada.');
     return block(op.companyId,op.id,'Nenhuma entrega foi registrada nesta tentativa. Detalhe o resultado esperado para continuar.');
   }
-  return {list,get,register,jobOperation,transition,block,begin,preparePost:job=>atomic(()=>preparePost(job)),deliverPost:(job,draft)=>atomic(()=>deliverPost(job,draft)),linkRecord,review,validateRules,authorize,attachJob,beforeJob,afterJob,recover,onRecord,onBrand,action:(org,id,user,d)=>atomic(()=>action(org,id,user,d)),summary,finishGeneral,evidence};
+  return {list,get,register,jobOperation,transition,block,begin,preparePost:job=>atomic(()=>preparePost(job)),deliverPost:(job,draft)=>atomic(()=>deliverPost(job,draft)),linkRecord,review,validateRules,authorize,attachJob,beforeJob,afterJob,recover,onRecord,onBrand,action:(org,id,user,d)=>atomic(()=>action(org,id,user,d)),summary,finishGeneral,evidence,persist,fingerprint};
 }

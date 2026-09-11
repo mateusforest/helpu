@@ -56,7 +56,7 @@ export function checkDependencies(directory = project) {
 }
 
 export function checkFiles(directory = project) {
-  const files = ['server.mjs', 'portal/core.mjs', 'portal/providers.mjs', 'portal/browser.mjs',
+  const files = ['server.mjs', 'portal/core.mjs', 'portal/providers.mjs', 'portal/browser.mjs', 'portal/publication.mjs',
     'portal/conversation.mjs', 'portal/catalog.mjs', 'portal/google-presence.mjs',
     'portal/migrations/001.sql', 'portal/migrations/002.sql', 'portal/migrations/003.sql', 'portal/migrations/004.sql', 'portal/kernel.mjs',
     'dist/index.html', 'dist/portal.html', 'dist/entrar.html', 'dist/cadastro.html', 'dist/conta.html',
