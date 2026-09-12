@@ -21,6 +21,16 @@ export function createProviders(fetcher=fetch){
  async function instagramIdentity(config){requireFields(config,['accessToken','accountId'],'Instagram');const data=await request(`https://graph.instagram.com/${metaVersion(config)}/${encodeURIComponent(config.accountId)}?fields=id,username`,{headers:bearer(config.accessToken)});if(String(data.id)!==String(config.accountId)||!/^\w[\w.]{0,29}$/.test(data.username||''))throw new ProviderError('A API não confirmou a identidade da conta de Instagram configurada.','blocked');return {id:String(data.id),username:normalizeUsername(data.username),profileUrl:'https://www.instagram.com/'+encodeURIComponent(data.username)+'/',observedAt:Date.now()};}
  async function googleToken(c){if(c.refreshToken&&c.clientId&&c.clientSecret){let r;try{r=await fetcher('https://oauth2.googleapis.com/token',{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded'},body:new URLSearchParams({grant_type:'refresh_token',refresh_token:c.refreshToken,client_id:c.clientId,client_secret:c.clientSecret}),signal:AbortSignal.timeout(30000),redirect:'error'});}catch{throw new ProviderError('Não foi possível renovar o acesso ao Google.','blocked');}const d=await r.json();if(!r.ok||!d.access_token)throw new ProviderError('Reconecte o Google para renovar o acesso.','blocked');return d.access_token;}requireFields(c,['accessToken'],'Google');return c.accessToken;}
  return {
+  async imageAccess(config){
+   const startedAt=Date.now(),model='gpt-image-2.5-sunburst';let response;
+   try{
+    requireFields(config,['apiKey'],'OpenAI');
+    response=await fetcher('https://api.openai.com/v1/models/'+model,{headers:bearer(config.apiKey),signal:AbortSignal.timeout(30000),redirect:'error'});
+    const data=await response.json();if(!response.ok)throw new ProviderError('A API de imagens recusou a consulta ('+response.status+'). Confira o acesso ao modelo no projeto OpenAI.','blocked');
+    if(data.id!==model||data.object!=='model')throw new ProviderError('A resposta não confirmou o modelo de imagem esperado.','blocked');
+    return {provider:'openai',model,status:'model_accessible',requestId:response.headers.get('x-request-id'),httpStatus:response.status,startedAt,completedAt:Date.now(),latencyMs:Date.now()-startedAt,generationPerformed:false,executorValidated:false};
+   }catch(error){return {provider:'openai',model,status:'blocked',requestId:response?.headers.get('x-request-id')||null,httpStatus:response?.status||null,startedAt,completedAt:Date.now(),latencyMs:Date.now()-startedAt,generationPerformed:false,executorValidated:false,error:error instanceof ProviderError?error.message:'A consulta ao modelo de imagem não foi confirmada. Nenhuma geração foi solicitada.'};}
+  },
   googlePresence:googlePresence(request,googleToken,bearer),
   async operationalValidation(config,{tools=[]}={}){
    const startedAt=Date.now(),model=modelFor(config),nonce=randomUUID(),toolName='helpu_validation_probe';let data=null,toolCalling=false;

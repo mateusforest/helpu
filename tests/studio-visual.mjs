@@ -15,10 +15,17 @@ console.log('Visual evidence directory:',directory);
 const source=new DatabaseSync(path.resolve('.local-data/helpu.sqlite'),{readOnly:true});
 const eme=source.prepare("SELECT id,profile FROM companies WHERE name='EME'").get();
 assert.ok(eme,'The existing EME company must exist.');
-const pieces=source.prepare("SELECT data FROM records WHERE org_id=? AND kind='content' ORDER BY created_at").all(eme.id).map(row=>JSON.parse(row.data));source.close();
+const pieces=source.prepare("SELECT data FROM records WHERE org_id=? AND kind='content' ORDER BY created_at").all(eme.id).map(row=>JSON.parse(row.data));
+const openAI=process.argv.includes('--openai');let decision,candidate;
+if(openAI){
+  const meta=key=>JSON.parse(source.prepare("SELECT data FROM records WHERE org_id=? AND kind='connection_validation' AND external_id=?").get(eme.id,key).data);
+  decision=meta('studio:decision:001ecb6e-910a-4c54-a883-c399c83736b2');candidate=meta('brand:candidates');
+  for(const role of ['logo','font']){const row=source.prepare('SELECT name,path FROM assets WHERE org_id=? AND id=?').get(eme.id,candidate[role+'AssetId']);candidate[role]={name:row.name,bytes:fs.readFileSync(path.resolve('.local-data/uploads',row.path))};}
+}
+source.close();
 const errors=[],layout=[],screenshots=[];let externalCalls=0;
 const refuse=async()=>{externalCalls++;throw new Error('External calls forbidden in visual fixture');};
-const server=createHelpuServer({dataDir:directory,portalOptions:{startScheduler:false,providers:new Proxy({},{get:()=>refuse}),conversationRespond:refuse}});
+const server=createHelpuServer({dataDir:directory,portalOptions:{startScheduler:false,providers:new Proxy({imageAccess:async()=>({status:'model_accessible',model:'TEST ONLY model',requestId:'TEST ONLY request',completedAt:Date.now(),generationPerformed:false,executorValidated:false})},{get:(object,key)=>object[key]||refuse}),conversationRespond:refuse}});
 await new Promise(resolve=>server.listen(0,'127.0.0.1',resolve));const origin='http://127.0.0.1:'+server.address().port;
 let browser;const db=new DatabaseSync(path.join(directory,'helpu.sqlite'));
 try{
@@ -47,10 +54,23 @@ try{
   await page.setViewportSize({width:1440,height:1000});await nav('studio');
   await page.locator(`.content-thumbnail[data-id="${institutional.id}"]`).click();await page.getByRole('button',{name:'Produção visual',exact:true}).click();
   await page.getByRole('button',{name:'Registrar verificação',exact:true}).click();await page.getByText('Verificação registrada',{exact:true}).waitFor();
-  await page.waitForFunction(()=>document.querySelector('#dialog-body')?.textContent.includes('Versão 1'));await shot('production-blocked-desktop');
+  if(openAI){
+    server.portal.studio.stageCandidates(org,institutional.id,candidate,'TEST ONLY');
+    await api('studio/'+institutional.id+'/decision','POST',{...decision,confirmed:true});
+    await api('integrations/openai','PUT',{apiKey:'TEST-ONLY-VISUAL'});
+    await page.locator('#dialog-close').click();await nav('studio');await page.reload();await page.locator(`.content-thumbnail[data-id="${institutional.id}"]`).click();
+    await shot('decision-detail-desktop');
+    const visibleDecision=await page.locator('#dialog-body').innerText();
+    assert.ok(visibleDecision.includes(decision.text),'Texto final ausente no detalhe: '+visibleDecision.slice(0,800));
+    await page.getByRole('button',{name:'Produção visual',exact:true}).click();await page.getByRole('button',{name:'Conferir acesso à OpenAI',exact:true}).click();
+    await page.getByText('API OpenAI · modelo acessível; geração não validada',{exact:true}).waitFor();
+  }
+  const verification=(await api('studio/'+institutional.id)).storedVersion;
+  await page.locator('.publication-facts').getByText('Versão '+verification,{exact:true}).waitFor();await shot('production-blocked-desktop');
   await page.getByText('Origem e rastreabilidade',{exact:true}).click();await page.getByText('Briefing preservado e especificação',{exact:true}).click();await shot('production-specification-desktop');
   await page.setViewportSize({width:390,height:844});await shot('production-specification-mobile');
   await page.locator('#dialog-body').getByRole('button',{name:'Materiais oficiais',exact:true}).click();await shot('materials-mobile');
+  if(openAI){assert.equal(await page.locator('[name=background]').inputValue(),candidate.colors.background);assert.equal(await page.locator('[name=confirmed]').isChecked(),false);assert.equal(await page.locator('[name=fontAssetId]').inputValue(),(await api('state')).production[0].candidates.fontAssetId);}
   await page.setViewportSize({width:1440,height:1000});await shot('materials-desktop');await page.locator('#dialog-close').click();
   const saved=await api('state'),op=saved.operations[0];
   const longText='TEST ONLY: resposta longa para inspecionar legibilidade e scroll.\n\n'+Array.from({length:12},(_,i)=>'Etapa '+(i+1)+': '+pieces[2].visualPrompt).join('\n\n');
@@ -62,7 +82,7 @@ try{
     await page.locator('#user-menu').click();await shot('account-menu-'+width);await page.locator('#dialog-close').click();
     await page.locator('#navigation-more').click();await shot('navigation-'+width);
   }
-  const actual=await api('state');assert.equal(actual.records.content.length,3);assert.equal(actual.assets.length,0);assert.equal(actual.production[0].state,'blocked_missing_brand_assets');assert.equal(actual.records.metrics.length,0);assert.equal(externalCalls,0);assert.deepEqual(errors,[]);
+  const actual=await api('state');assert.equal(actual.records.content.length,3);assert.equal(actual.assets.length,openAI?2:0);assert.equal(actual.production[0].state,'blocked_missing_brand_assets');assert.equal(actual.records.metrics.length,0);assert.equal(externalCalls,0);assert.deepEqual(errors,[]);
   const navBounds=await page.evaluate(()=>({right:document.querySelector('#portal-nav').getBoundingClientRect().right,moreLeft:document.querySelector('#navigation-more').getBoundingClientRect().left}));assert.ok(navBounds.right<=navBounds.moreLeft,'A navegação não deve passar por baixo do botão de mais áreas.');
   const report={directory,navBounds,scope:'Real Chromium rendering; isolated copy of EME business text; no external execution.',errors,externalCalls,layout,screenshots,overflow:layout.filter(x=>x.scrollWidth>x.width+1||x.dialog&&x.dialog.scrollWidth>x.dialog.width+1)};
   fs.writeFileSync(path.join(directory,'report.json'),JSON.stringify(report,null,2));console.log(JSON.stringify({directory,shots:screenshots.length,errors,externalCalls,overflow:report.overflow},null,2));

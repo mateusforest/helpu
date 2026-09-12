@@ -9,3 +9,4 @@ import './provider-validation.test.mjs';
 import './operation-regressions.test.mjs';
 import './conversation-ui.test.mjs';
 import './studio.test.mjs';
+import './studio-openai.test.mjs';

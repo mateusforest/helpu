@@ -19,7 +19,7 @@ export function dailyPriority({contents=[],operations=[],tasks=[],jobs=[]}) {
     contentIds:pending.map(c=>c.id),operationIds:[...new Set([...orders,...unmeasured].map(o=>o.id))],jobIds:active.map(j=>j.id),taskIds:openTasks.map(t=>t.id)};
 }
 
-export function createStudio({db,company,record,list,saveRecord,systemUpdate,kernel,metadata,saveMetadata,integrationState,assetPath,audit}) {
+export function createStudio({db,company,record,list,saveRecord,systemUpdate,kernel,metadata,saveMetadata,integrationState,assetPath,audit,storeAsset,assetType,providers,integration}) {
   function sourceJob(org,id) {
     return db.prepare("SELECT j.* FROM jobs j WHERE j.org_id=? AND j.kind='agent' AND EXISTS (SELECT 1 FROM json_each(j.output,'$.recordIds') WHERE value=?) ORDER BY j.created_at LIMIT 1").get(org,id);
   }
@@ -30,7 +30,7 @@ export function createStudio({db,company,record,list,saveRecord,systemUpdate,ker
     try {const bytes=fs.readFileSync(assetPath(org,id));if(bytes.length!==asset.size||!bytes.length)return null;return {...asset,hash:digest(bytes)};}catch{return null;}
   }
   function inspect(org,id) {
-    const c=record(org,'content',id),brand=company(org),materials=metadata(org,'brand:production'),saved=metadata(org,'studio:'+id),connection=integrationState(org).find(i=>i.id==='higgsfield');
+    const c=record(org,'content',id),brand=company(org),materials=metadata(org,'brand:production'),saved=metadata(org,'studio:'+id),decision=metadata(org,'studio:decision:'+id),provider=decision.provider||'higgsfield',connection=integrationState(org).find(i=>i.id===provider);
     const logo=fileEvidence(org,materials.logoAssetId,['image/png','image/jpeg','image/webp']);
     const font=fileEvidence(org,materials.fontAssetId,['font/woff2','font/ttf','font/otf']);
     const missing=[];
@@ -38,14 +38,27 @@ export function createStudio({db,company,record,list,saveRecord,systemUpdate,ker
     if(!logo||logo.hash!==materials.logoHash||!materials.confirmedBy)need('logo','Logotipo oficial e confirmação da versão','Aplicar a marca sem inventar ou redesenhar o símbolo.','Estúdio → Enviar arquivo; depois Materiais oficiais → selecionar o logo em PNG, JPEG ou WebP.');
     if(!['background','foreground','accent'].every(k=>/^#[\da-f]{6}$/i.test(materials.colors?.[k]||'')))need('palette','Paleta exata: fundo, texto e destaque','“Verde” não identifica a cor institucional.','Estúdio → Materiais oficiais → informar os três códigos hexadecimais.');
     if(!font||font.hash!==materials.fontHash||!materials.fontFamily)need('font','Arquivo da fonte oficial e nome da família','A referência à Geist não comprova que a fonte está disponível para composição.','Estúdio → Enviar arquivo; depois Materiais oficiais → selecionar WOFF2, TTF ou OTF e informar sua família.');
+    const candidates=metadata(org,'brand:candidates');
+    const confirmationPending=!materials.confirmedBy&&!!candidates.hash&&
+      fileEvidence(org,candidates.logoAssetId,['image/png','image/jpeg','image/webp'])?.hash===candidates.logoHash&&
+      fileEvidence(org,candidates.fontAssetId,['font/woff2','font/ttf','font/otf'])?.hash===candidates.fontHash&&
+      !!candidates.fontFamily&&['background','foreground','accent'].every(k=>/^#[\da-f]{6}$/i.test(candidates.colors?.[k]||''));
+    if(confirmationPending)for(const item of missing){item.why='Os materiais candidatos foram localizados e sua integridade foi verificada. Falta confirmar a oficialidade.';item.where='Estúdio → Materiais oficiais → conferir os arquivos e as cores já preenchidos, marcar a confirmação e salvar.';}
     const blockers=[];
-    if(missing.length)blockers.push({code:'blocked_missing_brand_assets',message:'Faltam materiais oficiais: '+missing.map(m=>m.material).join('; ')+'.',missing});
-    const configured=!!connection?.configuredFields?.keyId&&!!connection?.configuredFields?.keySecret;
+    if(missing.length)blockers.push({code:'blocked_missing_brand_assets',message:confirmationPending?'Logo, fonte e paleta localizados. Confirme sua oficialidade em Estúdio → Materiais oficiais.':'Faltam materiais oficiais: '+missing.map(m=>m.material).join('; ')+'.',missing});
+    const configured=provider==='openai'?!!connection?.configuredFields?.apiKey:!!connection?.configuredFields?.keyId&&!!connection?.configuredFields?.keySecret;
     const validated=configured&&connection?.validation?.status==='executor_validated';
-    if(!configured)blockers.push({code:'blocked_higgsfield_not_configured',message:'Abra Integrações → Higgsfield → Configurar e salve o identificador e o segredo da API. Credencial salva ainda exige validação real do executor.'});
+    const savedAccess=metadata(org,'studio:openai-access'),revision=db.prepare("SELECT updated_at FROM integrations WHERE org_id=? AND provider='openai'").get(org)?.updated_at;
+    const access=savedAccess.credentialRevision===revision?savedAccess:{...savedAccess,status:'not_validated',error:null};
+    if(provider==='openai'){
+      if(!configured)blockers.push({code:'blocked_openai_not_configured',message:'Abra Integrações → OpenAI e configure a credencial da API no cofre da Helpu.'});
+      else if(access.status!=='model_accessible')blockers.push({code:'blocked_openai_image_access',message:access.error||'A credencial de inteligência existe, mas o acesso ao modelo de imagem ainda precisa ser conferido.'});
+      else blockers.push({code:'blocked_first_generation_required',message:'A API confirmou acesso ao modelo de imagem. A primeira geração explícita ainda precisa produzir um arquivo verificável; o executor não foi validado por geração.'});
+    }
+    else if(!configured)blockers.push({code:'blocked_higgsfield_not_configured',message:'Abra Integrações → Higgsfield → Configurar e salve o identificador e o segredo da API. Credencial salva ainda exige validação real do executor.'});
     else if(!validated)blockers.push({code:'blocked_higgsfield_executor_unvalidated',message:'As credenciais do Higgsfield estão salvas, mas ainda não existe evidência de geração e acompanhamento por esse executor.'});
     // The existing adapter generates media; it does not implement the final composition contract.
-    blockers.push({code:'blocked_production_review_required',message:'Confirme o texto final, o uso ou remoção de “Saiba como” e a direção da imagem-base. Depois dos materiais e do executor, a composição e suas revisões precisam ser validadas antes da aprovação humana.'});
+    if(!decision.confirmedAt)blockers.push({code:'blocked_production_review_required',message:'Confirme o texto final, o uso ou remoção de “Saiba como” e a direção da imagem-base. Depois dos materiais e do executor, a composição e suas revisões precisam ser validadas antes da aprovação humana.'});
     const source=contentSource(c),sourceHash=digest(source);
     const specification={objective:c.title,audience:brand.profile.audience||null,centralMessage:c.caption||null,
       artDirection:c.visualPrompt||null,composition:'Preservar a composição descrita no briefing original; alterações exigem nova versão.',
@@ -58,9 +71,18 @@ export function createStudio({db,company,record,list,saveRecord,systemUpdate,ker
       technicalCriteria:['Arquivo íntegro','1080 × 1080 px','PNG ou JPEG','Hash e versão','Texto e logo dentro da área segura'],
       approvalCriteria:['Revisão técnica','Revisão textual e factual','Revisão visual','Aprovação humana da versão e hash exatos'],
       state:'incomplete_external_dependencies'};
+    if(decision.confirmedAt){
+      Object.assign(specification,{centralMessage:decision.text,artDirection:decision.artDirection,exactText:{source:decision.text,status:'confirmed_by_user',cta:decision.cta},imageBase:{direction:decision.artDirection,containsText:false,containsLogo:false},
+        composition:'Imagem-base na área central. Declaração institucional na parte superior. Logo oficial no rodapé, sem CTA.',
+        margins:{top:80,right:80,bottom:80,left:80,unit:'px'},safeArea:{x:80,y:80,width:920,height:920},
+        hierarchy:['Frase institucional em duas linhas','Imagem editorial de centralização','Logo oficial'],alignment:'Texto alinhado à esquerda; elemento visual central; logo no canto inferior direito.',
+        layout:{text:{x:80,y:80,width:920,height:170},image:{x:80,y:290,width:920,height:550},logo:{x:780,y:850,width:220,height:150}},
+        prohibitedElements:[...specification.prohibitedElements,...decision.prohibitedElements],state:missing.length?'awaiting_official_materials':'specified'});
+    }
     return {contentId:id,companyId:org,operationId:c.operationId||null,campaignId:c.campaignId||null,
       sourceJobId:sourceJob(org,id)?.id||null,sourceVersion:c.version,sourceHash,
-      state:blockers[0].code,blockers,executor:{provider:'higgsfield',path:'api',state:validated?'executor_validated':configured?'configured_unvalidated':'not_configured',account:null},
+      state:blockers[0]?.code||'blocked_first_generation_required',blockers,executor:{provider,path:'api',model:provider==='openai'?(access.model||'gpt-image-2.5-sunburst'):null,state:provider==='openai'?(configured?(access.status==='model_accessible'?'model_accessible_unvalidated':'configured_unvalidated'):'not_configured'):validated?'executor_validated':configured?'configured_unvalidated':'not_configured',account:null,access:provider==='openai'?access:null},
+      decision:decision.confirmedAt?decision:null,candidates,
       specification,storedVersion:saved.version||null,stale:!!saved.sourceHash&&saved.sourceHash!==sourceHash,
       generation:null,baseAsset:null,finalAsset:null,approval:{status:'not_requested'},
       reviews:{technical:'not_performed',textual:'not_performed',factual:'not_performed',visualAI:'not_performed',human:'not_performed'}};
@@ -89,7 +111,7 @@ export function createStudio({db,company,record,list,saveRecord,systemUpdate,ker
     db.exec('SAVEPOINT studio_preflight');
     try {
       const op=linkExisting(org,id,actor),result=inspect(org,id),saved=metadata(org,'studio:'+id);
-      const checkHash=digest({source:result.sourceHash,profile:company(org).profile,materials:metadata(org,'brand:production'),executor:result.executor,blockers:result.blockers});
+      const checkHash=digest({source:result.sourceHash,profile:company(org).profile,materials:metadata(org,'brand:production'),executor:result.executor,decision:result.decision,blockers:result.blockers});
       if(saved.checkHash!==checkHash){
         const version=(saved.version||0)+1,now=Date.now();
         const snapshot={...result,version,checkHash,checkedAt:now,checkedBy:actor,briefing:{sourceVersion:before.version,...contentSource(before)}};
@@ -100,7 +122,7 @@ export function createStudio({db,company,record,list,saveRecord,systemUpdate,ker
         else systemUpdate(org,'tasks',task.id,{description});
         kernel.persist(org,op.id,{production:{contentId:id,state:result.state,version,sourceHash:result.sourceHash},approval:{status:'pending'},executionAuthorization:null});
         kernel.transition(org,op.id,'blocked',result.blockers[0].message,{blockers:result.blockers,result:{...op.result,summary:result.blockers[0].message}});
-        kernel.evidence(org,op.id,{status:'recorded',executor:'local',channel:'higgsfield',message:'Verificação local da entrega existente. Nenhuma geração iniciada.',evidence:{type:'studio_preflight',contentId:id,sourceJobId:result.sourceJobId,version,sourceHash:result.sourceHash,missing:result.blockers.flatMap(b=>b.missing||[]),state:result.state}},op.rootJobId);
+        kernel.evidence(org,op.id,{status:'recorded',executor:'local',channel:result.executor.provider,message:'Verificação local da entrega existente. Nenhuma geração iniciada.',evidence:{type:'studio_preflight',contentId:id,sourceJobId:result.sourceJobId,version,sourceHash:result.sourceHash,missing:result.blockers.flatMap(b=>b.missing||[]),state:result.state}},op.rootJobId);
         db.prepare('INSERT INTO conversation_messages VALUES(?,?,?,?,?,?,?,?)').run(randomUUID(),op.threadId,org,'assistant',result.blockers.map(b=>b.message).join('\n\n'),'[]',op.rootJobId,now);
         audit(org,actor,'Produção visual bloqueada por dependências comprovadas',id,result.state);
       }else if(op.state==='blocked'&&JSON.stringify(op.blockers)!==JSON.stringify(result.blockers)){
@@ -123,5 +145,39 @@ export function createStudio({db,company,record,list,saveRecord,systemUpdate,ker
       db.exec('RELEASE studio_materials');return value;
     }catch(error){db.exec('ROLLBACK TO studio_materials');db.exec('RELEASE studio_materials');throw error;}
   }
-  return {inspect,preflight,saveMaterials};
+  function saveDecision(org,id,input,actor,{source='portal',reference='Decisão humana no Estúdio'}={}){
+    const c=record(org,'content',id);if(c.format!=='image'||!c.operationId)throw new ProviderError('Use a entrega de imagem vinculada à ordem existente.','blocked');
+    if(input.confirmed!==true||input.provider!=='openai'||typeof input.text!=='string'||!input.text.trim()||input.text.length>2000||input.cta!==''||typeof input.artDirection!=='string'||!input.artDirection.trim()||input.artDirection.length>8000||!Array.isArray(input.prohibitedElements)||input.prohibitedElements.some(v=>typeof v!=='string'||v.length>200))throw new ProviderError('Confirme o texto, a remoção do CTA e a direção de arte fornecidos pelo usuário.','blocked');
+    if(db.prepare("SELECT 1 FROM jobs WHERE org_id=? AND json_extract(payload,'$.contentId')=? AND state IN ('queued','working','waiting_provider','uncertain')").get(org,id))throw new ProviderError('Confira a tentativa existente antes de alterar a especificação.','blocked');
+    const value={text:input.text.trim(),cta:'',artDirection:input.artDirection.trim(),prohibitedElements:input.prohibitedElements,provider:'openai'},previous=metadata(org,'studio:decision:'+id),hash=digest(value);
+    if(previous.hash===hash)return inspect(org,id);
+    db.exec('SAVEPOINT studio_decision');
+    try{
+      const version=(previous.version||0)+1,decision={...value,hash,version,confirmedAt:Date.now(),source,reference,recordedBy:actor,approvalScope:'creative_direction_only'};
+      saveMetadata(org,'studio:decision:'+id+':v'+version,decision);saveMetadata(org,'studio:decision:'+id,decision);
+      const op=kernel.get(org,c.operationId);kernel.evidence(org,op.id,{status:'recorded',executor:'user',channel:'openai',message:'Decisão humana registrada: texto final, remoção do CTA e direção da imagem-base. Não é aprovação de uma peça final.',evidence:{type:'creative_decision',contentId:id,version,hash,source,reference,recordedBy:actor}},op.rootJobId);
+      audit(org,actor,'Decisão criativa registrada na entrega existente',id,hash);const result=preflight(org,id,actor);db.exec('RELEASE studio_decision');return result;
+    }catch(error){db.exec('ROLLBACK TO studio_decision');db.exec('RELEASE studio_decision');throw error;}
+  }
+  async function checkOpenAI(org,id,actor){
+    const before=inspect(org,id);if(before.executor.provider!=='openai')throw new ProviderError('Esta entrega não selecionou OpenAI para produção.','blocked');
+    if(before.executor.access?.status==='model_accessible'&&Date.now()-before.executor.access.completedAt<86400000)return before;
+    const revision=db.prepare("SELECT updated_at FROM integrations WHERE org_id=? AND provider='openai'").get(org)?.updated_at;
+    const result={...await providers.imageAccess(integration(org,'openai')),credentialRevision:revision};
+    if(revision!==db.prepare("SELECT updated_at FROM integrations WHERE org_id=? AND provider='openai'").get(org)?.updated_at)throw new ProviderError('A credencial mudou durante a consulta. Confira o acesso novamente.','blocked');
+    saveMetadata(org,'studio:openai-access',result);audit(org,actor,'Acesso ao modelo de imagem: '+result.status,id,result.requestId||'');
+    return preflight(org,id,actor);
+  }
+  // Local import only: no HTTP route accepts paths or arbitrary bytes through this method.
+  function stageCandidates(org,id,{logo,font,colors,fontFamily,sources},actor){
+    const c=record(org,'content',id);if(!c.operationId)throw new ProviderError('Use a entrega existente.','blocked');
+    if(!['background','foreground','accent'].every(k=>/^#[\da-f]{6}$/i.test(colors?.[k]||'')))throw new ProviderError('As cores candidatas precisam de origem e valores exatos.','blocked');
+    const key=digest({logo:digest(logo.bytes),font:digest(font.bytes),colors,fontFamily,sources}),previous=metadata(org,'brand:candidates');
+    if(previous.hash===key){if(fileEvidence(org,previous.logoAssetId,['image/png','image/jpeg','image/webp'])?.hash!==previous.logoHash||fileEvidence(org,previous.fontAssetId,['font/ttf','font/woff2','font/otf'])?.hash!==previous.fontHash)throw new ProviderError('Os arquivos candidatos mudaram ou estão ausentes. Confira a biblioteca antes de importar novamente.','blocked');return previous;}
+    if(!assetType(logo.bytes)?.[0].startsWith('image/')||!assetType(font.bytes)?.[0].startsWith('font/'))throw new ProviderError('Os candidatos precisam ser um logo e um arquivo de fonte reconhecidos.','blocked');
+    const logoAsset=storeAsset(org,logo.name,logo.bytes),fontAsset=storeAsset(org,font.name,font.bytes);
+    const value={logoAssetId:logoAsset.id,fontAssetId:fontAsset.id,logoHash:digest(logo.bytes),fontHash:digest(font.bytes),colors,fontFamily,sources,hash:key,status:'awaiting_human_confirmation',foundAt:Date.now(),recordedBy:actor,contentId:id};
+    saveMetadata(org,'brand:candidates',value);audit(org,actor,'Materiais candidatos localizados; oficialidade pendente',id,key);return value;
+  }
+  return {inspect,preflight,saveMaterials,saveDecision,checkOpenAI,stageCandidates};
 }
