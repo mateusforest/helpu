@@ -75,3 +75,13 @@ Preserve juntos `helpu.sqlite`, `integration.key`, `uploads/` e `browser-profile
 | Aviso experimental do SQLite no Node 22 | O aviso, sozinho, não impede a inicialização; confira a mensagem “Helpu pronta” |
 
 Consulte [GUIA-DO-PORTAL.md](GUIA-DO-PORTAL.md) para empresas, campanhas, integrações e rotinas, e [ARQUITETURA-HELPU.md](ARQUITETURA-HELPU.md) para a arquitetura.
+
+## Revisão operacional
+
+Veja [REVISAO-OPERACIONAL.md](REVISAO-OPERACIONAL.md) para as correções, os fluxos verificados e as dependências de operação externa.
+
+Em **Visão geral**, acompanhe executor, validação da inteligência, rotina diária e execuções que precisam de atenção. A inteligência só aparece como validada depois de uma chamada real ao serviço. Em telas pequenas, a busca, a atualização e a criação de empresas continuam disponíveis.
+
+Para diagnosticar a conexão de IA já salva, execute `node scripts/validate-intelligence.mjs`. Esse comando faz chamadas reais ao modelo, com consumo da API, e não exibe a chave. Acrescente `--save` para registrar a validação no portal; sem essa opção, o banco é aberto somente para leitura. Uma configuração ou validação alterada durante a chamada impede gravar um resultado obsoleto.
+
+Uma ordem com várias publicações apresenta o progresso após cada confirmação. Use **Executar publicação** ou **Agendar** para a próxima peça; conteúdos já publicados não são repetidos. Páginas criadas pela conversa começam pausadas: revise em **Captação** antes de disponibilizá-las.

@@ -1,0 +1,110 @@
+/* The orange ribbon carries both the original h silhouette and the slogan. */
+.portal-topbar {
+  --brand-header-inset: 4.2vw;
+  --brand-header-top: 8px;
+  --brand-ribbon-tail: 64px;
+  height: auto;
+  min-height: 104px;
+  flex-wrap: wrap;
+  padding-block: var(--brand-header-top);
+  padding-inline: var(--brand-header-inset);
+  gap: 12px 24px;
+}
+
+.top-brand {
+  position: relative;
+  isolation: isolate;
+  display: inline-flex;
+  align-items: center;
+  align-self: flex-start;
+  flex: 0 1 auto;
+  min-width: 0;
+  max-width: calc(100% - var(--brand-ribbon-tail));
+  margin-right: var(--brand-ribbon-tail);
+  gap: 22px;
+  padding: 18px 40px 18px 25px;
+  color: #0b0b0b;
+}
+
+.top-brand .brand-ribbon {
+  position: absolute;
+  z-index: -1;
+  top: calc(0px - var(--brand-header-top));
+  left: calc(0px - var(--brand-header-inset));
+  width: calc(100% + var(--brand-header-inset) + var(--brand-ribbon-tail));
+  height: calc(100% + var(--brand-header-top) + 8px);
+  overflow: visible;
+  pointer-events: none;
+}
+
+.brand-ribbon-sheen {
+  transform-origin: center;
+  animation: brand-ribbon-light 4.8s ease-in-out both;
+}
+
+.top-brand > .brand-symbol {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex: 0 0 auto;
+  min-width: 44px;
+  min-height: 48px;
+  border-radius: 6px;
+}
+
+.top-brand > .brand-symbol::after {
+  content: none;
+}
+
+.brand-symbol img {
+  display: block;
+  width: 36px;
+  height: auto;
+  filter: none;
+  opacity: 1;
+}
+
+.top-brand > .brand-slogan {
+  display: block;
+  max-width: 100%;
+  font-size: 1rem;
+  line-height: 1.4;
+  font-weight: 500;
+  letter-spacing: -.025em;
+  color: #0b0b0b;
+}
+
+.brand-symbol:focus-visible {
+  outline-color: #0b0b0b;
+  outline-offset: 5px;
+}
+
+@keyframes brand-ribbon-light {
+  0%, 100% { opacity: .65; transform: translateX(0); }
+  50% { opacity: 1; transform: translateX(18px); }
+}
+
+@media (max-width: 760px) {
+  .portal-topbar {
+    --brand-header-inset: 20px;
+    --brand-header-top: 12px;
+    --brand-ribbon-tail: 18px;
+    padding-bottom: 16px;
+    gap: 8px 16px;
+  }
+  .top-brand { gap: 14px; padding: 16px 30px 16px 18px; }
+  .brand-symbol img { width: 31px; }
+  .top-brand > .brand-slogan { font-size: .9375rem; }
+  .topbar-actions { margin-left: auto; }
+}
+
+@media (max-width: 390px) {
+  .portal-topbar { --brand-header-inset: 14px; }
+  .top-brand { gap: 11px; padding-inline: 15px 24px; }
+  .top-brand > .brand-slogan { font-size: .875rem; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .top-brand .brand-ribbon,
+  .brand-ribbon-sheen { animation: none; }
+}

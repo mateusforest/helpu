@@ -6,3 +6,4 @@ node_modules/
 .sites-runtime/
 *.log
 .superdesign/
+.vercel/
