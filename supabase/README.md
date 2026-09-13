@@ -75,11 +75,14 @@ nem o estado de produção ou aprovação das entregas existentes.
 
 ## Limite operacional
 
-O servidor atual usa operações síncronas de SQLite, arquivos locais,
-criptografia local, navegador persistente e um worker contínuo. Para liberar
-o portal online, ainda é necessário adaptar o acesso a PostgreSQL/Storage e
-hospedar o processo operacional em um runtime compatível. O Supabase não
-executa automaticamente o servidor Node.js existente ao receber estas tabelas.
+O runtime publicado ainda não utiliza estas tabelas. A adaptação assíncrona
+para PostgreSQL e Storage está no código local, descrita em
+[DEPLOYMENT.md](../DEPLOYMENT.md). A migração de acesso
+`20260913140000_activate_cloud_runtime.sql` continua pendente: a revisão
+automática exigiu autorização específica para suas permissões de produção.
+Nenhuma credencial desse runtime foi configurada e nenhum portal completo foi
+promovido. O Supabase não executa automaticamente o servidor Node.js existente
+ao receber estas tabelas.
 
 Testes de transferência usam apenas bancos temporários locais. Eles não
 acessam o Supabase, não geram mídia e não executam integrações reais.

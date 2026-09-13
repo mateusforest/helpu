@@ -1,0 +1,41 @@
+import os from 'node:os';
+import path from 'node:path';
+import {timingSafeEqual} from 'node:crypto';
+import {waitUntil,attachDatabasePool,getDeadline} from '@vercel/functions';
+import {createDatabase} from '../portal/database.mjs';
+import {createHelpuServer} from '../server.mjs';
+import {runCloudWorker} from '../portal/cloud-worker.mjs';
+
+let ready;
+async function application(){
+  if(!ready)ready=(async()=>{
+    for(const key of ['DATABASE_URL','SUPABASE_URL','SUPABASE_SERVICE_ROLE_KEY','HELPU_INTEGRATION_KEY','HELPU_PUBLIC_URL','CRON_SECRET'])if(!process.env[key])throw new Error('Missing production configuration');
+    const db=createDatabase({connectionString:process.env.DATABASE_URL});attachDatabasePool(db.pool);
+    return createHelpuServer({database:db,cloud:true,dataDir:path.join(os.tmpdir(),'helpu'),extraOrigins:process.env.VERCEL_URL?['https://'+process.env.VERCEL_URL]:[],portalOptions:{startScheduler:false}});
+  })().catch(error=>{ready=null;throw error;});
+  return ready;
+}
+function secretMatches(value){const expected=Buffer.from('Bearer '+process.env.CRON_SECRET),actual=Buffer.from(String(value||''));return actual.length===expected.length&&timingSafeEqual(actual,expected);}
+function json(res,status,body){res.writeHead(status,{'Content-Type':'application/json; charset=utf-8','Cache-Control':'no-store','X-Content-Type-Options':'nosniff'}).end(JSON.stringify(body));}
+export default async function handler(req,res){
+  try {
+    const route=new URL(req.url,'https://helpu.invalid').pathname;
+    if(route==='/api/worker'){
+      if(req.method!=='POST'||!process.env.CRON_SECRET||!secretMatches(req.headers.authorization)){json(res,401,{error:'Acesso não autorizado.'});return;}
+      const app=await application();
+      const result=await runCloudWorker(app,{enabled:process.env.HELPU_AUTOMATIONS_ENABLED==='true'});
+      json(res,200,result);return;
+    }
+    const app=await application();
+    if(route==='/api/health'){
+      await app.database.prepare('SELECT version FROM portal_migrations WHERE version=4').get();
+      json(res,200,{status:'ok',storage:'supabase',runtime:'vercel'});return;
+    }
+    await app.handle(req,res);
+    if(req.method==='POST'&&res.statusCode>=200&&res.statusCode<300&&route.startsWith('/api/portal/')&&process.env.HELPU_AUTOMATIONS_ENABLED==='true'&&(!getDeadline()||getDeadline().getTime()-Date.now()>150000)){
+      waitUntil(runCloudWorker(app,{enabled:true}).catch(()=>console.error('helpu_worker_failed')));
+    }
+  }catch{
+    if(!res.headersSent)json(res,503,{error:'O serviço está temporariamente indisponível. Tente novamente.'});else res.destroy();
+  }
+}

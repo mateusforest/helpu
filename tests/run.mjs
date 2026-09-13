@@ -11,3 +11,4 @@ import './conversation-ui.test.mjs';
 import './studio.test.mjs';
 import './studio-openai.test.mjs';
 import './supabase-transfer.test.mjs';
+import './cloud.test.mjs';

@@ -12,9 +12,14 @@
     "test": "node tests/run.mjs"
   },
   "engines": {
-    "node": ">=22.13.0"
+    "node": "22.x"
   },
   "dependencies": {
+    "@vercel/functions": "3.9.7",
+    "pg": "8.23.0",
     "playwright-core": "1.63.0"
+  },
+  "devDependencies": {
+    "@electric-sql/pglite": "0.5.8"
   }
 }

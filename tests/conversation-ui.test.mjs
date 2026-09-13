@@ -2,6 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import vm from 'node:vm';
+import {uploadFile} from '../dist/assets/upload.js';
 
 const flush=async()=>{for(let i=0;i<15;i++)await Promise.resolve();};
 function fixture(){
@@ -18,8 +19,8 @@ function fixture(){
   return snapshot(id);
  };
  const snapshot=id=>({messages:[{id,role:'assistant',text:'VISUAL '+id,attachments:[],createdAt:1}],events:[],jobs:[],operations:[]});
- const context=vm.createContext({document,console,Date,JSON,Promise,setInterval:fn=>{intervals.push(fn);return 1;},crypto:{randomUUID:()=> 'key'},__deps:{api,endpoint:tail=>'/api/portal/org/'+tail,getState:()=>state,esc:v=>String(v??''),toast(){},refresh:async()=>{},openDialog(){},closeDialog(){}}});
- vm.runInContext(fs.readFileSync(new URL('../dist/assets/conversation-ui.js',import.meta.url),'utf8').replace('export function','function')+'\nglobalThis.ui=createConversationUI(__deps);',context);
+ const context=vm.createContext({document,console,Date,JSON,Promise,uploadFile,setInterval:fn=>{intervals.push(fn);return 1;},crypto:{randomUUID:()=> 'key'},__deps:{api,endpoint:tail=>'/api/portal/org/'+tail,getState:()=>state,esc:v=>String(v??''),toast(){},refresh:async()=>{},openDialog(){},closeDialog(){}}});
+ vm.runInContext(fs.readFileSync(new URL('../dist/assets/conversation-ui.js',import.meta.url),'utf8').replace("import {uploadFile} from './upload.js';",'').replace('export function','function')+'\nglobalThis.ui=createConversationUI(__deps);',context);
  const ui=context.ui;
  const click=(action,id)=>events.click({target:{closest:()=>({dataset:{chat:action,id},disabled:false})}});
  const type=text=>nodes.get('#conversation-prompt').handlers.input({target:{value:text}});
