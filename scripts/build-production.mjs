@@ -10,5 +10,5 @@ for(const name of pages){
 for(const file of fs.readdirSync(root,{recursive:true})){
   assert.ok(!/(?:^|[\\/])(?:\.env|\.local-data|node_modules|integration\.key|.*\.sqlite)/i.test(file),'Private file in public output');
 }
-assert.ok(fs.existsSync('api/[...path].mjs'));
+assert.ok(fs.existsSync('api/runtime.mjs'));
 console.log('Public files verified; API package must pass verify-production-build before deployment.');

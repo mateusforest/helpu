@@ -1,114 +1,123 @@
-# Implantação da Helpu
+# Produção da Helpu
 
-- Repositório: `https://github.com/mateusforest/helpu.git`, branch `main`.
-- Projeto Vercel existente: `helpu`, equipe `mateus-maraschin-forests-projects`.
-- Endereço público: `https://helpu-seven.vercel.app`.
-- Supabase: `pgwoyxtcrkwtricejdbl`; ver [migração e verificações](supabase/README.md).
+- Vercel: projeto **helpu**, equipe **mateus-maraschin-forests-projects**.
+- Endereço principal: https://helpu-seven.vercel.app.
+- GitHub: https://github.com/mateusforest/helpu.git, branch **main** conectada à Vercel.
+- Supabase: **pgwoyxtcrkwtricejdbl**, schema privado **helpu**, bucket privado **helpu-private**.
 
-## Build reproduzível
+## Runtime e dados
 
-O build publicado anteriormente executa `node scripts/build-landing.mjs` e
-publica `.superdesign/vercel-landing`. A adaptação em andamento usa
-`node scripts/build-production.mjs`, publica `dist` e inclui `api/[...path].mjs`.
-Essa nova configuração ainda não foi promovida. `.vercelignore` limita os arquivos enviados pelo CLI.
-Credenciais, `.local-data/`, backups, perfis de navegador, relatórios privados
-de migração e configurações locais da Vercel ficam fora da publicação.
+A Vercel serve landing, cadastro, login e portal de `dist`. A função Node.js 22
+`api/runtime.mjs` recebe todas as rotas `/api/:path*` por rewrite explícito.
+O nome com colchetes usado inicialmente não capturava rotas aninhadas no runtime
+Node da Vercel; a verificação do pacote passou a testar esse caso.
 
-No Windows, o rastreamento local de dependências ignorou exclusões e incluiu
-arquivos privados em um build de teste. Esse pacote não foi publicado e foi
-removido; os originais continuam preservados. Para compilar localmente, executar
-`node scripts/stage-production.mjs` com `.superdesign/production-source` vazia,
-rodar `vercel build --prod` nessa cópia e conferir, na raiz do projeto:
-`node scripts/verify-production-build.mjs .superdesign/production-source/.vercel/output`.
-O script copia somente os diretórios e arquivos de código autorizados, sem
-variáveis de ambiente ou dados locais. O pacote conferido contém 151 arquivos,
-uma função Node.js 22 e nenhum arquivo privado. Não enviar um pacote que não
-passe nessa conferência. O build do Git utiliza somente arquivos versionados.
+O servidor e o Operating Kernel usam consultas assíncronas, mantendo os IDs,
+contratos e históricos existentes. PostgreSQL e Storage persistem os dados da
+nuvem. SQLite permanece no desenvolvimento e nos testes. Transações reutilizam
+a mesma conexão; gravações conferem a versão anterior. Sessões e tentativas de
+login persistem no banco.
 
-A conexão GitHub foi confirmada no projeto existente, com `main` como branch
-de produção. Uma publicação pelo Git foi verificada. Isso ainda publica a landing.
+O papel **helpu_runtime** não é superusuário nem ignora RLS. Acessa as tabelas
+operacionais do schema Helpu; **portal_migrations** é somente leitura e
+**cloud_imports** não é acessível. **anon** e **authenticated** continuam sem
+acesso ao schema, que não é exposto pela Data API. O servidor verifica a empresa
+antes de consultar ou gravar seus registros.
 
-## Estado do produto publicado
+A conexão cliente verifica CA e hostname com TLS 1.3. O certificado foi obtido
+da URL usada pelo código público oficial do painel Supabase, em
+`apps/studio/hooks/custom-content/custom-content.json`. A terminação TLS ocorre
+no pooler; o campo interno pg_stat_ssl não descreve o socket cliente da Vercel.
+Não usar `rejectUnauthorized:false` para contornar erros de certificado.
 
-A configuração atual publica a landing. Os links de cadastro e portal
-continuam apontando para o aviso de acesso futuro. As páginas e o código
-completos do portal estão no repositório, mas não são ativados por este build.
+O servidor autoriza upload para um único objeto e confere empresa, tipo,
+tamanho e SHA-256 antes de registrá-lo. Repetir a conclusão retorna o mesmo
+asset. Arquivos grandes usam links privados de leitura de 60 segundos, emitidos
+após verificar sessão e empresa.
 
-A importação verificada no Supabase preservou os dados; o servidor existente
-ainda usa `node:sqlite`, arquivos locais, a chave local de criptografia e um
-worker contínuo. A Vercel não oferece o armazenamento local permanente
-necessário a esse runtime, conforme sua [documentação de SQLite](https://vercel.com/kb/guide/is-sqlite-supported-in-vercel).
-Subir os arquivos HTML do portal não disponibiliza sua API nem suas automações.
+## Configuração privada
 
-O usuário escolheu Vercel + Supabase. Para liberar o sistema completo, é
-necessário validar a adaptação de PostgreSQL/Storage e jobs em produção.
-Perfis de navegador precisam de um executor persistente com autenticação e
-identidade verificadas. Não ativar o acesso público ao portal antes de validar
-login, isolamento entre empresas, gravação, arquivos privados e execução nesse
-runtime. A landing permanece disponível durante essa transição.
+Variáveis do ambiente Production da Vercel:
 
-## Adaptação para Vercel + Supabase
+- `DATABASE_URL`: pooler com o papel exclusivo helpu_runtime.
+- `DATABASE_CA_CERT`: certificado público da autoridade Supabase.
+- `SUPABASE_URL`: https://pgwoyxtcrkwtricejdbl.supabase.co.
+- `SUPABASE_SERVICE_ROLE_KEY`: chave de Storage somente no backend.
+- `HELPU_INTEGRATION_KEY`: os mesmos 32 bytes originais, em base64, para ler o cofre.
+- `HELPU_PUBLIC_URL`: https://helpu-seven.vercel.app.
+- `CRON_SECRET`: segredo exclusivo do worker, também guardado no Supabase Vault.
+- `HELPU_AUTOMATIONS_ENABLED`: true para habilitar o worker validado.
 
-O servidor e o Kernel agora usam consultas assíncronas. O driver PostgreSQL
-reutiliza o schema privado e os IDs existentes; SQLite permanece para testes e
-desenvolvimento. Transações usam a mesma conexão por escopo. Atualizações
-verificam a versão antes de gravar. Sessões e tentativas de login são persistidas.
+A autorização específica do usuário foi recebida. As migrações
+`20260913140000_activate_cloud_runtime.sql` e
+`20260913150000_activate_cloud_schedule.sql` foram aplicadas. Nenhum segredo
+consta nos arquivos versionados. Bancos, WAL, cookies, perfis e `.local-data`
+permanecem fora do Git e dos pacotes enviados.
 
-O Storage continua privado. Upload direto é autorizado para um único objeto;
-o servidor confere empresa, tipo, tamanho e SHA-256 antes de registrá-lo.
-Repetir a conclusão retorna o mesmo asset. Arquivos grandes usam links de
-leitura de 60 segundos emitidos somente após verificar sessão e empresa.
+## Rotina e limites reais
 
-A migração `20260913140000_activate_cloud_runtime.sql` foi conferida com dry-run
-e testada em PostgreSQL local. Sua aplicação foi bloqueada pela revisão automática
-por exigir autorização específica das permissões de produção. A confirmação
-foi solicitada ao usuário. Não contornar o bloqueio.
+`POST /api/worker` exige CRON_SECRET. Uma lease no PostgreSQL impede workers
+simultâneos. O worker chama o mesmo `portal.tick()`, mantendo a prioridade dos
+trabalhos pendentes e o limite da EME de oito execuções de inteligência por dia.
+Não há outro Kernel nem um segundo agendador de negócio.
 
-Após autorização, configurar no ambiente Production da Vercel:
+O Supabase Cron usa um único job, **helpu-operating-kernel**, a cada minuto.
+O segredo é lido do Vault pela função privada **helpu.invoke_cloud_worker**.
+A migração cria o acionamento inativo; ativá-lo somente depois de confirmar
+que o domínio principal atende à nova API. Conferir o retorno HTTP de pg_net
+e o last_completed_at de worker_leases. Um disparo aceito pelo Cron sozinho
+não comprova que o worker concluiu.
 
-- `DATABASE_URL`: TLS no pooler do projeto, usuário exclusivo `helpu_runtime.pgwoyxtcrkwtricejdbl`.
-- `SUPABASE_URL`: `https://pgwoyxtcrkwtricejdbl.supabase.co`.
-- `SUPABASE_SERVICE_ROLE_KEY`: somente backend, nunca enviada ao cliente.
-- `HELPU_INTEGRATION_KEY`: os mesmos 32 bytes locais, em base64, para ler o cofre já criptografado.
-- `HELPU_PUBLIC_URL`: `https://helpu-seven.vercel.app`.
-- `CRON_SECRET`: segredo exclusivo do worker.
-- `HELPU_AUTOMATIONS_ENABLED`: manter `false` até validar o worker remoto.
+O timer local não inicia na Vercel. `waitUntil` também pode acordar o mesmo
+worker após ações autenticadas. Jobs interrompidos passam pela recuperação
+existente; efeitos incertos não são repetidos automaticamente.
 
-A migração cria `helpu_runtime` sem LOGIN, superusuário, criação de roles ou
-bypass de RLS. Após autorização, habilitar LOGIN com senha forte gerada e guardada
-nas variáveis privadas da Vercel. O papel acessa apenas as tabelas operacionais
-do schema Helpu; `portal_migrations` é somente leitura, `cloud_imports` não é
-acessível e `anon`/`authenticated` continuam sem acesso. O schema não é exposto
-na Data API pública.
+A primeira execução real na Vercel terminou com seis jobs e três reservas de
+uso, iguais aos valores anteriores: nenhuma nova chamada de inteligência,
+geração ou publicação. A EME mantém autoMedia, allowPublishing e autoReply
+como false. Suas três entregas criativas e o bloqueio de materiais oficiais
+foram preservados. Publicar o portal não produz nem aprova essas peças.
 
-`POST /api/worker` exige o segredo Bearer. Uma lease no PostgreSQL impede
-workers simultâneos. O worker reutiliza `portal.tick()`, a prioridade por trabalhos
-pendentes e os limites das empresas. Jobs interrompidos passam pela recuperação
-do Kernel; efeitos incertos não são repetidos automaticamente.
+Perfis de navegador não são transferidos. Esses canais informam
+`blocked_persistent_browser_required` na nuvem até existir um executor
+persistente, autenticado e com identidade confirmada. Conta salva não comprova
+sessão autenticada.
 
-Após validar o deployment, configurar um único acionamento no Supabase Cron,
-com o segredo no Vault. O timer local fica desativado na Vercel. `waitUntil`
-também pode acordar esse mesmo worker após ações autenticadas. O agendamento
-remoto ainda precisa ser configurado e verificado.
+## Build e validação
 
-Navegadores locais não são transferidos. Na nuvem, esses canais informam
-`blocked_persistent_browser_required`; conta salva não é sessão autenticada.
+O Git publica somente arquivos versionados. Para compilar localmente no Windows,
+usar uma árvore isolada: a ferramenta ignorou parte das exclusões e chegou a
+copiar arquivos privados em um build local inicial. Esse pacote não foi
+publicado e foi removido; os originais foram preservados.
 
-Antes de promover: conferir possível divergência entre banco local e snapshot,
-aplicar a migração autorizada, configurar e validar credenciais, testar o
-deployment sem trocar o domínio e conferir login, isolamento, arquivos e jobs.
-Os testes automatizados usam dados sintéticos, PostgreSQL em memória e
-Storage/provedores simulados. Não iniciam geração real nem publicação.
+1. Executar `node scripts/stage-production.mjs` com `.superdesign/production-source` vazia.
+2. Executar `vercel build --prod` nessa cópia.
+3. Na raiz, executar `node scripts/verify-production-build.mjs .superdesign/production-source/.vercel/output`.
+4. Conferir ausência dos valores reais de credenciais no pacote antes de enviar.
+5. Validar uma implantação protegida antes de promover o domínio principal.
 
-Validação desta adaptação: 156 testes aprovados, sintaxe de 52 arquivos e
-diagnóstico local sem erros. A inspeção com Chromium em desktop e mobile
-concluiu 17 verificações e 27 capturas, sem erros de JavaScript ou chamadas
-externas. Três testes da conversa inicialmente falharam porque o harness VM
-não carregava o novo import de upload; o harness passou a usar o módulo real
-e a suíte completa foi repetida. Isso não substitui a validação do runtime
-com as credenciais e os serviços de produção.
+O pacote conferido tem uma função Node.js 22, rotas aninhadas explícitas e zero
+arquivos privados. Os 156 testes passaram; a sintaxe de 52 arquivos foi
+conferida. Uma execução paralela ao build excedeu o tempo dos testes de
+inicialização: os nove testes passaram isoladamente e a suíte completa foi
+repetida sem falhas. Nenhum tempo limite ou asserção foi removido.
 
-Última conferência dos dados: os 153 registros das 15 tabelas do snapshot
-continuam iguais no SQLite e no Supabase, comparados por quantidade e SHA-256.
-Os dois arquivos locais também continuam iguais ao snapshot. Essa consulta
-foi somente leitura; a migração de acesso do runtime permanece pendente.
+A validação real com duas contas temporárias confirmou cadastro, login, cookies
+seguros, logout, isolamento entre empresas, gravação de perfil, upload/download
+privado, SHA-256 e conclusão idempotente. As contas não tinham acesso à EME.
+O Chromium cobriu cinco áreas em desktop e mobile, com dez capturas, sem
+overflow horizontal ou erros de JavaScript. Credenciais de teste e relatórios
+ficam apenas em `.superdesign/async-migration`, ignorada pelo Git. A limpeza
+remove somente os IDs sintéticos registrados na verificação.
+
+Os 153 registros do snapshot original e os dois arquivos privados foram
+comparados antes da ativação. A rotina pode acrescentar suas transições reais
+ao histórico. `.local-data` não é alterada pela produção na Vercel.
+
+## Conferência operacional
+
+`GET /api/health` verifica acesso ao schema. Login, escrita e arquivos precisam
+de verificações próprias. Conferir a versão ativa da Vercel, a branch main,
+o retorno real do Cron e as políticas da empresa ao investigar uma falha.
+As evidências ficam em `.superdesign/async-migration/deployment-evidence.json`,
+sem valores de credenciais.

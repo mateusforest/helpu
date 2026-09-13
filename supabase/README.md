@@ -23,9 +23,9 @@ forçada. `anon` e `authenticated` não recebem permissões de acesso. O bucket
 - Estado da transferência: `data_and_files_migrated_verified`. A repetição do
   snapshot manteve os 153 registros e uma única importação, sem duplicações.
 - Nenhuma conta foi criada no Supabase Auth por esta migração.
-- O portal e o worker continuam usando SQLite local. A migração de dados não
-  altera o runtime e não coloca cadastro, login ou portal online.
-- A landing permanece no Vercel, com o portal indicado como acesso futuro.
+- A transferência original preservou os dados. A continuação adaptou e validou
+  o runtime PostgreSQL/Storage na Vercel, conforme DEPLOYMENT.md.
+- Landing e portal utilizam o mesmo projeto Vercel.
 
 Validação local: 148 testes passaram na repetição completa, incluindo quatro
 testes novos de transferência. A primeira execução teve uma falha de conexão
@@ -75,14 +75,12 @@ nem o estado de produção ou aprovação das entregas existentes.
 
 ## Limite operacional
 
-O runtime publicado ainda não utiliza estas tabelas. A adaptação assíncrona
-para PostgreSQL e Storage está no código local, descrita em
-[DEPLOYMENT.md](../DEPLOYMENT.md). A migração de acesso
-`20260913140000_activate_cloud_runtime.sql` continua pendente: a revisão
-automática exigiu autorização específica para suas permissões de produção.
-Nenhuma credencial desse runtime foi configurada e nenhum portal completo foi
-promovido. O Supabase não executa automaticamente o servidor Node.js existente
-ao receber estas tabelas.
+As migrações de runtime e agendamento foram aplicadas após a autorização
+específica do usuário. A credencial privada foi validada com TLS e sem bypass
+de RLS. A Vercel acessa PostgreSQL e Storage; a rotina usa um único acionamento
+do Supabase Cron e o Kernel existente. Consulte
+[DEPLOYMENT.md](../DEPLOYMENT.md) para variáveis, ativação, testes reais e
+limites dos navegadores persistentes.
 
 Testes de transferência usam apenas bancos temporários locais. Eles não
 acessam o Supabase, não geram mídia e não executam integrações reais.

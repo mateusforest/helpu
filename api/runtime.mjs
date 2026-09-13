@@ -9,8 +9,8 @@ import {runCloudWorker} from '../portal/cloud-worker.mjs';
 let ready;
 async function application(){
   if(!ready)ready=(async()=>{
-    for(const key of ['DATABASE_URL','SUPABASE_URL','SUPABASE_SERVICE_ROLE_KEY','HELPU_INTEGRATION_KEY','HELPU_PUBLIC_URL','CRON_SECRET'])if(!process.env[key])throw new Error('Missing production configuration');
-    const db=createDatabase({connectionString:process.env.DATABASE_URL});attachDatabasePool(db.pool);
+    for(const key of ['DATABASE_URL','DATABASE_CA_CERT','SUPABASE_URL','SUPABASE_SERVICE_ROLE_KEY','HELPU_INTEGRATION_KEY','HELPU_PUBLIC_URL','CRON_SECRET'])if(!process.env[key])throw new Error('Missing production configuration');
+    const db=createDatabase({connectionString:process.env.DATABASE_URL,ssl:{rejectUnauthorized:true,ca:process.env.DATABASE_CA_CERT}});attachDatabasePool(db.pool);
     return createHelpuServer({database:db,cloud:true,dataDir:path.join(os.tmpdir(),'helpu'),extraOrigins:process.env.VERCEL_URL?['https://'+process.env.VERCEL_URL]:[],portalOptions:{startScheduler:false}});
   })().catch(error=>{ready=null;throw error;});
   return ready;

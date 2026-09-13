@@ -4,6 +4,9 @@
   "installCommand": "npm ci --omit=dev --ignore-scripts",
   "buildCommand": "node scripts/build-production.mjs",
   "outputDirectory": "dist",
+  "rewrites": [
+    {"source": "/api/:path*", "destination": "/api/runtime"}
+  ],
   "functions": {
     "api/**/*.mjs": {
       "maxDuration": 300,
