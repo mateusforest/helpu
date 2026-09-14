@@ -148,7 +148,7 @@ test('produção existente: origem, dependências e evidência sem geração fic
       assert.equal(first.sourceJobId, sourceJob.id);
       assert.equal(first.state, 'blocked_missing_brand_assets');
       assert.deepEqual(first.blockers[0].missing.map(x => x.field), ['logo', 'palette', 'font']);
-      assert.ok(first.blockers.some(b => b.code === 'blocked_higgsfield_not_configured'));
+      assert.ok(first.blockers.some(b => b.code === 'blocked_openai_not_configured'));
       assert.equal(first.generation, null);
       assert.equal(first.finalAsset, null);
       const s = await state();
@@ -214,13 +214,12 @@ test('produção existente: origem, dependências e evidência sem geração fic
       assert.equal((await state()).records.tasks.length, 1);
     });
     await t.test('credencial salva continua diferente de executor validado', async () => {
-      await api('integrations/higgsfield', 'PUT', {
-        keyId: 'TEST-ONLY',
-        keySecret: 'NOT-A-REAL-CREDENTIAL'
+      await api('integrations/openai', 'PUT', {
+        apiKey: 'TEST-ONLY'
       });
       const result = (await api('studio/' + content.id + '/preflight', 'POST', {})).body;
       assert.equal(result.executor.state, 'configured_unvalidated');
-      assert.ok(result.blockers.some(b => b.code === 'blocked_higgsfield_executor_unvalidated'));
+      assert.ok(result.blockers.some(b => b.code === 'blocked_openai_image_access'));
       assert.equal(mediaCalls, 0);
     });
     await t.test('rotina não gera mais três rascunhos e não reserva chamada de IA', async () => {

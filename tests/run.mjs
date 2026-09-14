@@ -18,3 +18,4 @@ import './account-connections.test.mjs';
 
 import './stripe-billing.test.mjs';
 import './chat-format.test.mjs';
+import './image-generation.test.mjs';

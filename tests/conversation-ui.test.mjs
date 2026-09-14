@@ -7,11 +7,11 @@ import {renderChatText,eventLabel,operationLabel} from '../dist/assets/chat-form
 import {uploadFile} from '../dist/assets/upload.js';
 
 const flush=async()=>{for(let i=0;i<15;i++)await Promise.resolve();};
-function fixture(overrides={}){
+function fixture(overrides={},stateOverrides={}){
  const nodes=new Map(),events={},intervals=[],posts=[],pending=new Map();let creation=null,profileOpen=false;
  const node=()=>({innerHTML:'',value:'',handlers:{},addEventListener(name,fn){this.handlers[name]=fn;},focus(){},setSelectionRange(){}});
  const document={hidden:false,activeElement:null,querySelectorAll(){return [];},querySelector(selector){if(!nodes.has(selector))nodes.set(selector,node());return nodes.get(selector);},addEventListener(name,fn){events[name]=fn;}};
- const state={company:{id:'org',name:'Teste'},assets:[],records:{content:[]},integrations:[],production:[{contentId:'unrelated',blockers:[{message:'PENDÊNCIA DE OUTRA CONVERSA'}]}]};
+ const state={company:{id:'org',name:'Teste'},assets:[],records:{content:[]},integrations:[],production:[{contentId:'unrelated',blockers:[{message:'PENDÊNCIA DE OUTRA CONVERSA'}]}],...stateOverrides};
  const api=async(url,method='GET',body)=>{
   if(method==='POST'&&url.endsWith('/conversations')&&creation)return creation;
   if(method==='POST'){posts.push({url,body});return {};}
@@ -74,4 +74,10 @@ test('aprovação e falha continuam sinalizadas no resumo recolhido',async()=>{
  assert.match(html,/<details class="chat-activity needs-attention"/);
  assert.match(html,/<span class="chat-activity-status">Aguardando sua aprovação<\/span>/);
  assert.match(html,/data-operation-action="approve"/);
+});
+
+test('imagem gerada aparece na conversa com download e acompanhamento da fila',async()=>{
+ const f=fixture({messages:[{id:'m',role:'assistant',text:'Imagem salva.',attachments:['asset-1','fora-da-empresa'],createdAt:1}],mediaJobs:[{id:'image-job',state:'working'}]},{assets:[{id:'asset-1',name:'Imagem criada',mime:'image/png',url:'https://external.invalid/untrusted'}]});
+ f.ui.mount('conversation');await flush();await f.ui.selectThread('A');const html=f.ui.chat();
+ assert.match(html,/<img src="\/api\/portal\/files\/asset-1"/);assert.match(html,/Baixar imagem/);assert.match(html,/Preparando sua imagem/);assert.doesNotMatch(html,/external.invalid|fora-da-empresa/);
 });

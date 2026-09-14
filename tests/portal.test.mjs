@@ -6,6 +6,7 @@ import path from 'node:path';
 import {DatabaseSync} from 'node:sqlite';
 import {createHmac} from 'node:crypto';
 import {createHelpuServer} from '../server.mjs';
+import {testPng} from './image-fixture.mjs';
 import {createProviders, ProviderError} from '../portal/providers.mjs';
 test('portal: isolamento, persistência e operação verificável', async t => {
   const dataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'helpu-portal-test-'));
@@ -23,6 +24,7 @@ test('portal: isolamento, persistência e operação verificável', async t => {
         channel: 'instagram'
       }]
     }),
+    generateImage:async()=>{mediaCalls++;return {base64:testPng().toString('base64'),requestId:'openai-test'};},
     media: async () => {
       mediaCalls++;
       return {
@@ -401,6 +403,7 @@ test('portal: isolamento, persistência e operação verificável', async t => {
       })).status, 409);
     });
     await t.test('limite diário conta execuções de hoje mesmo que criadas ontem', async () => {
+      await api('integrations/openai','PUT',{apiKey:'TEST-ONLY'});
       const items = [];
       for (let i = 0; i < 2; i++) {
         const c = (await api('records/content', 'POST', {
@@ -423,7 +426,7 @@ test('portal: isolamento, persistência e operação verificável', async t => {
     });
     await t.test('execução interrompida torna-se incerta e não pode ser repetida nem cancelada', async () => {
       const c = (await api('records/content', 'POST', {
-        title: 'Recuperação'
+        title: 'Recuperação', visualPrompt:'Imagem de teste'
       })).body;
       const j = (await api('jobs', 'POST', {
         kind: 'image',

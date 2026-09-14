@@ -2,6 +2,10 @@
 
 Conferência em 14/09/2026 do código do Helpu, da base local e da pasta ASTRA-VIDEO. Esta conferência não acessou o banco da Vercel nem executou gerações, publicações, mensagens ou anúncios reais. Registros locais não comprovam o estado atual da produção.
 
+## Atualização posterior à conferência
+
+O caminho de novos pedidos de imagem foi substituído pela OpenAI, com arquivo salvo na Biblioteca e prévia na conversa. A implementação e seus limites estão em [GERACAO-DE-IMAGENS.md](GERACAO-DE-IMAGENS.md). Os testes desta alteração usam respostas simuladas; a primeira geração real na hospedagem ainda precisa ser validada. A composição institucional final e a integração do Astra Vídeo continuam pendentes. A tabela abaixo preserva o diagnóstico anterior à alteração.
+
 ## O que está implementado e o que foi comprovado
 
 | Recurso | Implementação encontrada | Evidência e pendência |

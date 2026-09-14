@@ -1,6 +1,7 @@
 import fs from 'node:fs';
 import {createHash, randomUUID} from 'node:crypto';
 import {ProviderError} from './providers.mjs';
+import {imageSourceHash} from './image-generation.mjs';
 const parse = value => value ? JSON.parse(value) : {};
 const digest = value => createHash('sha256').update(typeof value === 'string' || Buffer.isBuffer(value) ? value : JSON.stringify(value)).digest('hex');
 const contentSource = c => ({
@@ -48,7 +49,8 @@ export function createStudio({db, company, record, list, saveRecord, systemUpdat
     }
   }
   async function inspect(org, id) {
-    const c = await record(org, 'content', id), brand = await company(org), materials = await metadata(org, 'brand:production'), saved = await metadata(org, 'studio:' + id), decision = await metadata(org, 'studio:decision:' + id), provider = decision.provider || 'higgsfield', connection = (await integrationState(org)).find(i => i.id === provider);
+    const c = await record(org, 'content', id), brand = await company(org), materials = await metadata(org, 'brand:production'), saved = await metadata(org, 'studio:' + id), decision = await metadata(org, 'studio:decision:' + id), provider = decision.provider || 'openai', connection = (await integrationState(org)).find(i => i.id === provider);
+    const generated=await metadata(org,'image:'+id),imageFile=await fileEvidence(org,generated.assetId,['image/png']),imageValid=!!imageFile&&imageFile.hash===generated.hash,currentImage=imageValid&&generated.sourceHash===imageSourceHash(c,brand,decision,materials);
     const logo = await fileEvidence(org, materials.logoAssetId, ['image/png', 'image/jpeg', 'image/webp']);
     const font = await fileEvidence(org, materials.fontAssetId, ['font/woff2', 'font/ttf', 'font/otf']);
     const missing = [];
@@ -85,12 +87,12 @@ export function createStudio({db, company, record, list, saveRecord, systemUpdat
       if (!configured) blockers.push({
         code: 'blocked_openai_not_configured',
         message: 'Abra Integrações → OpenAI e configure a credencial da API no cofre da Helpu.'
-      }); else if (access.status !== 'model_accessible') blockers.push({
+      }); else if(currentImage) blockers.push({code:'blocked_composition_required',message:generated.purpose==='base'?'A imagem-base já está na Biblioteca. Falta compor o texto e o logo oficiais e revisar a peça final.':'A imagem já está na Biblioteca. Revise o arquivo antes de aprovar a peça final.'}); else if (access.status !== 'model_accessible') blockers.push({
         code: 'blocked_openai_image_access',
         message: access.error || 'A credencial de inteligência existe, mas o acesso ao modelo de imagem ainda precisa ser conferido.'
       }); else blockers.push({
         code: 'blocked_first_generation_required',
-        message: 'A API confirmou acesso ao modelo de imagem. A primeira geração explícita ainda precisa produzir um arquivo verificável; o executor não foi validado por geração.'
+        message: 'O modelo está acessível. Use Gerar imagem-base para criar o arquivo e salvá-lo na Biblioteca.'
       });
     } else if (!configured) blockers.push({
       code: 'blocked_higgsfield_not_configured',
@@ -208,7 +210,7 @@ export function createStudio({db, company, record, list, saveRecord, systemUpdat
         provider,
         path: 'api',
         model: provider === 'openai' ? access.model || 'gpt-image-2.5-sunburst' : null,
-        state: provider === 'openai' ? configured ? access.status === 'model_accessible' ? 'model_accessible_unvalidated' : 'configured_unvalidated' : 'not_configured' : validated ? 'executor_validated' : configured ? 'configured_unvalidated' : 'not_configured',
+        state: currentImage?'generation_verified':provider === 'openai' ? configured ? access.status === 'model_accessible' ? 'model_accessible_unvalidated' : 'configured_unvalidated' : 'not_configured' : validated ? 'executor_validated' : configured ? 'configured_unvalidated' : 'not_configured',
         account: null,
         access: provider === 'openai' ? access : null
       },
@@ -217,8 +219,9 @@ export function createStudio({db, company, record, list, saveRecord, systemUpdat
       specification,
       storedVersion: saved.version || null,
       stale: !!saved.sourceHash && saved.sourceHash !== sourceHash,
-      generation: null,
-      baseAsset: null,
+      canGenerate: provider==='openai'&&configured&&!currentImage&&!blockers.some(b=>!['blocked_first_generation_required','blocked_openai_image_access'].includes(b.code)),
+      generation: imageValid?{...generated,stale:!currentImage}:null,
+      baseAsset: imageValid&&generated.purpose==='base'?{...imageFile,url:'/api/portal/files/'+imageFile.id}:null,
       finalAsset: null,
       approval: {
         status: 'not_requested'

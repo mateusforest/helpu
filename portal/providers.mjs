@@ -5,12 +5,12 @@ export class ProviderError extends Error{constructor(message,state='failed'){sup
 export function requireFields(config,fields,name){if(fields.some(key=>!config[key]))throw new ProviderError(`Conecte ${name} em Integrações para executar esta ação.`,'blocked');}
 export function publicUrl(value){try{const u=new URL(value);if(u.protocol!=='https:'||u.username||u.password||/^(localhost|127\.|10\.|192\.168\.|169\.254\.|\[|0\.)/i.test(u.hostname)||/^172\.(1[6-9]|2\d|3[01])\./.test(u.hostname))return false;return value;}catch{return false;}}
 export function createProviders(fetcher=fetch){
- async function request(url,{method='GET',headers={},body,uncertain=false}={}){let response;try{response=await fetcher(url,{method,headers,body:body===undefined?undefined:JSON.stringify(body),signal:AbortSignal.timeout(120000),redirect:'error'});}catch{throw new ProviderError('Não houve confirmação do serviço. Confira o resultado antes de repetir.',uncertain?'uncertain':'failed');}let data;try{data=await response.json();}catch{throw new ProviderError('O serviço não retornou uma confirmação válida.',uncertain?'uncertain':'failed');}if(!response.ok){
+ async function request(url,{method='GET',headers={},body,uncertain=false,withResponse=false}={}){let response;try{response=await fetcher(url,{method,headers,body:body===undefined?undefined:JSON.stringify(body),signal:AbortSignal.timeout(120000),redirect:'error'});}catch{throw new ProviderError('Não houve confirmação do serviço. Confira o resultado antes de repetir.',uncertain?'uncertain':'failed');}let data;try{data=await response.json();}catch{throw new ProviderError('O serviço não retornou uma confirmação válida.',uncertain?'uncertain':'failed');}if(!response.ok){
   const hints={invalid_api_key:'A chave da API foi recusada. Atualize a conexão em Integrações.',insufficient_quota:'A conta da API está sem cota disponível. Confira saldo e limites no provedor.',model_not_found:'O modelo configurado não está disponível para esta chave. Confira o modelo e o acesso do projeto.',rate_limit_exceeded:'O limite temporário de solicitações foi atingido. Aguarde antes de tentar novamente.'};
   const code=data?.error?.code||data?.error?.type,hint=new URL(url).hostname==='api.openai.com'?hints[code]:null;
   const failure=new ProviderError(`O serviço recusou a solicitação (${response.status}). ${hint||'Verifique permissões, limites e configuração.'}`,response.status===401||response.status===403||hint&&code!=='rate_limit_exceeded'?'blocked':uncertain&&response.status>=500?'uncertain':'failed');
   if(hint)failure.code=code;throw failure;
- }return data;}
+ }return withResponse?{data,requestId:response.headers.get('x-request-id')}:data;}
  const metaVersion=c=>/^v\d+\.\d+$/.test(c.version||'')?c.version:'v24.0';
  const bearer=token=>({Authorization:`Bearer ${token}`,'Content-Type':'application/json'});
  const modelFor=c=>c.agentModel||'gpt-6-astra';
@@ -21,6 +21,13 @@ export function createProviders(fetcher=fetch){
  async function instagramIdentity(config){requireFields(config,['accessToken','accountId'],'Instagram');const data=await request(`https://graph.instagram.com/${metaVersion(config)}/${encodeURIComponent(config.accountId)}?fields=id,username`,{headers:bearer(config.accessToken)});if(String(data.id)!==String(config.accountId)||!/^\w[\w.]{0,29}$/.test(data.username||''))throw new ProviderError('A API não confirmou a identidade da conta de Instagram configurada.','blocked');return {id:String(data.id),username:normalizeUsername(data.username),profileUrl:'https://www.instagram.com/'+encodeURIComponent(data.username)+'/',observedAt:Date.now()};}
  async function googleToken(c){if(c.refreshToken&&c.clientId&&c.clientSecret){let r;try{r=await fetcher('https://oauth2.googleapis.com/token',{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded'},body:new URLSearchParams({grant_type:'refresh_token',refresh_token:c.refreshToken,client_id:c.clientId,client_secret:c.clientSecret}),signal:AbortSignal.timeout(30000),redirect:'error'});}catch{throw new ProviderError('Não foi possível renovar o acesso ao Google.','blocked');}const d=await r.json();if(!r.ok||!d.access_token)throw new ProviderError('Reconecte o Google para renovar o acesso.','blocked');return d.access_token;}requireFields(c,['accessToken'],'Google');return c.accessToken;}
  return {
+  async generateImage(config,{prompt}){
+   requireFields(config,['apiKey'],'OpenAI');
+   if(typeof prompt!=='string'||!prompt.trim()||prompt.length>32000)throw new ProviderError('Descreva uma imagem com até 32 mil caracteres.','blocked');
+   const result=await request('https://api.openai.com/v1/images/generations',{method:'POST',headers:bearer(config.apiKey),uncertain:true,withResponse:true,body:{model:'gpt-image-2.5-sunburst',prompt,n:1,size:'1024x1024',quality:'medium',output_format:'png'}});
+   if(result.data?.data?.length!==1)throw new ProviderError('A OpenAI não retornou uma única imagem verificável. Confira a tentativa antes de repetir.','uncertain');
+   return {base64:result.data.data[0].b64_json,requestId:result.requestId};
+  },
   async imageAccess(config){
    const startedAt=Date.now(),model='gpt-image-2.5-sunburst';let response;
    try{

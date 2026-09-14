@@ -4,6 +4,7 @@ import {filterAsync, mapAsync} from "./async-collections.mjs";
 import fs from 'node:fs';
 import {createStorage,hashFile} from './storage.mjs';
 import {createStudio, dailyPriority} from './studio.mjs';
+import {createImageWorkflow} from './image-generation.mjs';
 import {createConversation} from './conversation.mjs';
 import {createKernel} from './kernel.mjs';
 import {inspectApprovedAsset, createPublicationWorkflow} from './publication.mjs';
@@ -380,12 +381,16 @@ export async function createPortal({db, dataDir, userFrom, json, safeOrigin, pro
   }
   async function checkParent(org, payload) {
     if (!payload.parentJobId) return;
-    const parent = await db.prepare('SELECT cancel_requested FROM jobs WHERE id=? AND org_id=?').get(payload.parentJobId, org);
+    const parent = await db.prepare('SELECT cancel_requested,payload FROM jobs WHERE id=? AND org_id=?').get(payload.parentJobId, org);
     if (!parent) fail('Execução de origem não encontrada.', 404);
     if (parent.cancel_requested) throw new ProviderError('A conversa foi pausada; esta ação derivada não será iniciada.', 'canceled');
+    const parentOperation=parse(parent.payload).operationId?await kernel.get(org,parse(parent.payload).operationId):null;
+    if(parentOperation&&(parentOperation.paused||['cancelled','uncertain'].includes(parentOperation.state)))throw new ProviderError('A operação de origem foi pausada ou exige conferência; esta ação não será iniciada.','canceled');
   }
-  async function queue(org, user, kind, payload = {}, scheduledAt = null, key = randomUUID()) {
+  async function queue(org, user, kind, payload = {}, scheduledAt = null, key = randomUUID(), options = {}) {
     await checkParent(org, payload);
+    payload={...payload};delete payload.mediaAuthorization;
+    if(kind==='image')payload.provider='openai';
     if (!['agent', 'image', 'video', 'publish', 'send', 'insights', 'metaCampaign', 'googlePresence', 'conversation'].includes(kind)) fail('Ação inválida.');
     if (['image', 'video', 'publish'].includes(kind)) await record(org, 'content', payload.contentId);
     if (kind === 'send') await record(org, 'messages', payload.messageId);
@@ -408,7 +413,8 @@ export async function createPortal({db, dataDir, userFrom, json, safeOrigin, pro
         return decodeJob(previous);
       }
     }
-    if (['image', 'video', 'publish'].includes(kind) && (await metadata(org, 'studio:' + payload.contentId)).version) {
+    if(kind==='image'){let prepared;try{prepared=await imageWorkflow.prepare(org,payload.contentId);}catch(e){if(e instanceof ProviderError)e.status=409;throw e;}if(options.explicitImage)payload.mediaAuthorization={actor:user,sourceHash:prepared.sourceHash};}
+    if (['video', 'publish'].includes(kind) && (await metadata(org, 'studio:' + payload.contentId)).version) {
       const check = await studio.inspect(org, payload.contentId);
       fail(check.blockers.map(b => b.message).join(' '), 409);
     }
@@ -452,7 +458,7 @@ export async function createPortal({db, dataDir, userFrom, json, safeOrigin, pro
   async function jobTarget(job) {
     const p = parse(job.payload), kind = p.contentId ? 'content' : p.messageId ? 'messages' : p.campaignId ? 'campaigns' : null;
     const item = kind ? decodeRecord(await db.prepare('SELECT * FROM records WHERE org_id=? AND kind=? AND id=?').get(job.org_id, kind, p.contentId || p.messageId || p.campaignId)) : null;
-    const channel = ['image', 'video'].includes(job.kind) ? 'higgsfield' : job.kind === 'googlePresence' ? 'google' : ['metaCampaign', 'insights'].includes(job.kind) ? 'metaAds' : job.kind === 'agent' ? 'openai' : item?.channel || p.channel || 'other';
+    const channel = job.kind==='image'&&p.provider==='openai'?'openai':['image', 'video'].includes(job.kind) ? 'higgsfield' : job.kind === 'googlePresence' ? 'google' : ['metaCampaign', 'insights'].includes(job.kind) ? 'metaAds' : job.kind === 'agent' ? 'openai' : item?.channel || p.channel || 'other';
     return {
       channel,
       item
@@ -504,6 +510,7 @@ export async function createPortal({db, dataDir, userFrom, json, safeOrigin, pro
       error,
       external: ext
     });
+    if(row.kind==='image'&&['succeeded','blocked','failed','uncertain','canceled'].includes(state))await conversation.mediaResult(row,state,output||{},error);
   }
   async function authorizeJob(job) {
     if (job.kind === 'publish' && parse(job.external).publishedId) return;
@@ -529,7 +536,8 @@ export async function createPortal({db, dataDir, userFrom, json, safeOrigin, pro
       channel: target.channel,
       risk: ['image', 'video'].includes(job.kind) ? 'medium' : 'high',
       operationId: (await kernel.jobOperation(job))?.id,
-      userId: job.user_id
+      userId: job.user_id,
+      approval: job.kind==='image' && parse(job.payload).mediaAuthorization?.actor===job.user_id && parse(job.payload).mediaAuthorization?.sourceHash===(await imageWorkflow.prepare(job.org_id,parse(job.payload).contentId)).sourceHash
     });
   }
   async function beforeMutation(job) {
@@ -701,6 +709,7 @@ export async function createPortal({db, dataDir, userFrom, json, safeOrigin, pro
     providers,
     integration
   });
+  const imageWorkflow=createImageWorkflow({record,company,metadata,saveMetadata,studio,integration,providers,storeAsset,assetPath,systemUpdate,setJob,beforeMutation});
   publication = await createPublicationWorkflow({
     db,
     kernel,
@@ -910,6 +919,7 @@ export async function createPortal({db, dataDir, userFrom, json, safeOrigin, pro
       });
       return;
     }
+    if(job.kind==='image'&&payload.provider==='openai'){const output=await imageWorkflow.run(job);await setJob(job.id,'succeeded',{output});return;}
     if (job.kind === 'image' || job.kind === 'video') {
       const content = await record(org, 'content', payload.contentId), config = await integration(org, 'higgsfield');
       if (content.status === 'published') throw new ProviderError('Duplique o conteúdo publicado antes de gerar uma nova mídia.', 'blocked');
@@ -1847,7 +1857,7 @@ export async function createPortal({db, dataDir, userFrom, json, safeOrigin, pro
       if (req.method === 'POST' && !kind) {
         const d = await body(req);
         const key = str(d.idempotencyKey, 180) || randomUUID();
-        json(res, 201, await queue(org, user.id, d.kind, d.payload || ({}), d.scheduledAt, key));
+        json(res, 201, await queue(org, user.id, d.kind, d.payload || ({}), d.scheduledAt, key, {explicitImage:d.kind==='image'}));
         return true;
       }
       if (req.method === 'POST' && kind) {

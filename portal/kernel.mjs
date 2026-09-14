@@ -71,7 +71,7 @@ const error = (message, status = 409) => {
 const text = (value, max = 20000) => typeof value === 'string' ? value.trim().slice(0, max) : '';
 const policies = ['automatic', 'preauthorized', 'approval_required', 'forbidden'];
 const actions = ['*', 'publish', 'send', 'image', 'video', 'alter_campaign', 'delete_content', 'delete_record', 'change_profile', 'browser_action'];
-const channels = ['*', 'instagram', 'whatsapp', 'google', 'higgsfield', 'metaAds', 'website', 'other'];
+const channels = ['*', 'openai', 'instagram', 'whatsapp', 'google', 'higgsfield', 'metaAds', 'website', 'other'];
 const risks = ['*', 'low', 'medium', 'high'];
 const terminal = ['cancelled', 'learned'];
 const edges = {
@@ -529,7 +529,7 @@ export function createKernel({db, company, record, list: records, saveRecord, sy
     if (op && ['publish', 'send'].includes(action) && (!op.executionAuthorization || op.executionAuthorization.action !== action)) throw new ProviderError('Preparar uma entrega não autoriza publicar ou enviar. Use Executar ou Agendar na operação.', 'blocked');
     if (op && ['publish', 'send'].includes(action) && (op.approval.status !== 'approved' || op.approval.fingerprint !== await fingerprint(org, op) || op.executionAuthorization.fingerprint !== op.approval.fingerprint)) throw new ProviderError('A entrega ou o contexto mudou. Revise e autorize a versão atual antes de executar.', 'blocked');
     if (policy === 'approval_required' && !approval && !(op?.approval.status === 'approved' && op.approval.fingerprint === await fingerprint(org, op))) throw new ProviderError('Esta ação exige aprovação na operação.', 'blocked');
-    if (policy === 'preauthorized' && op && !op.executionAuthorization && risk !== 'low') throw new ProviderError('A ação precisa de autorização prévia registrada nesta operação.', 'blocked');
+    if (policy === 'preauthorized' && op && !op.executionAuthorization && risk !== 'low' && !approval) throw new ProviderError('A ação precisa de autorização prévia registrada nesta operação.', 'blocked');
     return {
       policy,
       action,
@@ -541,7 +541,7 @@ export function createKernel({db, company, record, list: records, saveRecord, sy
     const payload = job.payload || ({});
     const ids = [payload.operationId];
     for (const [key, kind] of [['contentId', 'content'], ['messageId', 'messages'], ['campaignId', 'campaigns']]) if (payload[key]) ids.push((await record(org, kind, payload[key])).operationId);
-    if (payload.parentJobId) ids.push(parse((await db.prepare('SELECT payload FROM jobs WHERE id=? AND org_id=?').get(payload.parentJobId, org))?.payload).operationId);
+    if (payload.parentJobId && !(job.kind==='image'&&ids.some(Boolean))) ids.push(parse((await db.prepare('SELECT payload FROM jobs WHERE id=? AND org_id=?').get(payload.parentJobId, org))?.payload).operationId);
     const found = [...new Set(ids.filter(Boolean))];
     if (found.length > 1) error('O alvo e a execução de origem pertencem a operações diferentes.');
     const id = found[0];
@@ -703,6 +703,11 @@ export function createKernel({db, company, record, list: records, saveRecord, sy
     }
     if (['image', 'video'].includes(job.kind)) {
       await onRecord(org, 'content', parse(job.payload).contentId);
+      if(output?.generation?.purpose==='base'&&!output.generation.stale){
+        const message='A imagem-base foi salva. Falta compor texto e logo oficiais e revisar a peça final.';
+        await persist(org,op.id,{production:{...op.production,state:'blocked_composition_required'}});
+        await block(org,op.id,message,'blocked','blocked_composition_required');
+      }
       return;
     }
     if (['publish', 'send', 'metaCampaign', 'googlePresence'].includes(job.kind)) {

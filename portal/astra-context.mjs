@@ -6,7 +6,7 @@ export function astraContext({company, integrations = [], worker = {}, cloud = f
     policy: company.policy || {},
     environment: cloud ? 'cloud' : 'local',
     worker,
-    connections: integrations.map(c => ({
+    connections: integrations.filter(c=>c.id!=='higgsfield').map(c => ({
       id: c.id,
       configured: !!c.configured,
       verifiedAt: c.verifiedAt || null,
@@ -17,6 +17,7 @@ export function astraContext({company, integrations = [], worker = {}, cloud = f
       drafts: true,
       scheduling: true,
       browser: !cloud,
+      imageGeneration: {provider:'openai',model:'gpt-image-2.5-sunburst',configured:!!integrations.find(c=>c.id==='openai')?.configured,tool:'queue_action',kind:'image',requires:'contentId de um rascunho com visualPrompt. Gera o arquivo, salva na Biblioteca e devolve na conversa. Respeita os limites e a autorização de criação da empresa. Conexão do Instagram só é necessária para publicar.'},
       videoEditing: false,
       videoEditingReason: 'O Astra Vídeo local ainda não está conectado ao Helpu. Não há ferramenta de corte, legendagem ou exportação desse editor neste ambiente.',
       videoGeneration: 'Depende da integração de geração, dos limites e das permissões da empresa.',

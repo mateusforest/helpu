@@ -46,3 +46,8 @@
  .chat-activity .operation-context{padding:16px}.conversation-composer .composer-hint{display:none}
 }
 @media(prefers-reduced-motion:reduce){.chat-activity>summary:before{transition:none}}
+.chat-image,.generated-image-preview{margin:18px 0;max-width:520px}
+.chat-image img,.generated-image-preview img{display:block;width:100%;height:auto;border-radius:14px;border:1px solid #e9e6e0}
+.chat-image figcaption,.generated-image-preview figcaption{font-size:13px;line-height:1.6;color:#77717b;margin:10px 0;overflow-wrap:anywhere}
+.chat-image a,.generated-image-preview a{color:#ad481f}
+.chat-media-working{display:flex;align-items:center;gap:10px;margin:18px 0;font-size:14px;color:#77717b}
