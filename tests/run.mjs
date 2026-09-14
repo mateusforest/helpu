@@ -17,3 +17,4 @@ import './astra-operation.test.mjs';
 import './account-connections.test.mjs';
 
 import './stripe-billing.test.mjs';
+import './chat-format.test.mjs';

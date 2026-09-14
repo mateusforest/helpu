@@ -163,7 +163,9 @@ test('conversa executa ferramentas autorizadas e preserva estado', async t => {
       await server.portal.tick();
       const st = (await api('conversations/' + id)).body;
       assert.equal(st.messages.length, 2);
-      assert.match(st.messages[1].text, /Registros preparados/);
+      assert.equal(st.messages[1].text, 'A tarefa foi criada.');
+      assert.ok(st.events.some(e => e.kind === 'operation_transition' && e.detail.to === 'understanding' && e.label === 'Entendendo seu pedido'));
+      assert.match(bodies[0].instructions, /Converse com o cliente de forma natural/);
       assert.ok(st.operations[0].plan.some(step => step.title === 'Preparar campanha'));
       assert.equal(st.operations[0].state, 'ready');
       assert.equal(st.jobs[0].state, 'succeeded');

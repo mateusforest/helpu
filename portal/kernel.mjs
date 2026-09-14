@@ -3,6 +3,7 @@ import {randomUUID, createHash} from 'node:crypto';
 import {ProviderError} from './providers.mjs';
 import {suppliedAssetApproved} from './publication.mjs';
 export const OPERATION_STATES = ['requested', 'understanding', 'planning', 'producing', 'reviewing', 'awaiting_approval', 'ready', 'scheduled', 'executing', 'verifying', 'completed', 'measuring', 'learned', 'blocked', 'uncertain', 'failed', 'cancelled'];
+const operationLabels = {requested:'Pedido recebido',understanding:'Entendendo seu pedido',planning:'Organizando os próximos passos',producing:'Preparando sua criação',reviewing:'Conferindo os detalhes',awaiting_approval:'Aguardando sua aprovação',ready:'Pronto para o próximo passo',scheduled:'Agendado',executing:'Executando seu pedido',verifying:'Conferindo o resultado',completed:'Concluído',measuring:'Acompanhando os resultados',learned:'Aprendizado registrado',blocked:'Preciso de um ajuste para continuar',uncertain:'O resultado precisa de conferência',failed:'Não foi possível concluir',cancelled:'Pedido cancelado'};
 export const COMPETENCIES = [{
   id: 'strategy',
   name: 'Estratégia',
@@ -166,7 +167,7 @@ export function createKernel({db, company, record, list: records, saveRecord, sy
       ...patch,
       state: next
     });
-    if (before.state !== next) await event(op, 'operation_transition', `Operação: ${next}`, {
+    if (before.state !== next) await event(op, 'operation_transition', operationLabels[next], {
       from: before.state,
       to: next,
       note
