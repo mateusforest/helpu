@@ -12,3 +12,4 @@ import './studio.test.mjs';
 import './studio-openai.test.mjs';
 import './supabase-transfer.test.mjs';
 import './cloud.test.mjs';
+import './astra-operation.test.mjs';

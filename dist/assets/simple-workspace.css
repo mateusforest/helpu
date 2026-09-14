@@ -1,0 +1,61 @@
+/* Five permanent destinations, on the bottom edge at every screen size. */
+.sidebar{padding:0 20px env(safe-area-inset-bottom);max-height:none;height:auto;overflow:visible}
+#portal-nav{display:grid;grid-template-columns:repeat(5,minmax(0,1fr));max-width:760px;overflow:visible;padding:0;gap:4px}
+#portal-nav .nav-link{display:flex;min-width:0;max-width:none;min-height:80px;padding:15px 6px 12px;gap:8px;font-size:12px;position:relative}
+#portal-nav .nav-link.active{font-weight:600;background:linear-gradient(#fff2e9aa,transparent)}
+#portal-nav .nav-link svg{width:21px;height:21px}
+.navigation-more{display:none!important}
+.workspace{padding-bottom:130px}
+.workspace-subnav{display:flex;flex-wrap:wrap;gap:8px;margin:0 0 26px}
+.workspace-subnav a{padding:9px 15px;border:1px solid var(--line);border-radius:24px;color:#64646c;font-size:13px;background:#fff;text-decoration:none}
+.workspace-subnav a[aria-current=page]{border-color:#ffb58f;color:#a63812;background:#fff2e9}
+.company-intro{max-width:640px}
+.company-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:16px;margin:26px 0}
+.company-tile{display:flex;flex-direction:column;gap:12px;padding:26px;border:1px solid var(--line);border-radius:16px;background:white;color:var(--ink);text-decoration:none}
+.company-tile:hover{border-color:#ffad83;background:#fffaf6}
+.company-tile svg{color:#db531e}.company-tile h2{font-size:18px;margin:0}.company-tile p{font-size:14px;line-height:1.6;color:#73737a;margin:0}.company-tile small{margin-top:auto;color:#ae421b;font-size:12px}
+.company-resources{border:1px solid var(--line);border-radius:16px;background:#fff;padding:22px;margin-top:24px}
+.company-resources summary{cursor:pointer;font-size:15px;font-weight:600}.company-resources>p{font-size:14px;color:#73737a;margin:12px 0}
+.company-links{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:10px;margin-top:18px}.company-links a{padding:13px;background:#f8f7f5;border-radius:9px;text-decoration:none;color:#47474c;font-size:14px}
+.astra-state{display:flex;gap:12px;align-items:center;flex-wrap:wrap;font-size:12px;color:#77777f;margin:0 0 22px}
+.astra-state a{color:inherit;text-decoration:none}.astra-state .astra-connection{display:inline-flex;align-items:center;gap:8px;color:#39393e;font-weight:600}
+.astra-dot{display:inline-block;width:7px;height:7px;border-radius:50%;background:#b7ada4}.astra-dot.is-ready{background:#348d65}
+.astra-state .astra-routine{margin-left:auto;border:1px solid var(--line);border-radius:18px;padding:7px 12px;background:white}
+.conversation-toolbar{margin-bottom:20px}.conversation-toolbar>a:last-child{margin-left:auto}
+.conversation-welcome{padding-top:32px;margin-bottom:28px}
+.conversation-welcome h1{font-size:clamp(32px,4vw,48px);line-height:1.15;letter-spacing:-.045em;color:#343437;margin:24px 0 18px}
+.conversation-welcome p{max-width:490px;margin-inline:auto;font-size:16px;line-height:1.65;color:#75757d}
+.conversation-page{max-width:940px;margin-inline:auto}
+.conversation-thread-head h1{white-space:normal;overflow:visible;font-size:22px;line-height:1.45;overflow-wrap:anywhere}
+.conversation-composer{position:sticky;bottom:calc(92px + env(safe-area-inset-bottom));z-index:12;background:#fff;box-shadow:0 8px 32px #27231e0d;border:1px solid #dedddb;border-radius:22px;margin-top:24px}
+.conversation-composer textarea{font-size:16px;line-height:1.6;color:#39393e}
+.conversation-composer:focus-within{border-color:#f5a27a;box-shadow:0 5px 28px #ee69200d}
+.conversation-suggestions{display:flex;justify-content:center;flex-wrap:wrap;gap:9px;margin-top:20px}
+.conversation-suggestions button{border:1px solid #e7e4e0;border-radius:24px;background:#fff;padding:11px 16px;font-size:13px;color:#55555b}
+.conversation-suggestions button:hover{border-color:#ffa779;background:#fff7f0}
+.chat-attention{border:1px solid #edd9c8;border-radius:12px;background:#fffaf4;padding:12px 16px;margin:20px 0;font-size:13px;color:#775d48}
+.chat-attention summary{cursor:pointer;font-weight:500}.chat-attention p{line-height:1.5;margin:12px 0}.chat-attention button{margin-top:2px}
+.conversation-thread-head{margin-bottom:20px}.chat-message-text{line-height:1.75}
+.simple-library-note{margin:0 0 22px;color:#74747b;font-size:14px;line-height:1.6}
+.simple-library-note a{color:#ae421b}
+.astra-capabilities{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:14px;margin:22px 0}
+.astra-capability{padding:20px;border:1px solid var(--line);border-radius:12px;background:#fff}
+.astra-capability strong{display:block;font-size:15px;margin-bottom:8px}.astra-capability p{margin:0;color:#727279;font-size:13px;line-height:1.65}
+.astra-capability small{display:block;margin-top:12px;color:#9b5b2f;font-size:12px}
+.topbar-home{display:none}.company-menu-link{display:block;margin:20px auto;text-align:center;color:#b3451b}
+@media(max-width:700px){
+ .sidebar{padding-inline:6px}#portal-nav{gap:0}#portal-nav .nav-link{min-width:0;min-height:72px;padding:12px 2px 10px;font-size:10px;gap:7px}
+ #portal-nav .nav-link svg{width:20px;height:20px}.workspace{padding:24px 16px 116px}
+ .company-grid,.astra-capabilities{grid-template-columns:1fr}.company-grid{gap:10px}.company-tile{padding:20px}.company-links{grid-template-columns:1fr 1fr}
+ .company-intro h1{font-size:30px}.workspace-subnav{gap:6px;margin-bottom:20px}.workspace-subnav a{font-size:12px;padding:8px 12px}
+ .astra-state{gap:8px;font-size:11px;margin-bottom:12px}.astra-state .astra-routine{padding:6px 9px}
+ .conversation-toolbar{gap:12px;flex-wrap:wrap;font-size:12px;margin-bottom:8px}.conversation-toolbar>a:last-child{margin-left:auto}
+ .conversation-welcome{padding-top:12px;margin-bottom:20px}.conversation-welcome h1{font-size:31px;margin:16px 0}.conversation-welcome p{font-size:14px}
+ .helpu-intelligence{width:32px;height:32px;margin-bottom:12px}.conversation-welcome .intelligence-label{display:none}
+ .conversation-composer{bottom:calc(82px + env(safe-area-inset-bottom));border-radius:18px;padding:16px;margin-top:16px}
+ .conversation-composer textarea{font-size:16px}.composer-controls{gap:5px}.composer-mode select{max-width:125px;font-size:11px}.attach-button{font-size:11px;padding:5px 0}
+ .conversation-suggestions{gap:7px}.conversation-suggestions button,.conversation-suggestions button:last-child{display:flex;font-size:12px;padding:8px 11px;min-height:38px}
+ .conversation-thread-head h1{font-size:19px}.chat-message{max-width:100%}.chat-message.user{margin-left:20px}
+}
+@media(max-width:360px){#portal-nav .nav-link{font-size:9px;white-space:normal}#portal-nav .nav-link span{max-width:100%;line-height:1.2}.composer-mode select{max-width:108px}}
+@media(prefers-reduced-motion:reduce){*{scroll-behavior:auto!important}}

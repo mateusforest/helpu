@@ -109,8 +109,8 @@ try {
   });
   const nav = async route => {
     const link = page.locator('#portal-nav a[href="#/' + route + '"]');
-    if (!await link.isVisible()) await page.locator('#navigation-more').click();
-    await link.click();
+    if (await link.count()) await link.click();
+    else await page.evaluate(route => { location.hash = '#/' + route; }, route);
     await page.waitForFunction(route => document.body.dataset.view === route, route);
     assert.equal(await page.locator('#workspace h1').count(), 1);
   };
@@ -129,8 +129,8 @@ try {
   await page.locator('[data-auth="signup"] [type="submit"]').click();
   await page.waitForURL('**/portal.html');
   await page.locator('#conversation-prompt').waitFor();
-  assert.equal(await page.locator('#portal-nav a').count(), 17);
-  checks.push('Cadastro sintético pelo formulário e 17 áreas preservadas.');
+  assert.equal(await page.locator('#portal-nav a').count(), 5);
+  checks.push('Cadastro sintético pelo formulário e cinco destinos principais. Áreas secundárias acessíveis por rota.');
   await page.locator('#user-menu').click();
   await page.locator('#portal-logout').click();
   await page.waitForURL('**/entrar.html');

@@ -261,7 +261,6 @@ try {
     await page.locator('#user-menu').click();
     await shot('account-menu-' + width);
     await page.locator('#dialog-close').click();
-    await page.locator('#navigation-more').click();
     await shot('navigation-' + width);
   }
   const actual = await api('state');
@@ -273,9 +272,11 @@ try {
   assert.deepEqual(errors, []);
   const navBounds = await page.evaluate(() => ({
     right: document.querySelector('#portal-nav').getBoundingClientRect().right,
-    moreLeft: document.querySelector('#navigation-more').getBoundingClientRect().left
+    viewport: innerWidth,
+    count: document.querySelectorAll('#portal-nav a').length
   }));
-  assert.ok(navBounds.right <= navBounds.moreLeft, 'A navegação não deve passar por baixo do botão de mais áreas.');
+  assert.ok(navBounds.right <= navBounds.viewport, 'Os cinco destinos precisam caber na tela.');
+  assert.equal(navBounds.count, 5);
   const report = {
     directory,
     navBounds,

@@ -608,8 +608,16 @@ export async function createPortal({db, dataDir, userFrom, json, safeOrigin, pro
       jobs: await db.prepare('SELECT id,kind,state,idempotency_key FROM jobs WHERE org_id=?').all(org)
     });
   }
-  async function state(org) {
+  async function workerState() {
     const workerLease=cloud?await db.prepare('SELECT last_started_at,last_completed_at,last_error,expires_at FROM worker_leases WHERE id=?').get('operating-kernel'):null;
+    return {
+        lastTick: cloud?workerLease?.last_started_at||null:lastTick,
+        running: cloud?!!workerLease?.last_completed_at&&Date.now()-workerLease.last_completed_at<180000&&!workerLease.last_error:!stopped&&startScheduler,
+        local: !cloud,
+        ...(cloud?{state:workerLease?.last_error?'failed':workerLease?.expires_at>Date.now()?'working':workerLease?.last_completed_at?'last_run_verified':'not_verified',lastCompletedAt:workerLease?.last_completed_at||null,error:workerLease?.last_error||null}:{})
+      };
+  }
+  async function state(org) {
     const all = Object.fromEntries(await mapAsync(KINDS, async k => [k, await list(org, k)]));
     return {
       company: await company(org),
@@ -623,12 +631,7 @@ export async function createPortal({db, dataDir, userFrom, json, safeOrigin, pro
       agents: AGENTS,
       jobs: (await db.prepare('SELECT * FROM jobs WHERE org_id=? ORDER BY created_at DESC LIMIT 150').all(org)).map(decodeJob),
       audit: await db.prepare('SELECT * FROM audit WHERE org_id=? ORDER BY created_at DESC LIMIT 60').all(org),
-      worker: {
-        lastTick: cloud?workerLease?.last_started_at||null:lastTick,
-        running: cloud?!!workerLease?.last_completed_at&&Date.now()-workerLease.last_completed_at<180000&&!workerLease.last_error:!stopped&&startScheduler,
-        local: !cloud,
-        ...(cloud?{state:workerLease?.last_error?'failed':workerLease?.expires_at>Date.now()?'working':workerLease?.last_completed_at?'last_run_verified':'not_verified',lastCompletedAt:workerLease?.last_completed_at||null,error:workerLease?.last_error||null}:{})
-      }
+      worker: await workerState()
     };
   }
   async function budget(org, kind, id, policy) {
@@ -727,6 +730,8 @@ export async function createPortal({db, dataDir, userFrom, json, safeOrigin, pro
     respond: conversationRespond,
     assetPath,
     updateProfile,
+    integrationState,
+    workerState,
     reviewPublication: publication.review,cloud
   });
   async function verifyPublication(job, content, external) {
