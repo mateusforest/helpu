@@ -2,7 +2,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import assert from 'node:assert/strict';
 const root=path.resolve('dist');
-const pages=['index','cadastro','entrar','conta','portal'];
+const pages=['index','cadastro','entrar','conta','portal','retorno'];
 for(const name of pages){
   const source=fs.readFileSync(path.join(root,name+'.html'),'utf8');
   for(const [,file]of source.matchAll(/(?:src|href|poster)="(assets\/[^"?#]+)"/g))assert.ok(fs.existsSync(path.join(root,file)),'Missing asset: '+file);

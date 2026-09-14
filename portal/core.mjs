@@ -1,3 +1,5 @@
+import {createStripeBilling} from './stripe-billing.mjs';
+import {createInstagramLogin} from './instagram-login.mjs';
 import {filterAsync, mapAsync} from "./async-collections.mjs";
 import fs from 'node:fs';
 import {createStorage,hashFile} from './storage.mjs';
@@ -42,7 +44,7 @@ const statuses = {
   messages: ['draft', 'recorded'],
   tasks: ['todo', 'doing', 'done']
 };
-export async function createPortal({db, dataDir, userFrom, json, safeOrigin, providers = createProviders(), startScheduler = true, browserLaunch, conversationRespond, publicationFetch, publicationResolve,cloud=false,storageClient}) {
+export async function createPortal({db, dataDir, userFrom, json, safeOrigin, providers = createProviders(), startScheduler = true, browserLaunch, conversationRespond, publicationFetch, publicationResolve,cloud=false,storageClient,instagramLoginFetch,instagramLoginEnv,stripeFetch,stripeEnv}) {
   if(db.dialect==='postgres'){
     const migration=await db.prepare('SELECT version FROM portal_migrations ORDER BY version DESC LIMIT 1').get();
     if(migration?.version!==4)throw new Error('Supabase schema migration is required');
@@ -129,6 +131,20 @@ export async function createPortal({db, dataDir, userFrom, json, safeOrigin, pro
     const now = Date.now();
     await db.prepare("INSERT INTO records(id,org_id,kind,data,external_id,created_at,updated_at) VALUES(?,?,'connection_validation',?,?,?,?) ON CONFLICT(org_id,kind,external_id) DO UPDATE SET data=excluded.data,version=records.version+1,updated_at=excluded.updated_at").run(randomUUID(), org, JSON.stringify(value), key, now, now);
   }
+  const billing=createStripeBilling({db,metadata,saveMetadata,company,fetcher:stripeFetch,env:stripeEnv});
+  const instagramLogin=createInstagramLogin({db,access,fetcher:instagramLoginFetch,env:instagramLoginEnv,saveConnection:async(org,actor,value)=>{
+    const existing=await integration(org,'instagram'),config={...existing,accessToken:value.accessToken,accountId:value.accountId,tokenExpiresAt:value.expiresAt,loginMethod:'instagram'};
+    const time=Date.now();
+    await db.exec('BEGIN IMMEDIATE');
+    try{
+      await db.prepare("INSERT INTO integrations(org_id,provider,sealed,verified_at,updated_at) VALUES(?,'instagram',?,?,?) ON CONFLICT(org_id,provider) DO UPDATE SET sealed=excluded.sealed,verified_at=excluded.verified_at,error=NULL,updated_at=excluded.updated_at").run(org,seal(config),time,time);
+      await saveMetadata(org,'api:instagram',{status:'identity_detected',accountId:value.accountId,username:value.username,observedAt:time});
+      await saveMetadata(org,'validation:instagram',{status:'identity_verified',provider:'instagram',completedAt:time,expiresAt:value.expiresAt});
+      await audit(org,actor,'Instagram conectado com login oficial','instagram','@'+value.username);
+      await db.exec('COMMIT');
+    }catch(e){await db.exec('ROLLBACK');throw e;}
+    await kernel.onBrand(org);
+  }});
   async function assetPath(org, id) {
     const a = await db.prepare('SELECT * FROM assets WHERE id=? AND org_id=?').get(id, org);
     if (!a) fail('Arquivo não encontrado.', 404);
@@ -628,6 +644,7 @@ export async function createPortal({db, dataDir, userFrom, json, safeOrigin, pro
       operations: await kernel.list(org),
       assets: await files(org),
       integrations: await integrationState(org),
+      connectionLogin: {instagram:instagramLogin.status()},
       agents: AGENTS,
       jobs: (await db.prepare('SELECT * FROM jobs WHERE org_id=? ORDER BY created_at DESC LIMIT 150').all(org)).map(decodeJob),
       audit: await db.prepare('SELECT * FROM audit WHERE org_id=? ORDER BY created_at DESC LIMIT 60').all(org),
@@ -1426,6 +1443,7 @@ export async function createPortal({db, dataDir, userFrom, json, safeOrigin, pro
   }
   async function handle(req, res, pathname) {
     const url = new URL(req.url, 'http://localhost');
+    if(pathname==='/api/connect/instagram/callback'){try{await instagramLogin.callback(req,res);}catch{if(!res.headersSent)res.writeHead(303,{Location:'/retorno.html?connection=failed','Cache-Control':'no-store','Referrer-Policy':'no-referrer'}).end();}return true;}
     if (pathname.startsWith('/webhooks/')) {
       const [, , org, provider] = pathname.split('/');
       await webhook(req, res, url, org, provider);
@@ -1518,6 +1536,12 @@ export async function createPortal({db, dataDir, userFrom, json, safeOrigin, pro
     }
     const parts = pathname.split('/').filter(Boolean), org = parts[2], section = parts[3], kind = parts[4], id = parts[5];
     await access(org, user);
+    if(section==='billing'){
+      if(req.method==='GET'&&!kind)json(res,200,await billing.state(org,user));
+      else if(req.method==='POST'&&kind){await body(req);json(res,200,await billing.action(org,user,kind));}
+      else fail('Método não permitido.',405);
+      return true;
+    }
     if(section==='files'&&kind==='prepare'&&req.method==='POST'){
       if(!privateStorage){json(res,200,{mode:'local'});return true;}
       const input=await body(req),name=str(input.name,150),extension=path.extname(name).toLowerCase();
@@ -1860,6 +1884,7 @@ export async function createPortal({db, dataDir, userFrom, json, safeOrigin, pro
       }
     }
     if (section === 'integrations') {
+      if(kind==='instagram'&&id==='login'&&req.method==='POST'){json(res,200,await instagramLogin.start(req,res,org,user));return true;}
       const def = CONNECTORS.find(c => c.id === kind);
       if (!def) fail('Integração inválida.');
       if (req.method === 'PUT') {

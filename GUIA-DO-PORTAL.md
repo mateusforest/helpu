@@ -1,3 +1,5 @@
+Veja [Conta, Instagram e Stripe](CONTA-E-CONEXOES.md) para a revisão atual da conta, login oficial, faturamento e configuração na Vercel.
+
 # Helpu — portal de marketing
 
 O portal começa pela conversa e reúne 17 áreas da operação, com informações persistentes e empresas separadas. A landing e a animação original do Higgsfield foram preservadas.
@@ -58,7 +60,7 @@ As integrações e o gerenciador de sessões estão implementados, mas não fora
 - **OpenAI:** chave da API com acesso ao modelo configurado. A conversa usa `gpt-6-astra` como padrão; os agentes de textos estruturados continuam com `gpt-5-mini` como padrão. Ambos são configuráveis e usam a Responses API. A execução utiliza a memória da empresa e registra a entrega.
 Os requisitos dos canais abaixo se referem ao caminho por API. A conexão pela janela do navegador usa o login no próprio serviço.
 
-- **Higgsfield:** identificador e segredo da API da sua conta de desenvolvedor. Imagens usam `higgsfield-ai/soul/v2/standard`; vídeos usam o contrato image-to-video DoP, padrão `dop-turbo`, com uma imagem inicial HTTPS. Disponibilidade e cobrança dependem da conta. A biblioteca preserva o resultado quando o endereço retornado pertence aos hosts permitidos.
+- **Integração legada Higgsfield (removida das opções da interface):** identificador e segredo da API da sua conta de desenvolvedor. Imagens usam `higgsfield-ai/soul/v2/standard`; vídeos usam o contrato image-to-video DoP, padrão `dop-turbo`, com uma imagem inicial HTTPS. Disponibilidade e cobrança dependem da conta. A biblioteca preserva o resultado quando o endereço retornado pertence aos hosts permitidos.
 - **Instagram:** conta profissional, token e permissões de publicação/mensagens do fluxo Instagram Login. A versão da Graph API é configurável. Publicação de foto, reel, story e carrossel de 2–10 fotos. O canal precisa conseguir baixar a mídia de uma URL HTTPS pública; fotos devem atender ao formato JPEG exigido pelo Instagram. Arquivos privados enviados à biblioteca não se tornam públicos automaticamente. Stories também dependem do tipo e das permissões da conta.
 - **WhatsApp:** token, identificador do número e modelos aprovados. Mensagem livre depende de uma mensagem real recebida nas últimas 24 horas. Fora da janela, exige modelo aprovado e consentimento registrado. O envio em grupo cria pedidos individuais para os contatos elegíveis; não ultrapassa o limite diário. A aceitação da API não é apresentada como entrega.
 - **Google:** acesso autorizado a Business Profile APIs, OAuth `business.manage`, conta e perfil. Há renovação quando refresh token, client ID e secret são informados. Cadastro guiado contempla estabelecimento que atende no endereço físico; a verificação continua com o Google. Publicações e avaliações exigem perfil e permissões compatíveis.
@@ -83,7 +85,7 @@ Esta instalação está funcionando localmente. Para páginas de captação exte
 
 O proxy deve preservar o Host público e terminar o HTTPS. Quando há origem pública, cookies recebem `Secure`. Informe a mesma origem em Autonomia → Endereço público e configure os callbacks em Integrações. Cada canal usa app secret e verify token próprios.
 
-Cadastro local não verifica o e-mail e não inclui recuperação por e-mail, pagamentos, convites de equipe ou gestão de planos. Esses serviços não foram conectados. Esta entrega não é um lançamento comercial público.
+Cadastro local não verifica o e-mail e não inclui recuperação por e-mail ou convites de equipe. Planos e faturamento têm integração com Stripe preparada, com ativação descrita em CONTA-E-CONEXOES.md. Esta entrega não é um lançamento comercial público.
 
 ## Dados e manutenção
 

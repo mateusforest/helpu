@@ -30,7 +30,7 @@ test('PostgreSQL runtime: private schema, sessions, tenants, files, jobs and res
    return new Response(objects.get(key)||null,{status:objects.has(key)?200:404});
  }});
  const providers={text:async()=>({pieces:[{title:'TEST ONLY existing draft',caption:'TEST ONLY factual text',visualPrompt:'TEST ONLY brief',format:'image',channel:'instagram'}],summary:'TEST ONLY',questions:[],recommendations:[]})};
- const open=async()=>{server=await createHelpuServer({dataDir:directory,database,cloud:true,portalOptions:{startScheduler:false,storageClient:storage,providers}});await new Promise(r=>server.listen(0,'127.0.0.1',r));origin='http://127.0.0.1:'+server.address().port;};
+ const open=async()=>{server=await createHelpuServer({dataDir:directory,database,cloud:true,portalOptions:{startScheduler:false,storageClient:storage,providers,instagramLoginEnv:{HELPU_PUBLIC_URL:"https://helpu.example",HELPU_INSTAGRAM_APP_ID:"123",HELPU_INSTAGRAM_APP_SECRET:"test-only"},stripeEnv:{STRIPE_SECRET_KEY:"sk_test_cloud",STRIPE_PRICE_ID:"price_cloud",HELPU_PUBLIC_URL:"https://helpu.example"},stripeFetch:async(url)=>{const route=new URL(url).pathname;if(route.endsWith("/prices/price_cloud"))return Response.json({id:"price_cloud",active:true,type:"recurring",billing_scheme:"per_unit",unit_amount:1000,currency:"brl",recurring:{interval:"month",usage_type:"licensed"},product:{name:"Teste"}});if(route.endsWith("/customers"))return Response.json({id:"cus_cloud"});if(route.endsWith("/checkout/sessions"))return Response.json({data:[],id:"cs_cloud",url:"https://checkout.stripe.com/c/pay/test_cloud"});return Response.json({data:[]});}}});await new Promise(r=>server.listen(0,'127.0.0.1',r));origin='http://127.0.0.1:'+server.address().port;};
  const request=async(route,method='GET',body,session=cookie)=>{const response=await fetch(origin+route,{method,headers:{Origin:origin,Cookie:session,'Content-Type':'application/json'},body:body===undefined?undefined:JSON.stringify(body)});return {status:response.status,headers:response.headers,body:await response.json()};};
  const close=async()=>{await server.portal.shutdown();await new Promise(r=>server.close(r));};
  let org,asset,content;
@@ -42,6 +42,17 @@ test('PostgreSQL runtime: private schema, sessions, tenants, files, jobs and res
    const signup=await request('/api/auth/signup','POST',{name:'TEST ONLY',company:'TEST ONLY CLOUD',email:'cloud@example.test',password:'test-only-password-123'});assert.equal(signup.status,201,JSON.stringify(failures));cookie=signup.headers.get('set-cookie').split(';')[0];
    const bootstrap=await request('/api/portal/bootstrap');assert.equal(bootstrap.status,200,JSON.stringify(failures));org=bootstrap.body.companies[0].id;
    const login=await request('/api/auth/login','POST',{email:'CLOUD@EXAMPLE.TEST',password:'test-only-password-123'});assert.equal(login.status,200);cookie=login.headers.get('set-cookie').split(';')[0];
+  });
+  await t.test('conta, estado OAuth e faturamento persistem no PostgreSQL',async()=>{
+   assert.equal((await request('/api/account')).status,200);
+   assert.equal((await request('/api/account/profile','POST',{name:'Nome atualizado'})).status,200);
+   assert.equal((await request('/api/account')).body.user.name,'Nome atualizado');
+   const ig=await request('/api/portal/'+org+'/integrations/instagram/login','POST',{});assert.equal(ig.status,200,JSON.stringify(failures));
+   const cancelled=await fetch(origin+'/api/connect/instagram/callback?error=access_denied&state='+new URL(ig.body.url).searchParams.get('state'),{headers:{Cookie:ig.headers.get('set-cookie').split(';')[0]},redirect:'manual'});assert.equal(cancelled.status,303);assert.match(cancelled.headers.get('location'),/cancelled/,JSON.stringify(failures));
+   assert.equal((await request('/api/portal/'+org+'/billing')).status,200,JSON.stringify(failures));
+   assert.equal((await request('/api/portal/'+org+'/billing/checkout','POST',{})).status,200,JSON.stringify(failures));
+   const change=await request('/api/account/password','POST',{currentPassword:'test-only-password-123',newPassword:'new-cloud-password-123'});assert.equal(change.status,200,JSON.stringify(failures));cookie=change.headers.get('set-cookie').split(';')[0];
+   assert.equal((await request('/api/account')).body.security.activeSessions,1);
   });
   await t.test('same tenant records and creative operation survive cloud reads',async()=>{
    assert.equal((await request('/api/portal/'+org+'/company','PATCH',{profile:{description:'TEST ONLY business',audience:'TEST ONLY audience'}})).status,200,JSON.stringify(failures));

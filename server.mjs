@@ -1,3 +1,4 @@
+import {createAccount} from './portal/account.mjs';
 import http from 'node:http';
 import fs from 'node:fs';
 import path from 'node:path';
@@ -114,6 +115,7 @@ export async function createHelpuServer({dataDir = process.env.HELPU_DATA_DIR ||
     safeOrigin,
     ...portalOptions,cloud
   })));
+  const handleAccount=createAccount({db,userFrom,safeOrigin,json,readBody,session,tokenFrom,hashToken,scrypt,limited});
   const handler = async (req, res) => {
     if (!(/^(?:localhost|127\.0\.0\.1)(?::\d+)?$/i).test(req.headers.host || '') && !allowedHosts.has(req.headers.host)) {
       res.writeHead(403, {
@@ -136,6 +138,7 @@ export async function createHelpuServer({dataDir = process.env.HELPU_DATA_DIR ||
       return;
     }
     try {
+      if (await handleAccount(req,res,pathname)) return;
       if (await portal.handle(req, res, pathname)) return;
       if (pathname.startsWith('/api/')) {
         if (req.method === 'GET' && pathname === '/api/auth/me') {

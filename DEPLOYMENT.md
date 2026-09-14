@@ -121,3 +121,7 @@ de verificações próprias. Conferir a versão ativa da Vercel, a branch main,
 o retorno real do Cron e as políticas da empresa ao investigar uma falha.
 As evidências ficam em `.superdesign/async-migration/deployment-evidence.json`,
 sem valores de credenciais.
+
+## Minha conta, Instagram e Stripe
+
+A configuração opcional do login oficial e dos pagamentos está em [CONTA-E-CONEXOES.md](CONTA-E-CONEXOES.md). As rotas novas reutilizam o runtime existente e as tabelas atuais; não requerem migração adicional. Cadastre as credenciais na Vercel antes de testar os serviços externos.

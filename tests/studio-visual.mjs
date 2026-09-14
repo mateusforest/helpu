@@ -259,8 +259,9 @@ try {
     assert.equal(await page.locator('.content-card').count(), 1);
     await shot('search-' + width);
     await page.locator('#user-menu').click();
+    await page.locator('.account-section').waitFor();
     await shot('account-menu-' + width);
-    await page.locator('#dialog-close').click();
+    await nav('studio');
     await shot('navigation-' + width);
   }
   const actual = await api('state');

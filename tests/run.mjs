@@ -13,3 +13,7 @@ import './studio-openai.test.mjs';
 import './supabase-transfer.test.mjs';
 import './cloud.test.mjs';
 import './astra-operation.test.mjs';
+
+import './account-connections.test.mjs';
+
+import './stripe-billing.test.mjs';
