@@ -52,17 +52,20 @@ test('cadastro, autenticação e isolamento de sessão', async t => {
       })).status, 403);
     });
     await t.test('rejeita nomes de host externos na aplicação local', async () => {
-      const code = await new Promise((resolve, reject) => {
+      const denied = await new Promise((resolve, reject) => {
         http.get(origin + '/api/auth/me', {
           headers: {
             Host: 'externo.example'
           }
         }, response => {
-          response.resume();
-          resolve(response.statusCode);
+          let body='';response.setEncoding('utf8');response.on('data',chunk=>body+=chunk);
+          response.on('end',()=>resolve({status:response.statusCode,type:response.headers['content-type'],body:JSON.parse(body)}));
         }).on('error', reject);
       });
-      assert.equal(code, 403);
+      assert.equal(denied.status, 403);
+      assert.match(denied.type, /application\/json/);
+      assert.equal(denied.body.code, 'domain_not_allowed');
+      assert.match(denied.body.error, /domínio/);
     });
     await t.test('cria a conta e uma sessão protegida sem expor credenciais', async () => {
       const response = await request('/api/auth/signup', account);

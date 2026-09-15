@@ -4,6 +4,19 @@ As cinco seções da barra inferior foram mantidas. O botão do usuário abre Mi
 
 Conexões reúne a inteligência e os canais. Higgsfield foi retirado das opções visíveis; registros antigos e a integração interna foram preservados. Na Vercel, não são oferecidos botões para abrir sessões locais de navegador. Os títulos antigos “Contexto: positioning”, por exemplo, aparecem em português sem alterar os dados históricos.
 
+## Domínio próprio: helpumkt.com
+
+Na conferência de 15/09/2026, `helpumkt.com` redireciona para `www.helpumkt.com`. O servidor responde ao teste de saúde, mas recusa a autenticação nesse domínio com HTTP 403; o endereço antigo da Vercel responde normalmente. Isso indica que o domínio novo ainda não está na lista permitida da aplicação, que usa `HELPU_PUBLIC_URL` e o endereço do deployment.
+
+1. No projeto da Helpu na Vercel, abra **Settings → Environment Variables**.
+2. Atualize `HELPU_PUBLIC_URL` no ambiente **Production** para `https://www.helpumkt.com`, sem caminho adicional.
+3. Salve antes do próximo push/deploy. A mudança de variável só entra em vigor em um novo deployment. O responsável pode usar o próximo push para publicar também a correção das mensagens de login.
+4. Após o deploy, abra `https://www.helpumkt.com/entrar.html`. Sem sessão, `/api/auth/me` deve retornar HTTP 401 com uma mensagem JSON pedindo login, e não HTTP 403 de domínio recusado.
+
+A configuração da Vercel não foi alterada por esta correção. Não é necessário trocar a senha nem criar outra conta por causa desse bloqueio. Ao configurar Instagram, use `https://www.helpumkt.com/api/connect/instagram/callback` como retorno autorizado. Se já houver uma configuração externa com o endereço antigo, atualize-a também.
+
+Referência: [Vercel — alterações de variáveis exigem novo deployment](https://vercel.com/docs/environment-variables/managing-environment-variables).
+
 ## Ativar o login do Instagram
 
 Ter o perfil da Helpu no Instagram é diferente de ter um aplicativo no painel de desenvolvedores da Meta. O código do login oficial está preparado; a configuração externa ainda precisa ser feita.

@@ -118,9 +118,7 @@ export async function createHelpuServer({dataDir = process.env.HELPU_DATA_DIR ||
   const handleAccount=createAccount({db,userFrom,safeOrigin,json,readBody,session,tokenFrom,hashToken,scrypt,limited});
   const handler = async (req, res) => {
     if (!(/^(?:localhost|127\.0\.0\.1)(?::\d+)?$/i).test(req.headers.host || '') && !allowedHosts.has(req.headers.host)) {
-      res.writeHead(403, {
-        'Content-Type': 'text/plain; charset=utf-8'
-      }).end('Este acesso é local.');
+      json(res, 403, {error: 'Este domínio ainda não está habilitado para acessar a Helpu. O responsável precisa atualizar o endereço do sistema na hospedagem.', code: 'domain_not_allowed'});
       return;
     }
     res.setHeader('X-Content-Type-Options', 'nosniff');
