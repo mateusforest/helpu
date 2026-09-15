@@ -193,7 +193,7 @@ test('revisão visual envia a imagem real e exige um critério visual explícito
   }), e => e.state === 'blocked');
 });
 const identity = {
-  id: 'account-1',
+  id: '17841400000000001',
   username: 'eme.test'
 };
 const media = {
@@ -207,7 +207,7 @@ const media = {
 };
 const config = {
   accessToken: 'private-token',
-  accountId: 'account-1'
+  accountId: '17841400000000001'
 };
 function instagramFetcher(overrides = {}, requests = []) {
   return async (url, options) => {
@@ -216,7 +216,7 @@ function instagramFetcher(overrides = {}, requests = []) {
       method: options.method
     });
     const target = new URL(url).pathname.split('/').at(-1);
-    return Response.json(target === 'account-1' ? overrides.identity || identity : target === 'container-1' ? {
+    return Response.json(target === '17841400000000001' ? overrides.identity || identity : target === 'container-1' ? {
       status_code: 'PUBLISHED'
     } : {
       ...media,
@@ -227,15 +227,15 @@ function instagramFetcher(overrides = {}, requests = []) {
 test('identidade e publicação Instagram exigem conta, legenda, mídia e permalink correspondentes', async () => {
   const requests = [], provider = createProviders(instagramFetcher({}, requests));
   const actual = await provider.instagramIdentity(config);
-  assert.equal(actual.id, 'account-1');
+  assert.equal(actual.id, '17841400000000001');
   assert.equal(actual.username, 'eme.test');
   const result = await provider.instagramVerify(config, 'media-1', 'container-1', {
-    expectedAccountId: 'account-1',
+    expectedAccountId: '17841400000000001',
     expectedCaption: 'Legenda aprovada.',
     expectedMediaType: 'IMAGE'
   });
   assert.equal(result.evidence.type, 'instagram_media_readback');
-  assert.equal(result.identity.id, 'account-1');
+  assert.equal(result.identity.id, '17841400000000001');
   assert.equal(result.permalink, media.permalink);
   assert.equal(result.caption, media.caption);
   assert.equal(result.mediaType, 'IMAGE');
@@ -277,7 +277,7 @@ test('métricas Instagram preservam zero real e deixam ausência explícita', as
       method: options.method
     });
     const target = new URL(url);
-    if (target.pathname.endsWith('/account-1')) return Response.json(identity);
+    if (target.pathname.endsWith('/17841400000000001')) return Response.json(identity);
     if (target.pathname.endsWith('/media-1')) return Response.json(media);
     const name = target.searchParams.get('metric');
     return Response.json({
@@ -298,7 +298,7 @@ test('métricas Instagram preservam zero real e deixam ausência explícita', as
   assert.equal(result.status, 'partial');
   assert.equal(result.metrics.length, 1);
   assert.equal(result.metrics[0].value, 0);
-  assert.equal(result.metrics[0].accountId, 'account-1');
+  assert.equal(result.metrics[0].accountId, '17841400000000001');
   assert.equal(result.unavailable[0].name, 'reach');
   assert.ok(requests.every(r => r.method === 'GET'));
 });

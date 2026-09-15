@@ -52,8 +52,8 @@ test('mídia desaprovada e publicações antigas não viram confirmação', asyn
   assert.equal(suppliedAssetApproved('Esta é a imagem aprovada.'), true);
   const started = Date.now();
   let timestamp = new Date(started).toISOString();
-  const provider = createProviders(async url => Response.json(url.includes('/account?') ? {
-    id: 'account',
+  const provider = createProviders(async url => Response.json(url.includes('/17841400000000001?') ? {
+    id: '17841400000000001',
     username: 'fixture'
   } : url.includes('/container?') ? {
     status_code: 'PUBLISHED'
@@ -66,7 +66,7 @@ test('mídia desaprovada e publicações antigas não viram confirmação', asyn
     timestamp
   }));
   const verify = () => provider.instagramVerify({
-    accountId: 'account',
+    accountId: '17841400000000001',
     accessToken: 'fake'
   }, 'post', 'container', {
     expectedPublishedAfter: started
@@ -278,7 +278,7 @@ test('operação preserva entregas, retomadas, rascunhos e progresso de cada pub
     await t.test('duas peças exigem duas confirmações e não republicam após revisão', async () => {
       await api('integrations/instagram', 'PUT', {
         accessToken: 'fake',
-        accountId: 'fixture'
+        accountId: '17841400000000001'
       });
       responses = [...['Primeira', 'Segunda'].map(title => draft('content', {
         title,
@@ -345,7 +345,7 @@ test('operação preserva entregas, retomadas, rascunhos e progresso de cada pub
       }), now + i, now + i);
       await api('integrations/whatsapp', 'PUT', {
         accessToken: 'fake',
-        phoneNumberId: 'fixture'
+        phoneNumberId: '123456789000001'
       });
       assert.equal((await api('jobs', 'POST', {
         kind: 'send',

@@ -616,7 +616,7 @@ test('kernel: chat, registros compartilhados e continuidade sem publicação fic
     });
     await api('integrations/instagram', 'PUT', {
       accessToken: 'TEST-ONLY-token',
-      accountId: 'TEST-ONLY-account'
+      accountId: '17841400000000001'
     });
     assert.equal((await api('integrations/instagram/test', 'POST', {})).status, 200);
     await api('company', 'PATCH', {

@@ -321,7 +321,7 @@ test('portal: isolamento, persistência e operação verificável', async t => {
       assert.equal(sendCalls, 0);
       await api('integrations/whatsapp', 'PUT', {
         accessToken: 'test',
-        phoneNumberId: 'phone-test',
+        phoneNumberId: '123456789000001',
         appSecret: 'hook-secret',
         verifyToken: 'verify-test'
       });
@@ -330,7 +330,7 @@ test('portal: isolamento, persistência e operação verificável', async t => {
           changes: [{
             value: {
               metadata: {
-                phone_number_id: 'phone-test'
+                phone_number_id: '123456789000001'
               },
               contacts: [{
                 wa_id: '5511888888888',
@@ -573,7 +573,7 @@ test('contratos dos provedores e ausência de confirmação não viram sucesso',
   await t.test('HTTP 5xx e perda da conexão em mutações exigem conferência', async () => {
     const config = {
       accessToken: 'x',
-      phoneNumberId: 'y'
+      phoneNumberId: '123456789000002'
     };
     for (const fetcher of [async () => Response.json({
       error: 'bad'
@@ -608,8 +608,8 @@ test('contratos dos provedores e ausência de confirmação não viram sucesso',
       const id = new URL(url).pathname.split('/').at(-1);
       return Response.json(id === 'container-1' ? {
         status_code: 'PUBLISHED'
-      } : id === 'account' ? {
-        id: 'account',
+      } : id === '17841400000000001' ? {
+        id: '17841400000000001',
         username: 'eme.test'
       } : {
         id: 'media-1',
@@ -622,12 +622,12 @@ test('contratos dos provedores e ausência de confirmação não viram sucesso',
     });
     const result = await provider.instagramVerify({
       accessToken: 'private-token',
-      accountId: 'account'
+      accountId: '17841400000000001'
     }, 'media-1', 'container-1');
     assert.equal(result.id, 'media-1');
     assert.equal(result.status_code, 'PUBLISHED');
     assert.equal(result.containerId, 'container-1');
-    assert.equal(result.identity.id, 'account');
+    assert.equal(result.identity.id, '17841400000000001');
     assert.equal(result.permalink, 'https://www.instagram.com/p/test/');
     assert.equal(result.caption, 'Legenda aprovada.');
     assert.equal(result.mediaType, 'IMAGE');

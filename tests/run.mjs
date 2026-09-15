@@ -19,3 +19,5 @@ import './account-connections.test.mjs';
 import './stripe-billing.test.mjs';
 import './chat-format.test.mjs';
 import './image-generation.test.mjs';
+import './connection-validation.test.mjs';
+import './connection-ui.test.mjs';

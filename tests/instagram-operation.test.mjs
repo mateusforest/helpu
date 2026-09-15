@@ -24,7 +24,7 @@ const testDraft = {
 };
 const explicitObjective = 'Publique no Instagram da EME usando a imagem aprovada anexada.';
 const fixtureIdentity = {
-  id: 'TEST-ONLY-account',
+  id: '17841400000000001',
   username: 'eme.test',
   profileUrl: 'https://www.instagram.com/eme.test/'
 };
@@ -718,7 +718,7 @@ test('primeira publicação Instagram: identidade, aprovação vinculada e evid�
       const created = await reviewed();
       identity = {
         ...fixtureIdentity,
-        id: 'TEST-ONLY-other-account',
+        id: '17841400000000002',
         username: 'eme.other.test'
       };
       await api('integrations/instagram', 'PUT', {

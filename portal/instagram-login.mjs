@@ -16,7 +16,7 @@ export function createInstagramLogin({db,access,saveConnection,env=process.env,f
   return data;
  }
  return {
-  status(){const config=instagramLoginConfig(env);return {available:config.ready,redirectUri:config.redirectUri};},
+  status(){const config=instagramLoginConfig(env);return {available:config.ready,redirectUri:config.redirectUri,missing:[!config.redirectUri&&'HELPU_PUBLIC_URL',!config.appId&&'HELPU_INSTAGRAM_APP_ID',!config.appSecret&&'HELPU_INSTAGRAM_APP_SECRET'].filter(Boolean)};},
   async start(req,res,org,user){
    const config=instagramLoginConfig(env);if(!config.ready)fail('O login do Instagram ainda precisa ser configurado no aplicativo da Meta e na hospedagem.',409);
    const token=sessionToken(req);if(!token)fail('Entre novamente no Helpu.',401);

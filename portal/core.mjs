@@ -5,6 +5,7 @@ import fs from 'node:fs';
 import {createStorage,hashFile} from './storage.mjs';
 import {createStudio, dailyPriority} from './studio.mjs';
 import {createImageWorkflow} from './image-generation.mjs';
+import {validateConnectionPatch} from './connection-validation.mjs';
 import {createConversation} from './conversation.mjs';
 import {createKernel} from './kernel.mjs';
 import {inspectApprovedAsset, createPublicationWorkflow} from './publication.mjs';
@@ -1899,6 +1900,8 @@ export async function createPortal({db, dataDir, userFrom, json, safeOrigin, pro
       if (!def) fail('Integração inválida.');
       if (req.method === 'PUT') {
         const d = await body(req), config = await integration(org, kind);
+        const validation = validateConnectionPatch(kind, d);
+        if (!validation.ok) fail(validation.errors[0].message, 400);
         for (const [f, , secret] of def.fields) if (d[f] !== undefined && (!secret || d[f] !== '')) config[f] = str(d[f], 10000);
         await db.prepare('INSERT INTO integrations(org_id,provider,sealed,updated_at) VALUES(?,?,?,?) ON CONFLICT(org_id,provider) DO UPDATE SET sealed=excluded.sealed,verified_at=NULL,error=NULL,updated_at=excluded.updated_at').run(org, kind, seal(config), Date.now());
         await saveMetadata(org, 'validation:' + kind, {

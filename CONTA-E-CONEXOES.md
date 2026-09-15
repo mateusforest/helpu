@@ -4,6 +4,24 @@ As cinco seções da barra inferior foram mantidas. O botão do usuário abre Mi
 
 Conexões reúne a inteligência e os canais. Higgsfield foi retirado das opções visíveis; registros antigos e a integração interna foram preservados. Na Vercel, não são oferecidos botões para abrir sessões locais de navegador. Os títulos antigos “Contexto: positioning”, por exemplo, aparecem em português sem alterar os dados históricos.
 
+## Situação da operação e das telas no painel
+
+O painel distingue a conexão oficial por API da tela de um serviço. O login oficial do Instagram está implementado, mas só é habilitado quando o aplicativo da Meta e suas credenciais estão configurados. O diálogo de preparação mostra o callback atual e os nomes das variáveis ausentes, sem expor segredos. A configuração manual fica nas opções técnicas; ID não aceita e-mail e token não deve receber a senha da conta. Credenciais inválidas não substituem a conexão anterior.
+
+WhatsApp Business, Perfil da Empresa no Google e Meta Ads ainda usam configuração técnica por API. Não há fluxo de login simplificado implementado para esses três canais. O Google atual é Perfil da Empresa, não Google Ads. Meta Ads permite criar campanhas pausadas; a montagem e ativação completas de anúncios ainda não estão prontas.
+
+Em **Autonomia**, o resumo explica o comportamento atual:
+
+- **Pedido no chat:** Conversar e executar autoriza criar a imagem solicitada, com a versão do briefing, limites e proibições. Somente planejar não gera arquivos.
+- **Rotina:** pode preparar textos e conteúdos; imagens automáticas dependem da opção de geração e do serviço de execução ativo. Ativar a opção não comprova que o worker está funcionando.
+- **Publicação:** a versão atual exige conteúdo aprovado e autorização da operação, além de conta validada e permissão de publicar. Não existe aprovação automática de toda a produção nesta versão.
+- **Atendimento:** depende da opção de respostas, do recebimento configurado, das regras e de contexto suficiente.
+- **Vídeo e telas remotas:** continuam pendentes; não são habilitados por uma conexão API.
+
+Para as telas das contas dentro da Helpu online, falta implementar e hospedar o executor de navegador com controle humano, autenticação, perfis privados por empresa e armazenamento persistente. Para o Astra Vídeo, falta integrar projetos por empresa, ferramentas de edição do chat, sessão do editor e exportação com retorno à Biblioteca. A animação de textos do zero também exige cenas sem vídeo de origem, ausentes no editor atual. O detalhamento está em [PAINEL-CANAIS-E-ASTRA.md](PAINEL-CANAIS-E-ASTRA.md).
+
+Esta alteração melhora a conexão e informa o estado real; não instala esses serviços nem declara operação 100% validada. A contratação/configuração de hospedagem e os logins externos continuam pendentes.
+
 ## Domínio próprio: helpumkt.com
 
 Na conferência de 15/09/2026, `helpumkt.com` redireciona para `www.helpumkt.com`. O servidor responde ao teste de saúde, mas recusa a autenticação nesse domínio com HTTP 403; o endereço antigo da Vercel responde normalmente. Isso indica que o domínio novo ainda não está na lista permitida da aplicação, que usa `HELPU_PUBLIC_URL` e o endereço do deployment.

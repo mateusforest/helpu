@@ -5,6 +5,15 @@ import os from 'node:os';
 import path from 'node:path';
 import {createHelpuServer} from '../server.mjs';
 import {knowledgeTitle,readableTerm} from '../dist/assets/labels.js';
+import {createInstagramLogin} from '../portal/instagram-login.mjs';
+
+test('preparação do Instagram expõe somente os nomes de configuração ausentes',()=>{
+ const missing=createInstagramLogin({env:{HELPU_PUBLIC_URL:'https://www.helpumkt.com'}}).status();
+ assert.equal(missing.available,false);assert.equal(missing.redirectUri,'https://www.helpumkt.com/api/connect/instagram/callback');
+ assert.deepEqual(missing.missing,['HELPU_INSTAGRAM_APP_ID','HELPU_INSTAGRAM_APP_SECRET']);
+ const ready=createInstagramLogin({env:{HELPU_PUBLIC_URL:'https://www.helpumkt.com',HELPU_INSTAGRAM_APP_ID:'123',HELPU_INSTAGRAM_APP_SECRET:'never-expose-this'}}).status();
+ assert.equal(ready.available,true);assert.deepEqual(ready.missing,[]);assert.doesNotMatch(JSON.stringify(ready),/never-expose-this/);
+});
 
 test('títulos antigos e termos internos são apresentados em português',()=>{
  assert.equal(knowledgeTitle('Contexto: visualIdentity'),'Contexto: Identidade visual');
@@ -62,6 +71,9 @@ test('login oficial vincula a empresa iniciadora e impede falsificação e repet
   assert.match((await request(callback,null,session)).headers.get('location'),/failed/);assert.equal(external.length,0);
   const done=await request(callback,null,session+'; '+proof);assert.equal(done.status,303);assert.match(done.headers.get('location'),/connected/);assert.equal(external.length,3);
   const saved=await (await request('/api/portal/'+org+'/state',null,session)).json(),ig=saved.integrations.find(c=>c.id==='instagram');assert.equal(ig.configured,true);assert.equal(ig.identity.username,'empresa_teste');assert.equal(ig.identity.accountId,'17841400000000001');assert.doesNotMatch(JSON.stringify(saved),/long-secret|short-secret|app-secret/);
+  const invalid=await fetch(origin+'/api/portal/'+org+'/integrations/instagram',{method:'PUT',headers:{Origin:origin,Cookie:session,'Content-Type':'application/json'},body:JSON.stringify({accountId:'invalid@example.test',accessToken:'replacement-token'})});
+  assert.equal(invalid.status,400);const invalidBody=await invalid.json();assert.match(invalidBody.error,/ID numérico/);assert.doesNotMatch(JSON.stringify(invalidBody),/invalid@example.test|replacement-token/);
+  const unchanged=(await (await request('/api/portal/'+org+'/state',null,session)).json()).integrations.find(c=>c.id==='instagram');assert.equal(unchanged.identity.accountId,'17841400000000001');assert.equal(unchanged.configured,true);
   assert.match((await request(callback,null,session+'; '+proof)).headers.get('location'),/failed/);assert.equal(external.length,3);
   const second=await request('/api/portal/'+org+'/integrations/instagram/login',{},session),auth2=new URL((await second.json()).url),proof2=second.headers.get('set-cookie').split(';')[0];
   await request('/api/auth/logout',{},session);

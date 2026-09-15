@@ -18,6 +18,14 @@ O caminho de novos pedidos de imagem foi substituído pela OpenAI, com arquivo s
 | Astra Vídeo | Aplicação React/Vite com servidor Node, FFmpeg, projetos, importação de arquivos, timeline, preview e exportação. Há MP4s na pasta `exports`. | É um editor local separado. O Helpu declara corretamente `videoEditing: false`. O interpretador de comandos do editor usa regras locais; a conversa ampla com Astra ainda precisa de ferramentas que editem os projetos. |
 | Geração no editor Astra | Adaptadores fal e ElevenLabs, fila e armazenamento de resultados. | Código de integração não comprova credenciais, saldo nem uma geração concluída. Nenhuma geração foi executada nesta conferência. |
 
+## Rechecagem de integração em 15/09/2026
+
+O Astra Vídeo mantém um projeto ativo global e rotas `/api/*` absolutas, diretórios e registro de arquivos compartilhados e trabalhos de exportação em memória. Seu modelo aceita trechos de vídeo ou frames congelados e exige MP4 na inicialização. Portanto, a animação de textos do zero precisa de uma fonte/cena sintética além da integração. Um iframe direto da instância local não fornece isolamento entre clientes.
+
+O contrato necessário é: criar projeto para a empresa autenticada; consultar revisão e fontes; aplicar operações estruturadas com revisão esperada; iniciar exportação idempotente; acompanhar o trabalho; importar o MP4 confirmado na Biblioteca; e abrir sessão curta do editor limitada ao projeto. Empresa e usuário vêm da sessão Helpu. Não aceitar caminhos locais ou URLs arbitrárias do modelo.
+
+Para contas, o navegador remoto precisa manter Chrome e perfis privados fora do ciclo de vida da Function, com um controlador por vez, recuperação de ações incertas e entrada manual durante autenticação. Capturas e dados do login humano não devem ir para o modelo nem para o histórico. Login remoto não cria uma conexão OAuth/API. A Vercel oferece WebSockets em beta, mas as conexões ainda se encerram no limite de duração e podem retomar em outra instância: a necessidade principal é manter processo e estado duráveis. Ver [WebSockets na Vercel](https://vercel.com/docs/functions/websockets) e [perfis persistentes do Playwright](https://playwright.dev/docs/api/class-browsertype#browser-type-launch-persistent-context).
+
 ## Experiência proposta para o painel
 
 Manter os cinco destinos inferiores. A conversa continua sendo a entrada principal.
