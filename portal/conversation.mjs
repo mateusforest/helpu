@@ -388,7 +388,11 @@ export async function createConversation({db, dataDir, company, integration, lis
               result = await queue(org, job.user_id, args.kind, {
                 ...JSON.parse(args.payloadJson),
                 parentJobId: job.id
-              }, args.scheduledAt || null, job.id + ':' + call.call_id);
+              }, args.scheduledAt || null, job.id + ':' + call.call_id, {
+                // O modo escolhido pelo usuário autoriza a criação; não aprova publicação.
+                // A fila vincula a autorização ao usuário e à versão atual do briefing.
+                explicitImage: payload.mode === 'execute' && args.kind === 'image'
+              });
             } else if (call.name === 'browser_sessions') result = await browser.list(org); else if (call.name === 'browser_observe') {
               await browser.claim(org, args.channel, job.id);
               result = await browser.observe(org, args.channel, {

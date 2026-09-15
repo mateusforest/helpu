@@ -43,9 +43,9 @@ test('imagem: conversa → OpenAI → biblioteca → resposta; isolamento, repet
  const createContent=async title=>(await api('records/content','POST',{title,caption:'Confira a novidade.',visualPrompt:'Composição sem logo, uma árvore verde.',format:'image',channel:'instagram'})).body;
  try{
   const signup=await request('/api/auth/signup','POST',{name:'Teste',company:'Marca QA',email:'image@example.test',password:'test-only-password'});cookie=signup.headers.get('set-cookie').split(';')[0];org=(await request('/api/portal/bootstrap')).body.companies[0].id;
-  await api('company','PATCH',{profile:{description:'Uma marca de jardinagem',audience:'Jardineiros',visualIdentity:'Verde e branco'},policy:{autoMedia:true,dailyMedia:20,dailyRuns:20}});
+  await api('company','PATCH',{profile:{description:'Uma marca de jardinagem',audience:'Jardineiros',visualIdentity:'Verde e branco'},policy:{autoMedia:false,dailyMedia:20,dailyRuns:20}});
   await api('integrations/openai','PUT',{apiKey:'secret-test'});
-  await t.test('gera após pedido explícito e devolve o arquivo na conversa',async()=>{
+  await t.test('pedido no chat autoriza a imagem mesmo com geração automática desativada',async()=>{
    thread=(await api('conversations','POST',{title:'Imagem'})).body;
    responses=[tool('save_draft',{kind:'content',dataJson:JSON.stringify({title:'Árvore',caption:'Uma novidade para seu jardim.',visualPrompt:'Árvore verde, fundo branco.',format:'image',channel:'instagram'})},'save')];
    await api('conversations/'+thread.id+'/messages','POST',{text:'Crie uma imagem para Instagram',mode:'execute'});await server.portal.tick();
@@ -54,6 +54,7 @@ test('imagem: conversa → OpenAI → biblioteca → resposta; isolamento, repet
    assert.equal(calls,1);assert.equal(snapshot.mediaJobs.length,0);
    const message=snapshot.messages.find(m=>m.attachments.length);assert.ok(message);assert.match(message.text,/gerada e salva/);assetId=message.attachments[0];
    const state=(await api('state')).body,content=state.records.content.find(c=>c.id===contentId);assert.equal(content.assetId,assetId);assert.equal(content.status,'review');assert.equal(content.mediaUrl,'');assert.equal(state.assets.find(a=>a.id===assetId).mime,'image/png');
+   assert.equal(state.company.policy.autoMedia,false);assert.equal(state.jobs.some(j=>j.kind==='publish'),false);
    const file=await fetch(origin+'/api/portal/files/'+assetId,{headers:{Cookie:cookie}});assert.equal(file.status,200);assert.deepEqual(Buffer.from(await file.arrayBuffer()),testPng());
    assert.doesNotMatch(JSON.stringify(snapshot),/secret-test|b64_json/);assert.match(prompts[0],/Marca QA/);
   });
@@ -85,7 +86,20 @@ test('imagem: conversa → OpenAI → biblioteca → resposta; isolamento, repet
    await api('company','PATCH',{policy:{operationRules:[{channel:'openai',action:'image',risk:'*',policy:'forbidden'}]}});
    const content=await createContent('Proibida'),queued=await api('jobs','POST',{kind:'image',payload:{contentId:content.id}});await server.portal.tick();
    const job=(await api('state')).body.jobs.find(j=>j.id===queued.body.id);assert.equal(job.state,'blocked');assert.equal(calls,1);
+   const deniedThread=(await api('conversations','POST',{title:'Criação proibida'})).body;
+   responses=[tool('queue_action',{kind:'image',payloadJson:JSON.stringify({contentId:content.id})}),output('Pedido registrado.')];
+   await api('conversations/'+deniedThread.id+'/messages','POST',{text:'Crie esta imagem',mode:'execute'});await server.portal.tick();await server.portal.tick();
+   assert.equal(calls,1);assert.ok((await api('conversations/'+deniedThread.id)).body.messages.some(m=>/proibida/.test(m.text)));
    await api('company','PATCH',{policy:{operationRules:[]}});
+  });
+  await t.test('a autorização do chat não vale para um briefing alterado depois do pedido',async()=>{
+   const changed=await createContent('Briefing alterado'),next=(await api('conversations','POST',{title:'Versão da imagem'})).body;
+   responses=[tool('queue_action',{kind:'image',payloadJson:JSON.stringify({contentId:changed.id})}),output('Estou preparando a imagem.')];
+   await api('conversations/'+next.id+'/messages','POST',{text:'Gere a imagem deste conteúdo',mode:'execute'});await server.portal.tick();
+   const queued=(await api('conversations/'+next.id)).body.mediaJobs[0];assert.ok(queued);
+   const update=await api('records/content/'+changed.id,'PATCH',{visualPrompt:'Outro assunto: montanhas azuis.'});assert.equal(update.status,200);
+   await server.portal.tick();const job=(await api('state')).body.jobs.find(j=>j.id===queued.id);
+   assert.equal(job.state,'blocked');assert.match(job.error,/aprovação/);assert.equal(calls,1);
   });
   await t.test('timeout conserva a tentativa e impede nova cobrança por repetição automática',async()=>{
    mode='timeout';const content=await createContent('Timeout'),queued=await api('jobs','POST',{kind:'image',payload:{contentId:content.id}});await server.portal.tick();

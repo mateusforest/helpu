@@ -4,7 +4,9 @@ Novos pedidos de imagem usam a OpenAI. A fila anterior do Higgsfield continua re
 
 ## Como usar
 
-Depois de atualizar o deploy, recarregue a página. Em uma conversa no modo **Conversar e executar**, peça a imagem desejada. O Astra pode criar ou reutilizar um rascunho e enfileirar a geração. Para permitir que ele gere diretamente, habilite a geração automática em **Minha empresa → Autonomia**, respeitando os limites e as regras da empresa. Também é possível usar **Gerar imagem** no conteúdo da Biblioteca; esse clique autoriza aquela geração, sem permitir publicação.
+Depois de atualizar o deploy, recarregue a página. Em uma conversa no modo **Conversar e executar**, peça a imagem desejada. O Astra pode criar ou reutilizar um rascunho e enfileirar a geração. Esse modo registra a autorização para criar a imagem, assim como o botão **Gerar imagem** na Biblioteca; não exige ativar a geração automática da rotina. A autorização fica vinculada ao usuário e à versão do briefing. Mudanças posteriores exigem um novo pedido ou aprovação; proibições e limites da empresa continuam valendo. Nenhum desses caminhos autoriza publicar. O modo **Somente planejar** não gera arquivos.
+
+Se uma tentativa anterior terminou com “Esta ação exige aprovação na operação”, após atualizar a aplicação envie novamente o pedido no modo **Conversar e executar**. A tentativa bloqueada permanece no histórico; a aplicação não retoma pedidos antigos por conta própria.
 
 A imagem aparece na conversa quando o arquivo estiver salvo e fica disponível na Biblioteca, com prévia e download. O Instagram não precisa estar conectado para criar o arquivo.
 
