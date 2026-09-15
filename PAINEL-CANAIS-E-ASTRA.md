@@ -1,5 +1,11 @@
 # Canais no painel, Astra Vídeo e situação operacional
 
+## Atualização em 15/09/2026: execução online
+
+O navegador remoto e o editor online de cenas agora têm serviço, gateway autenticado, interface e ferramentas do chat implementados. O processamento é independente do computador do usuário quando o serviço estiver hospedado. Há exportação MP4 real validada com mídia sintética e testes da integração com o chat. Não houve deploy nem login em contas reais. Consulte [Operação online](OPERACAO-ONLINE.md) para recursos, limites e ativação. O editor online implementa cenas e cortes; a timeline completa do aplicativo local não foi portada.
+
+O restante deste documento preserva o diagnóstico anterior; as pendências de integração listadas abaixo foram parcialmente substituídas por essa implementação.
+
 Conferência em 14/09/2026 do código do Helpu, da base local e da pasta ASTRA-VIDEO. Esta conferência não acessou o banco da Vercel nem executou gerações, publicações, mensagens ou anúncios reais. Registros locais não comprovam o estado atual da produção.
 
 ## Atualização posterior à conferência

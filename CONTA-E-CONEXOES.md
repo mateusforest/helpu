@@ -1,5 +1,7 @@
 # Conta, Instagram e Stripe
 
+**Atualização em 15/09/2026:** o acesso às telas remotas de Instagram, WhatsApp, Facebook e Google e o Astra Vídeo online estão implementados, aguardando hospedagem e validação real. Os acessos ficam em Minha empresa → Telas das contas e Biblioteca → Astra Vídeo. A configuração OAuth/API é separada. Veja [Operação online](OPERACAO-ONLINE.md) para ativação e limites atuais; o diagnóstico de ferramentas pendentes abaixo descreve a versão anterior.
+
 As cinco seções da barra inferior foram mantidas. O botão do usuário abre Minha conta, com Plano, Configurações, Segurança e Faturamento. Nome e senha são editáveis, e é possível encerrar as outras sessões. E-mail, recuperação de senha e autenticação em duas etapas ainda não têm fluxo de alteração/ativação.
 
 Conexões reúne a inteligência e os canais. Higgsfield foi retirado das opções visíveis; registros antigos e a integração interna foram preservados. Na Vercel, não são oferecidos botões para abrir sessões locais de navegador. Os títulos antigos “Contexto: positioning”, por exemplo, aparecem em português sem alterar os dados históricos.

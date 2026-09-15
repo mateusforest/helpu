@@ -32,3 +32,4 @@ body:not([data-view="conversation"]):not([data-view="browser"]) .topbar-actions 
  .operation-health>a{padding:16px}.operation-health strong{font-size:15px}
 }
 @media(prefers-reduced-motion:reduce){.thinking-dot,.loading-line{animation:none}.conversation-page *{scroll-behavior:auto}}
+.chat-video video{display:block;max-width:100%;width:360px;max-height:540px;border-radius:16px;background:#181817}

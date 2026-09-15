@@ -1,0 +1,11 @@
+[Unit]
+Description=Manter as regras de saida da Helpu
+
+[Timer]
+OnBootSec=2min
+OnUnitActiveSec=60s
+AccuracySec=5s
+Unit=helpu-runtime-firewall.service
+
+[Install]
+WantedBy=timers.target

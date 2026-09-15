@@ -1,0 +1,9 @@
+[Unit]
+Description=Revalidacao do firewall da Helpu
+Requires=docker.service
+After=docker.service
+
+[Service]
+Type=oneshot
+EnvironmentFile=/etc/helpu-runtime/network.env
+ExecStart=/usr/bin/bash /opt/helpu-runtime/deploy/runtime/egress.sh

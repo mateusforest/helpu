@@ -5,13 +5,16 @@
   "buildCommand": "node scripts/build-production.mjs",
   "outputDirectory": "dist",
   "rewrites": [
-    {"source": "/api/:path*", "destination": "/api/runtime"}
+    {
+      "source": "/api/:path*",
+      "destination": "/api/runtime"
+    }
   ],
   "functions": {
     "api/**/*.mjs": {
       "maxDuration": 300,
       "includeFiles": "portal/migrations/**",
-      "excludeFiles": "{.local-data/**,.superdesign/**,.git/**,.vercel/**,.env*,supabase/**,tests/**,**/*.sqlite*,**/integration.key,**/browser-profiles/**}"
+      "excludeFiles": "{services/**,deploy/**,runtime-data/**,.local-data/**,.superdesign/**,.git/**,.vercel/**,.env*,supabase/**,tests/**,**/*.sqlite*,**/integration.key,**/browser-profiles/**}"
     }
   },
   "regions": [

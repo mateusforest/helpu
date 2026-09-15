@@ -1,0 +1,24 @@
+[Unit]
+Description=Helpu - navegador, editor de video e worker persistentes
+Requires=docker.service
+After=docker.service network-online.target
+Wants=network-online.target
+PartOf=docker.service
+StartLimitIntervalSec=0
+
+[Service]
+Type=simple
+WorkingDirectory=/opt/helpu-runtime
+EnvironmentFile=/etc/helpu-runtime/network.env
+EnvironmentFile=/etc/helpu-runtime/runtime.env
+ExecStartPre=/usr/bin/bash /opt/helpu-runtime/deploy/runtime/egress.sh
+ExecStart=/usr/bin/docker compose -f /opt/helpu-runtime/deploy/runtime/compose.yaml up --no-build --abort-on-container-exit --exit-code-from runtime
+ExecStop=/usr/bin/docker compose -f /opt/helpu-runtime/deploy/runtime/compose.yaml stop --timeout 45
+Restart=always
+RestartSec=10
+TimeoutStartSec=180
+TimeoutStopSec=100
+KillMode=process
+
+[Install]
+WantedBy=multi-user.target

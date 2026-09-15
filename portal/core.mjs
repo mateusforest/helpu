@@ -5,6 +5,8 @@ import fs from 'node:fs';
 import {createStorage,hashFile} from './storage.mjs';
 import {createStudio, dailyPriority} from './studio.mjs';
 import {createImageWorkflow} from './image-generation.mjs';
+import {createCloudRuntime} from './cloud-runtime.mjs';
+import {createRuntimeTools} from './runtime-tools.mjs';
 import {validateConnectionPatch} from './connection-validation.mjs';
 import {createConversation} from './conversation.mjs';
 import {createKernel} from './kernel.mjs';
@@ -46,7 +48,8 @@ const statuses = {
   messages: ['draft', 'recorded'],
   tasks: ['todo', 'doing', 'done']
 };
-export async function createPortal({db, dataDir, userFrom, json, safeOrigin, providers = createProviders(), startScheduler = true, browserLaunch, conversationRespond, publicationFetch, publicationResolve,cloud=false,storageClient,instagramLoginFetch,instagramLoginEnv,stripeFetch,stripeEnv}) {
+export async function createPortal({db, dataDir, userFrom, json, safeOrigin, providers = createProviders(), startScheduler = true, browserLaunch, conversationRespond, publicationFetch, publicationResolve,cloud=false,storageClient,instagramLoginFetch,instagramLoginEnv,stripeFetch,stripeEnv,runtimeEnv,runtimeFetch}) {
+  const cloudRuntime=createCloudRuntime({env:runtimeEnv,fetcher:runtimeFetch});
   if(db.dialect==='postgres'){
     const migration=await db.prepare('SELECT version FROM portal_migrations ORDER BY version DESC LIMIT 1').get();
     if(migration?.version!==4)throw new Error('Supabase schema migration is required');
@@ -415,6 +418,11 @@ export async function createPortal({db, dataDir, userFrom, json, safeOrigin, pro
       }
     }
     if(kind==='image'){let prepared;try{prepared=await imageWorkflow.prepare(org,payload.contentId);}catch(e){if(e instanceof ProviderError)e.status=409;throw e;}if(options.explicitImage)payload.mediaAuthorization={actor:user,sourceHash:prepared.sourceHash};}
+    if(kind==='video'&&payload.provider==='astra-runtime'){
+      const project=await runtimeTools.project(org,payload.projectId);
+      if(project.revision!==payload.revision)fail('O projeto de vídeo mudou. Confira a versão antes de exportar.',409);
+      if(options.explicitVideo)payload.mediaAuthorization={actor:user,projectId:project.id,revision:project.revision};
+    }
     if (['video', 'publish'].includes(kind) && (await metadata(org, 'studio:' + payload.contentId)).version) {
       const check = await studio.inspect(org, payload.contentId);
       fail(check.blockers.map(b => b.message).join(' '), 409);
@@ -459,7 +467,7 @@ export async function createPortal({db, dataDir, userFrom, json, safeOrigin, pro
   async function jobTarget(job) {
     const p = parse(job.payload), kind = p.contentId ? 'content' : p.messageId ? 'messages' : p.campaignId ? 'campaigns' : null;
     const item = kind ? decodeRecord(await db.prepare('SELECT * FROM records WHERE org_id=? AND kind=? AND id=?').get(job.org_id, kind, p.contentId || p.messageId || p.campaignId)) : null;
-    const channel = job.kind==='image'&&p.provider==='openai'?'openai':['image', 'video'].includes(job.kind) ? 'higgsfield' : job.kind === 'googlePresence' ? 'google' : ['metaCampaign', 'insights'].includes(job.kind) ? 'metaAds' : job.kind === 'agent' ? 'openai' : item?.channel || p.channel || 'other';
+    const channel = job.kind==='video'&&p.provider==='astra-runtime'?'other':job.kind==='image'&&p.provider==='openai'?'openai':['image', 'video'].includes(job.kind) ? 'higgsfield' : job.kind === 'googlePresence' ? 'google' : ['metaCampaign', 'insights'].includes(job.kind) ? 'metaAds' : job.kind === 'agent' ? 'openai' : item?.channel || p.channel || 'other';
     return {
       channel,
       item
@@ -511,7 +519,7 @@ export async function createPortal({db, dataDir, userFrom, json, safeOrigin, pro
       error,
       external: ext
     });
-    if(row.kind==='image'&&['succeeded','blocked','failed','uncertain','canceled'].includes(state))await conversation.mediaResult(row,state,output||{},error);
+    if(['image','video'].includes(row.kind)&&['succeeded','blocked','failed','uncertain','canceled'].includes(state))await conversation.mediaResult(row,state,output||{},error);
   }
   async function authorizeJob(job) {
     if (job.kind === 'publish' && parse(job.external).publishedId) return;
@@ -538,7 +546,7 @@ export async function createPortal({db, dataDir, userFrom, json, safeOrigin, pro
       risk: ['image', 'video'].includes(job.kind) ? 'medium' : 'high',
       operationId: (await kernel.jobOperation(job))?.id,
       userId: job.user_id,
-      approval: job.kind==='image' && parse(job.payload).mediaAuthorization?.actor===job.user_id && parse(job.payload).mediaAuthorization?.sourceHash===(await imageWorkflow.prepare(job.org_id,parse(job.payload).contentId)).sourceHash
+      approval: (job.kind==='image' && parse(job.payload).mediaAuthorization?.actor===job.user_id && parse(job.payload).mediaAuthorization?.sourceHash===(await imageWorkflow.prepare(job.org_id,parse(job.payload).contentId)).sourceHash)||(job.kind==='video'&&parse(job.payload).provider==='astra-runtime'&&parse(job.payload).mediaAuthorization?.actor===job.user_id&&parse(job.payload).mediaAuthorization?.projectId===parse(job.payload).projectId&&parse(job.payload).mediaAuthorization?.revision===parse(job.payload).revision)
     });
   }
   async function beforeMutation(job) {
@@ -582,17 +590,18 @@ export async function createPortal({db, dataDir, userFrom, json, safeOrigin, pro
     if (buffer.subarray(0, 5).toString() === '%PDF-') return ['application/pdf', '.pdf'];
     return null;
   }
-  async function storeAsset(org, name, buffer, sourceUrl = null) {
+  async function storeAsset(org, name, buffer, sourceUrl = null, fixedId = null) {
     const type = assetType(buffer);
     if (!type) fail('Envie PNG, JPEG, WebP, MP4, PDF ou uma fonte WOFF2, TTF ou OTF.');
-    const id = randomUUID(), file = id + type[1];
-    if(!privateStorage)fs.writeFileSync(path.join(storage, file), buffer, {
-      flag: 'wx'
-    });
+    if(fixedId&&!/^[a-f\d-]{36}$/i.test(fixedId))fail('Identificador de arquivo inválido.');
+    const id = fixedId||randomUUID(), file = id + type[1];
+    if(fixedId){const previous=await db.prepare('SELECT id,mime,size FROM assets WHERE id=? AND org_id=?').get(id,org);if(previous){if(previous.mime!==type[0]||previous.size!==buffer.length||hashFile(fs.readFileSync(await assetPath(org,id)))!==hashFile(buffer))fail('O arquivo existente não corresponde à exportação.',409);return {...previous,name,url:'/api/portal/files/'+id};}}
+    if(!privateStorage){try{fs.writeFileSync(path.join(storage,file),buffer,{flag:'wx'});}catch(e){if(e.code!=='EEXIST'||!fixedId||hashFile(fs.readFileSync(path.join(storage,file)))!==hashFile(buffer))throw e;}}
     if(privateStorage){
       const stored=await privateStorage.put(org,file,buffer,type[0]);
-      await db.prepare('INSERT INTO assets(id,org_id,name,mime,size,path,source_url,created_at,storage_bucket,storage_path,sha256,storage_verified_at) VALUES(?,?,?,?,?,?,?,?,?,?,?,?)').run(id,org,str(name,150)||file,type[0],buffer.length,file,sourceUrl,Date.now(),stored.bucket,stored.path,stored.hash,new Date().toISOString());
-    }else await db.prepare('INSERT INTO assets(id,org_id,name,mime,size,path,source_url,created_at) VALUES(?,?,?,?,?,?,?,?)').run(id, org, str(name, 150) || file, type[0], buffer.length, file, sourceUrl, Date.now());
+      await db.prepare('INSERT INTO assets(id,org_id,name,mime,size,path,source_url,created_at,storage_bucket,storage_path,sha256,storage_verified_at) VALUES(?,?,?,?,?,?,?,?,?,?,?,?) ON CONFLICT(id) DO NOTHING').run(id,org,str(name,150)||file,type[0],buffer.length,file,sourceUrl,Date.now(),stored.bucket,stored.path,stored.hash,new Date().toISOString());
+    }else await db.prepare('INSERT INTO assets(id,org_id,name,mime,size,path,source_url,created_at) VALUES(?,?,?,?,?,?,?,?) ON CONFLICT(id) DO NOTHING').run(id, org, str(name, 150) || file, type[0], buffer.length, file, sourceUrl, Date.now());
+    if(fixedId&&!await db.prepare('SELECT id FROM assets WHERE id=? AND org_id=?').get(id,org))fail('Arquivo indisponível nesta empresa.',409);
     return {
       id,
       name,
@@ -654,6 +663,7 @@ export async function createPortal({db, dataDir, userFrom, json, safeOrigin, pro
       assets: await files(org),
       integrations: await integrationState(org),
       connectionLogin: {instagram:instagramLogin.status()},
+      runtime: await cloudRuntime.status(org),
       agents: AGENTS,
       jobs: (await db.prepare('SELECT * FROM jobs WHERE org_id=? ORDER BY created_at DESC LIMIT 150').all(org)).map(decodeJob),
       audit: await db.prepare('SELECT * FROM audit WHERE org_id=? ORDER BY created_at DESC LIMIT 60').all(org),
@@ -711,6 +721,7 @@ export async function createPortal({db, dataDir, userFrom, json, safeOrigin, pro
     integration
   });
   const imageWorkflow=createImageWorkflow({record,company,metadata,saveMetadata,studio,integration,providers,storeAsset,assetPath,systemUpdate,setJob,beforeMutation});
+  const runtimeTools=createRuntimeTools({runtime:cloudRuntime,db,assetPath,storeAsset,saveRecord,record,metadata,saveMetadata,queue,systemUpdate,setJob,beforeMutation});
   publication = await createPublicationWorkflow({
     db,
     kernel,
@@ -759,7 +770,8 @@ export async function createPortal({db, dataDir, userFrom, json, safeOrigin, pro
     updateProfile,
     integrationState,
     workerState,
-    reviewPublication: publication.review,cloud
+    reviewPublication: publication.review,cloud,runtimeTools,
+    browserOverride:cloudRuntime.configured?runtimeTools.browser:undefined
   });
   async function verifyPublication(job, content, external) {
     const org = job.org_id, providerId = external.publishedId;
@@ -921,6 +933,7 @@ export async function createPortal({db, dataDir, userFrom, json, safeOrigin, pro
       return;
     }
     if(job.kind==='image'&&payload.provider==='openai'){const output=await imageWorkflow.run(job);await setJob(job.id,'succeeded',{output});return;}
+    if(job.kind==='video'&&payload.provider==='astra-runtime'){await runtimeTools.run(job);return;}
     if (job.kind === 'image' || job.kind === 'video') {
       const content = await record(org, 'content', payload.contentId), config = await integration(org, 'higgsfield');
       if (content.status === 'published') throw new ProviderError('Duplique o conteúdo publicado antes de gerar uma nova mídia.', 'blocked');
@@ -1578,6 +1591,7 @@ export async function createPortal({db, dataDir, userFrom, json, safeOrigin, pro
       if(!verified||verified.sha256!==hash)fail('O arquivo não pôde ser confirmado.',409);
       json(res,201,{id:verified.id,name:verified.name,mime:verified.mime,size:verified.size,url:'/api/portal/files/'+verified.id});return true;
     }
+    if (await runtimeTools.handle(req,res,org,parts,user,body,json)) return true;
     if (await conversation.handle(req, res, org, section, kind, id, user, body)) return true;
     if (section === 'studio') {
       try {

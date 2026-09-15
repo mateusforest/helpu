@@ -1,0 +1,10 @@
+**
+!services/
+!services/runtime/
+!services/runtime/*.mjs
+!deploy/
+!deploy/runtime/
+!deploy/runtime/package.json
+!deploy/runtime/package-lock.json
+!deploy/runtime/entrypoint.mjs
+!deploy/runtime/healthcheck.mjs

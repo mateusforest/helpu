@@ -1,0 +1,93 @@
+name: helpu-runtime
+services:
+  runtime:
+    image: helpu-runtime:local
+    build:
+      context: ../..
+      dockerfile: deploy/runtime/Dockerfile
+    # systemd supervises restart and always applies the firewall before starting.
+    restart: "no"
+    init: true
+    user: pwuser
+    read_only: true
+    cap_drop: [ALL]
+    security_opt:
+      - no-new-privileges:true
+      - seccomp=./seccomp_profile.json
+    shm_size: 1gb
+    tmpfs:
+      - /tmp:rw,noexec,nosuid,size=1g,mode=1777
+    pids_limit: 1024
+    mem_limit: ${HELPU_RUNTIME_MEMORY:-6g}
+    cpus: ${HELPU_RUNTIME_CPUS:-4}
+    stop_grace_period: 45s
+    ulimits:
+      nofile: {soft: 65536, hard: 65536}
+    environment:
+      PORT: "8080"
+      HELPU_RUNTIME_DATA: /data
+      HELPU_RUNTIME_SECRET: ${HELPU_RUNTIME_SECRET:?Configure o segredo privado do runtime}
+      HELPU_PUBLIC_URL: ${HELPU_PUBLIC_URL:?Configure o endereço HTTPS da Helpu}
+      CRON_SECRET: ${CRON_SECRET:?Configure o mesmo segredo do worker na Vercel}
+      HELPU_BROWSER_MAX_SESSIONS: ${HELPU_BROWSER_MAX_SESSIONS:-4}
+      HELPU_RUNTIME_IP: ${HELPU_RUNTIME_IP:-172.30.80.10}
+    volumes:
+      - runtime_data:/data
+      - /run/helpu-runtime:/run/helpu-firewall:ro
+    networks:
+      runtime_network:
+        ipv4_address: ${HELPU_RUNTIME_IP:-172.30.80.10}
+    dns:
+      - ${HELPU_DNS1:-1.1.1.1}
+      - ${HELPU_DNS2:-9.9.9.9}
+    sysctls:
+      net.ipv6.conf.all.disable_ipv6: "1"
+      net.ipv6.conf.default.disable_ipv6: "1"
+    healthcheck:
+      test: [CMD, node, /app/deploy/runtime/healthcheck.mjs]
+      interval: 30s
+      timeout: 8s
+      retries: 3
+      start_period: 45s
+    logging:
+      driver: local
+      options: {max-size: 10m, max-file: "3"}
+
+  caddy:
+    image: caddy:2-alpine
+    restart: "no"
+    depends_on:
+      runtime: {condition: service_healthy}
+    environment:
+      HELPU_RUNTIME_DOMAIN: ${HELPU_RUNTIME_DOMAIN:?Configure o subdomínio do runtime}
+      HELPU_ACME_EMAIL: ${HELPU_ACME_EMAIL:?Configure o e-mail administrativo dos certificados}
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    networks:
+      runtime_network:
+        ipv4_address: ${HELPU_CADDY_IP:-172.30.80.20}
+    logging:
+      driver: local
+      options: {max-size: 10m, max-file: "3"}
+
+networks:
+  runtime_network:
+    name: helpu-runtime-network
+    enable_ipv6: false
+    driver: bridge
+    driver_opts:
+      com.docker.network.bridge.name: br-helpu-rt
+    ipam:
+      config:
+        - subnet: ${HELPU_NETWORK_SUBNET:-172.30.80.0/24}
+          gateway: ${HELPU_NETWORK_GATEWAY:-172.30.80.1}
+
+volumes:
+  runtime_data: {name: helpu_runtime_data}
+  caddy_data: {name: helpu_runtime_caddy_data}
+  caddy_config: {name: helpu_runtime_caddy_config}
