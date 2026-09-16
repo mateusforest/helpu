@@ -81,3 +81,5 @@ test('imagem gerada aparece na conversa com download e acompanhamento da fila',a
  f.ui.mount('conversation');await flush();await f.ui.selectThread('A');const html=f.ui.chat();
  assert.match(html,/<img src="\/api\/portal\/files\/asset-1"/);assert.match(html,/Baixar imagem/);assert.match(html,/Preparando sua imagem/);assert.doesNotMatch(html,/external.invalid|fora-da-empresa/);
 });
+
+test('chat inicial oferece WhatsApp como extensão e não como canal de clientes',()=>{const f=fixture();const html=f.ui.chat();assert.match(html,/Expandir para WhatsApp/);assert.match(html,/data-chat="whatsapp"/);assert.match(html,/Leve o Astra para o WhatsApp/);});

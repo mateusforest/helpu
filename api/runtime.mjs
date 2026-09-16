@@ -32,7 +32,7 @@ export default async function handler(req,res){
       json(res,200,{status:'ok',storage:'supabase',runtime:'vercel'});return;
     }
     await app.handle(req,res);
-    if(req.method==='POST'&&res.statusCode>=200&&res.statusCode<300&&route.startsWith('/api/portal/')&&process.env.HELPU_AUTOMATIONS_ENABLED==='true'&&(!getDeadline()||getDeadline().getTime()-Date.now()>150000)){
+    if(req.method==='POST'&&res.statusCode>=200&&res.statusCode<300&&(route.startsWith('/api/portal/')||route==='/webhooks/helpu-whatsapp')&&process.env.HELPU_AUTOMATIONS_ENABLED==='true'&&(!getDeadline()||getDeadline().getTime()-Date.now()>150000)){
       waitUntil(runCloudWorker(app,{enabled:true}).catch(()=>console.error('helpu_worker_failed')));
     }
   }catch{

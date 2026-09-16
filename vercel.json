@@ -8,6 +8,10 @@
     {
       "source": "/api/:path*",
       "destination": "/api/runtime"
+    },
+    {
+      "source": "/webhooks/helpu-whatsapp",
+      "destination": "/api/runtime"
     }
   ],
   "functions": {

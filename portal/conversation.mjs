@@ -510,6 +510,59 @@ export async function createConversation({db, dataDir, company, integration, lis
       await browser.release(job.id);
     }
   }
+  async function submitMessage(org,id,user,d) {
+    await get(org, id);
+    const text = String(d.text || '').trim().slice(0, 16000);
+    if (!text) throw new Error('Escreva um objetivo ou uma mensagem.');
+    const attachments = Array.isArray(d.attachments) ? d.attachments : [];
+    if (attachments.length > 6 || new Set(attachments).size !== attachments.length) throw new Error('Adicione até seis referências diferentes por mensagem.');
+    let attachmentBytes = 0;
+    for (const aid of attachments) {
+      await assetPath(org, aid);
+      const asset = await db.prepare('SELECT mime,size FROM assets WHERE id=? AND org_id=?').get(aid, org);
+      if (asset.mime.startsWith('image/') || asset.mime === 'application/pdf') attachmentBytes += asset.size;
+    }
+    if (attachmentBytes > 20 * 1024 * 1024) throw new Error('Use até 20 MB de imagens e PDFs por pedido.');
+    const key = String(d.idempotencyKey || randomUUID()).slice(0, 180);
+    const existing = await db.prepare('SELECT id,kind,payload FROM jobs WHERE org_id=? AND idempotency_key=?').get(org, key);
+    if (existing) {
+      if (existing.kind !== 'conversation' || JSON.parse(existing.payload).conversationId !== id) {
+        const e = new Error('Esta chave já foi usada em outra conversa.');
+        e.status = 409;
+        throw e;
+      }
+      const original = await db.prepare("SELECT text,attachments FROM conversation_messages WHERE org_id=? AND job_id=? AND role='user'").get(org, existing.id);
+      if (!original || original.text !== text || original.attachments !== JSON.stringify(attachments) || JSON.parse(existing.payload).mode !== (d.mode === 'plan' ? 'plan' : 'execute')) {
+        const e = new Error('Esta chave corresponde a outro pedido. Reenvie somente o pedido original.');
+        e.status = 409;
+        throw e;
+      }
+      return {id:existing.id,payload:JSON.parse(existing.payload),replayed:true};
+    }
+    if (await db.prepare("SELECT 1 FROM jobs WHERE org_id=? AND kind='conversation' AND json_extract(payload,'$.conversationId')=? AND state IN ('queued','working')").get(org, id)) {
+      const e = new Error('Aguarde a resposta atual ou pause a execução.');
+      e.status = 409;
+      throw e;
+    }
+    await db.exec('BEGIN IMMEDIATE');
+    try {
+      const j = await queue(org, user.id, 'conversation', {
+        conversationId: id,
+        mode: d.mode === 'plan' ? 'plan' : 'execute'
+      }, null, key);
+      await message(org, id, 'user', text, j.id, attachments);
+      if (d.mode !== 'plan' && kernel) {
+        const operation = await kernel.register(org, user.id, id, j.id, text);
+        if (operation) j.payload.operationId = operation.id;
+      }
+      await db.exec('COMMIT');
+      return j;
+    } catch (e) {
+      await db.exec('ROLLBACK');
+      throw e;
+    }
+
+  }
   async function handle(req, res, org, section, id, extra, user, body) {
     if (!['conversations', 'browser'].includes(section)) return false;
     try {
@@ -586,60 +639,8 @@ export async function createConversation({db, dataDir, company, integration, lis
           return true;
         }
         if (req.method === 'POST' && extra === 'messages') {
-          await get(org, id);
-          const d = await body(req), text = String(d.text || '').trim().slice(0, 16000);
-          if (!text) throw new Error('Escreva um objetivo ou uma mensagem.');
-          const attachments = Array.isArray(d.attachments) ? d.attachments : [];
-          if (attachments.length > 6 || new Set(attachments).size !== attachments.length) throw new Error('Adicione até seis referências diferentes por mensagem.');
-          let attachmentBytes = 0;
-          for (const aid of attachments) {
-            await assetPath(org, aid);
-            const asset = await db.prepare('SELECT mime,size FROM assets WHERE id=? AND org_id=?').get(aid, org);
-            if (asset.mime.startsWith('image/') || asset.mime === 'application/pdf') attachmentBytes += asset.size;
-          }
-          if (attachmentBytes > 20 * 1024 * 1024) throw new Error('Use até 20 MB de imagens e PDFs por pedido.');
-          const key = String(d.idempotencyKey || randomUUID()).slice(0, 180);
-          const existing = await db.prepare('SELECT id,kind,payload FROM jobs WHERE org_id=? AND idempotency_key=?').get(org, key);
-          if (existing) {
-            if (existing.kind !== 'conversation' || JSON.parse(existing.payload).conversationId !== id) {
-              const e = new Error('Esta chave já foi usada em outra conversa.');
-              e.status = 409;
-              throw e;
-            }
-            const original = await db.prepare("SELECT text,attachments FROM conversation_messages WHERE org_id=? AND job_id=? AND role='user'").get(org, existing.id);
-            if (!original || original.text !== text || original.attachments !== JSON.stringify(attachments) || JSON.parse(existing.payload).mode !== (d.mode === 'plan' ? 'plan' : 'execute')) {
-              const e = new Error('Esta chave corresponde a outro pedido. Reenvie somente o pedido original.');
-              e.status = 409;
-              throw e;
-            }
-            json(res, 200, {
-              id: existing.id,
-              payload: JSON.parse(existing.payload)
-            });
-            return true;
-          }
-          if (await db.prepare("SELECT 1 FROM jobs WHERE org_id=? AND kind='conversation' AND json_extract(payload,'$.conversationId')=? AND state IN ('queued','working')").get(org, id)) {
-            const e = new Error('Aguarde a resposta atual ou pause a execução.');
-            e.status = 409;
-            throw e;
-          }
-          await db.exec('BEGIN IMMEDIATE');
-          try {
-            const j = await queue(org, user.id, 'conversation', {
-              conversationId: id,
-              mode: d.mode === 'plan' ? 'plan' : 'execute'
-            }, null, key);
-            await message(org, id, 'user', text, j.id, attachments);
-            if (d.mode !== 'plan' && kernel) {
-              const operation = await kernel.register(org, user.id, id, j.id, text);
-              if (operation) j.payload.operationId = operation.id;
-            }
-            await db.exec('COMMIT');
-            json(res, 201, j);
-          } catch (e) {
-            await db.exec('ROLLBACK');
-            throw e;
-          }
+          const {replayed,...result}=await submitMessage(org,id,user,await body(req));
+          json(res,replayed?200:201,result);
           return true;
         }
       }
@@ -662,6 +663,8 @@ export async function createConversation({db, dataDir, company, integration, lis
     await db.prepare('UPDATE conversations SET updated_at=? WHERE id=? AND org_id=?').run(now,threadId,job.org_id);
   }
   return {
+    submitMessage,
+    appendMessage: message,
     mediaResult,
     handle,
     run,

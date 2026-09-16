@@ -609,7 +609,7 @@ test('contratos dos provedores e ausência de confirmação não viram sucesso',
       return Response.json(id === 'container-1' ? {
         status_code: 'PUBLISHED'
       } : id === '17841400000000001' ? {
-        id: '17841400000000001',
+        user_id: '17841400000000001',
         username: 'eme.test'
       } : {
         id: 'media-1',

@@ -76,3 +76,8 @@ Nenhuma cobrança real foi criada. Os testes usam respostas simuladas do Stripe 
 - [Stripe: criar Checkout](https://docs.stripe.com/api/checkout/sessions/create), [Customer Portal](https://docs.stripe.com/api/customer_portal/sessions/create), [assinaturas](https://docs.stripe.com/api/subscriptions/list) e [faturas](https://docs.stripe.com/api/invoices/list).
 
 Esta entrega deve ser commitada localmente. Push e deploy permanecem com o responsável pelo projeto.
+
+
+## WhatsApp pessoal para conversar com a Helpu
+
+Expandir para WhatsApp fica na tela Conversa. Este vínculo não é a conexão WhatsApp Business da empresa: o usuário confirma seu telefone para conversar com o número oficial da Helpu, pode escolher o modo de operação e ativar/desativar. Configuração do número oficial, webhook, worker, proteções e limitações estão em OPERACAO-ONLINE.md, seção Conversa do painel no WhatsApp oficial da Helpu.

@@ -12,7 +12,7 @@ export function remotePoint(rect, imageWidth, imageHeight, clientX, clientY) {
  return {x: Math.min(imageWidth - 1, Math.max(0, Math.floor((clientX - rect.left) * imageWidth / rect.width))), y: Math.min(imageHeight - 1, Math.max(0, Math.floor((clientY - rect.top) * imageHeight / rect.height)))};
 }
 
-export function createCloudToolsUI({api, endpoint, getState, esc, toast, refresh, renderText = esc}) {
+export function createCloudToolsUI({api, endpoint, getState, esc, toast, refresh, renderText = esc, uploadFile}) {
  let view = '', company = '', epoch = 0, timer = null, listening = false, busy = false, loading = false;
  let runtime = null, loadError = '', profiles = [], selectedChannel = '', humanOwned = false, frameBusy = false, frameWidth = 0, frameHeight = 0;
  let videoChats = new Map(), previewScene = 0, lastChatPoll = 0, chatPollBusy = false;
@@ -102,7 +102,7 @@ export function createCloudToolsUI({api, endpoint, getState, esc, toast, refresh
   const key = project?.id || 'new';
   if (!videoChats.has(key)) {
    let thread = ''; try { thread = sessionStorage.getItem('helpu-video:' + company + ':' + key) || ''; } catch {}
-   videoChats.set(key, {thread, messages: [], jobs: [], prompt: '', pending: null, loaded: false});
+   videoChats.set(key, {thread, messages: [], jobs: [], prompt: '', pending: null, loaded: false, attachments: [], uploading: false});
   }
   return videoChats.get(key);
  }
@@ -113,9 +113,13 @@ export function createCloudToolsUI({api, endpoint, getState, esc, toast, refresh
   const chat=videoChat();
   return (chat.messages.length ? chat.messages.map(m=>'<article class="astra-bubble '+(m.role==='user'?'is-user':'')+'"><strong>'+(m.role==='user'?'Você':'Astra')+'</strong><div class="astra-message-text">'+(m.role==='user'?esc(String(m.text).split('\n\nContexto do editor Astra Vídeo:')[0]):renderText(m.text))+'</div></article>').join('') : '<div class="astra-chat-welcome"><h3>O que vamos criar?</h3><p>Peça um vídeo ou explique o que quer mudar. As cenas aparecerão no editor ao lado.</p></div>') + (chatWorking()?'<p class="astra-chat-status" role="status">O Astra está trabalhando no pedido… '+button('Pausar','pause-video-chat')+'</p>':'')+(chat.jobs[0]?.error?'<p class="form-error">'+esc(chat.jobs[0].error)+'</p>':'');
  }
+ function attachmentPanel() {
+  const chat=videoChat(), assets=(getState()?.assets||[]).filter(a=>['image/png','image/jpeg','image/webp','video/mp4','application/pdf'].includes(a.mime));
+  return '<div class="astra-attachments"><label class="p-button secondary">'+(chat.uploading?'Enviando…':'Anexar arquivo, imagem ou vídeo')+'<input id="astra-video-file" type="file" accept="image/png,image/jpeg,image/webp,video/mp4,application/pdf" '+(chat.uploading?'disabled':'')+'></label><p class="micro-copy">MP4, PNG, JPG, WebP ou PDF · até 25 MB por arquivo. Imagens e PDFs orientam o Astra; MP4 também pode ser usado nas cenas.</p><div>'+chat.attachments.map(id=>'<button type="button" class="quiet-button" data-cloud-action="remove-video-attachment" data-id="'+esc(id)+'">'+esc(assets.find(a=>a.id===id)?.name||'Arquivo')+' ×</button>').join('')+'</div><label class="p-field"><span>Usar arquivo da Biblioteca</span><select id="astra-video-library"><option value="">Selecionar uma referência</option>'+assets.map(a=>'<option value="'+esc(a.id)+'">'+esc(a.name)+'</option>').join('')+'</select></label></div>';
+ }
  function chatPanel() {
   const chat=videoChat();
-  return '<aside class="astra-chat"><div class="cloud-card-line"><h2>Converse com o Astra</h2>'+button('Atualizar','refresh-video-chat')+'</div><div id="astra-chat-messages" class="astra-chat-messages" aria-live="polite">'+chatMessages()+'</div><form id="astra-video-chat"><label class="sr-only" for="astra-video-prompt">Pedido para o Astra Vídeo</label><textarea id="astra-video-prompt" maxlength="6000" rows="4" placeholder="Ex.: crie um vídeo de 15 segundos para apresentar minha empresa">'+esc(chat.prompt)+'</textarea><div class="astra-chat-send"><small>Usa o contexto da sua empresa</small><button class="p-button primary" type="submit" '+(busy||chatWorking()||chatPending()||queueBlocked()||!videoReady()?'disabled':'')+'>Enviar pedido ↑</button></div></form><p class="micro-copy">Peça alterações aqui ou ajuste as cenas manualmente. Gerar o vídeo não publica nas redes.</p></aside>';
+  return '<aside class="astra-chat"><div class="cloud-card-line"><h2>Converse com o Astra</h2>'+button('Atualizar','refresh-video-chat')+'</div><div id="astra-chat-messages" class="astra-chat-messages" aria-live="polite">'+chatMessages()+'</div>'+attachmentPanel()+'<form id="astra-video-chat"><label class="sr-only" for="astra-video-prompt">Pedido para o Astra Vídeo</label><textarea id="astra-video-prompt" maxlength="6000" rows="4" placeholder="Ex.: crie um vídeo de 15 segundos para apresentar minha empresa">'+esc(chat.prompt)+'</textarea><div class="astra-chat-send"><small>Usa o contexto da sua empresa</small><button class="p-button primary" type="submit" '+(busy||chat.uploading||chatWorking()||chatPending()||queueBlocked()||!videoReady()?'disabled':'')+'>Enviar pedido ↑</button></div></form><p class="micro-copy">Peça alterações aqui ou ajuste as cenas manualmente. Gerar o vídeo não publica nas redes.</p></aside>';
  }
  function previewContent() {
   previewScene=Math.min(Math.max(0,previewScene),Math.max(0,draft.length-1));
@@ -146,7 +150,7 @@ export function createCloudToolsUI({api, endpoint, getState, esc, toast, refresh
  }
  async function sendVideoChat() {
   const chat=videoChat(),text=chat.prompt.trim();
-  if(!text||chatWorking()||chatPending()||busy)return;
+  if(!text||chat.uploading||chatWorking()||chatPending()||busy)return;
   if(!videoReady()){toast('O editor precisa do serviço de vídeo online para executar pedidos.',true);return;}
   if(queueBlocked()){toast('Ative o processamento online antes de enviar o pedido.',true);return;}
   await withAction(async t=>{
@@ -158,9 +162,9 @@ export function createCloudToolsUI({api, endpoint, getState, esc, toast, refresh
    const id=project.id;
    if(!chat.thread){const created=await api(endpoint('conversations'),'POST',{title:('Vídeo: '+projectName(project)).slice(0,70)});if(!current(t)||project?.id!==id)return;chat.thread=created.id;try{sessionStorage.setItem('helpu-video:'+company+':'+id,chat.thread);}catch{}}
    const payload=text+'\n\nContexto do editor Astra Vídeo: projeto '+id+', revisão '+project.revision+'. Trabalhe neste projeto existente e consulte a revisão atual antes de alterar. Pedido restrito à criação e edição de vídeo, sem publicar. Não exporte novamente se já houver exportação em andamento.';
-   if(!chat.pending||chat.pending.prompt!==text)chat.pending={prompt:text,text:payload,key:crypto.randomUUID()};
-   await api(endpoint('conversations/'+encodeURIComponent(chat.thread)+'/messages'),'POST',{text:chat.pending.text,mode:'execute',attachments:[],idempotencyKey:chat.pending.key});
-   if(!current(t)||project?.id!==id)return;chat.pending=null;chat.prompt='';chat.loaded=false;chat.jobs=[{state:'queued'}];paint();
+   if(!chat.pending||chat.pending.prompt!==text||JSON.stringify(chat.pending.attachments)!==JSON.stringify(chat.attachments))chat.pending={prompt:text,text:payload,attachments:[...chat.attachments],key:crypto.randomUUID()};
+   await api(endpoint('conversations/'+encodeURIComponent(chat.thread)+'/messages'),'POST',{text:chat.pending.text,mode:'execute',attachments:chat.pending.attachments,idempotencyKey:chat.pending.key});
+   if(!current(t)||project?.id!==id)return;chat.pending=null;chat.prompt='';chat.attachments=[];chat.loaded=false;chat.jobs=[{state:'queued'}];paint();
   });
   await pollVideoChat(true);
  }
@@ -169,7 +173,7 @@ export function createCloudToolsUI({api, endpoint, getState, esc, toast, refresh
   const blocked = readiness('video');
   const assets = (getState()?.assets || []).filter(a => a.mime?.startsWith('video/'));
   return `${blocked}${queueNotice()}<div class="astra-project-toolbar"><details><summary>Seus projetos</summary><aside class="cloud-project-list"><h2>Seus projetos</h2>${button('Novo vídeo', 'new-project', busy ? 'disabled' : '', true)}${projects.map(p => `<button type="button" class="cloud-project-choice" data-cloud-action="select-project" data-id="${esc(p.id)}" ${project?.id === p.id ? 'aria-current="true"' : ''} ${busy ? 'disabled' : ''}>${esc(projectName(p))}</button>`).join('') || '<p>Crie seu primeiro projeto.</p>'}</aside></details><span class="p-tag">Vertical · Reels e Stories · 1080 × 1920</span></div><div class="cloud-video-layout">${chatPanel()}<div class="cloud-video-editor">
-  ${!project ? `<h2>Crie um vídeo com cenas.</h2><p>Combine textos, cores e duração. Se quiser, use um vídeo da Biblioteca como gravação de base.</p><form id="cloud-create-project"><label class="p-field"><span>Nome do projeto</span><input name="name" maxlength="100" required placeholder="Vídeo da minha empresa"></label><label class="p-field"><span>Vídeo de base</span><select name="sourceAssetId"><option value="">Criar somente com textos e cores</option>${assets.map(a => `<option value="${esc(a.id)}">${esc(a.name)}</option>`).join('')}</select></label><div class="astra-quick-settings"><label class="p-field"><span>Duração inicial</span><select name="duration"><option value="15">15 segundos</option><option value="30">30 segundos</option><option value="60">60 segundos</option></select></label><label class="p-field"><span>Estilo inicial</span><select name="style"><option value="light">Claro e minimalista</option><option value="dark">Escuro e elegante</option></select></label></div><button type="submit" class="p-button primary" ${busy ? 'disabled' : ''}>Criar projeto</button></form><p class="micro-copy">Para usar uma gravação, envie o arquivo primeiro à <a href="#/studio">Biblioteca</a>.</p>` : `<div class="cloud-card-line"><div><h2>${esc(projectName(project))}</h2><p>Vídeo vertical · <span id="cloud-scene-total">${draft.reduce((n, s) => n + (Number(s.duration) || 0), 0)}</span> segundos${project.sourceAssetId ? ' · gravação de base vinculada' : ''}</p></div><span id="cloud-save-state" class="p-tag">${dirty ? 'Alterações não salvas' : 'Projeto salvo'}</span></div><div id="astra-scene-preview" class="astra-scene-preview">${previewContent()}</div><details class="astra-manual-editor"><summary>Editar manualmente · textos, cores e cortes</summary><div class="cloud-scenes">${draft.map(sceneFields).join('')}</div></details><div class="cloud-editor-actions">${button('Adicionar cena', 'add-scene', `${draft.length >= VIDEO_LIMITS.scenes || busy ? 'disabled' : ''}`)}${button('Salvar alterações', 'save-project', busy ? 'disabled' : '')}${button('Gerar MP4', 'export-video', `${busy || queueBlocked() || ['queued', 'working'].includes(exportJob?.state) ? 'disabled' : ''}`, true)}</div><p class="micro-copy">Até 32 cenas, com 0,2 a 60 segundos por cena e 120 segundos no total. Use até 280 caracteres por cena. A exportação usa a versão salva e não publica o arquivo.</p><div id="cloud-export-result">${exportContent()}</div>`}</div></div>`;
+  ${!project ? `<h2>Crie um vídeo com cenas.</h2><p>Combine textos, cores e duração. Se quiser, use um vídeo da Biblioteca como gravação de base.</p><form id="cloud-create-project"><label class="p-field"><span>Nome do projeto</span><input name="name" maxlength="100" required placeholder="Vídeo da minha empresa"></label><label class="p-field"><span>Vídeo de base</span><select name="sourceAssetId"><option value="">Criar somente com textos e cores</option>${assets.map(a => `<option value="${esc(a.id)}">${esc(a.name)}</option>`).join('')}</select></label><div class="astra-quick-settings"><label class="p-field"><span>Duração inicial</span><select name="duration"><option value="15">15 segundos</option><option value="30">30 segundos</option><option value="60">60 segundos</option></select></label><label class="p-field"><span>Estilo inicial</span><select name="style"><option value="light">Claro e minimalista</option><option value="dark">Escuro e elegante</option></select></label></div><button type="submit" class="p-button primary" ${busy ? 'disabled' : ''}>Criar projeto</button></form><p class="micro-copy">Anexe um MP4 aqui ao lado e selecione-o como vídeo de base.</p>` : `<div class="cloud-card-line"><div><h2>${esc(projectName(project))}</h2><p>Vídeo vertical · <span id="cloud-scene-total">${draft.reduce((n, s) => n + (Number(s.duration) || 0), 0)}</span> segundos${project.sourceAssetId ? ' · gravação de base vinculada' : ''}</p></div><span id="cloud-save-state" class="p-tag">${dirty ? 'Alterações não salvas' : 'Projeto salvo'}</span></div><div id="astra-scene-preview" class="astra-scene-preview">${previewContent()}</div><details class="astra-manual-editor"><summary>Editar manualmente · textos, cores e cortes</summary><div class="cloud-scenes">${draft.map(sceneFields).join('')}</div></details><div class="cloud-editor-actions">${button('Adicionar cena', 'add-scene', `${draft.length >= VIDEO_LIMITS.scenes || busy ? 'disabled' : ''}`)}${button('Salvar alterações', 'save-project', busy ? 'disabled' : '')}${button('Gerar MP4', 'export-video', `${busy || queueBlocked() || ['queued', 'working'].includes(exportJob?.state) ? 'disabled' : ''}`, true)}</div><p class="micro-copy">Até 32 cenas, com 0,2 a 60 segundos por cena e 120 segundos no total. Use até 280 caracteres por cena. A exportação usa a versão salva e não publica o arquivo.</p><div id="cloud-export-result">${exportContent()}</div>`}</div></div>`;
  }
  function videos() {
   ensureCompany();
@@ -186,7 +190,8 @@ export function createCloudToolsUI({api, endpoint, getState, esc, toast, refresh
   if (!active()) return;
   document.querySelectorAll('#cloud-tools-root input, #cloud-tools-root select, #cloud-tools-root textarea, #cloud-tools-root button').forEach(el => {
    const action = el.dataset?.cloudAction;
-   el.disabled = busy || (view === 'video' && ((!videoReady() && action !== 'reload') || ((chatWorking() || chatPending()) && action !== 'pause-video-chat' && action !== 'refresh-video-chat' && action !== 'preview-scene') || (el.type === 'submit' && el.closest?.('#astra-video-chat') && queueBlocked()))) || (action === 'export-video' && (queueBlocked() || ['queued', 'working'].includes(exportJob?.state))) || (action === 'remove-scene' && draft.length < 2) || (action === 'add-scene' && draft.length >= VIDEO_LIMITS.scenes);
+   if(view==='video'&&(el.id==='astra-video-file'||el.id==='astra-video-library'||action==='remove-video-attachment')){el.disabled=busy||videoChat().uploading||chatWorking()||chatPending();return;}
+   el.disabled = busy || (view === 'video' && ((!videoReady() && action !== 'reload') || ((chatWorking() || chatPending()) && action !== 'pause-video-chat' && action !== 'refresh-video-chat' && action !== 'preview-scene') || (el.type === 'submit' && el.closest?.('#astra-video-chat') && (queueBlocked()||videoChat().uploading)))) || (action === 'export-video' && (queueBlocked() || ['queued', 'working'].includes(exportJob?.state))) || (action === 'remove-scene' && draft.length < 2) || (action === 'add-scene' && draft.length >= VIDEO_LIMITS.scenes);
   });
  }
  async function load() {
@@ -258,6 +263,7 @@ export function createCloudToolsUI({api, endpoint, getState, esc, toast, refresh
   const b = event.target.closest('[data-cloud-action]'); if (!b || !$('#cloud-tools-root')?.contains(b)) return;
   const action = b.dataset.cloudAction, id = b.dataset.id;
   if (busy) return;
+  if(action==='remove-video-attachment'){if(!videoChat().uploading&&!chatWorking()){videoChat().attachments=videoChat().attachments.filter(x=>x!==id);paint();}return;}
   if(action==='refresh-video-chat'){await pollVideoChat(true);return;}
   if (action === 'preview-scene') { previewScene=Number(b.dataset.index)||0; const preview=$('#astra-scene-preview');if(preview)preview.innerHTML=previewContent();return; }
   if (action === 'pause-video-chat') { const chat=videoChat();const job=chat.jobs.find(j=>['queued','working','waiting_provider'].includes(j.state));try{if(job?.id)await api(endpoint('conversations/'+encodeURIComponent(chat.thread)+'/stop'),'POST',{});await pollVideoChat(true);}catch{toast('Não foi possível confirmar a pausa. Confira o andamento antes de editar.',true);}return; }
@@ -310,6 +316,37 @@ export function createCloudToolsUI({api, endpoint, getState, esc, toast, refresh
    }
   });
  }
+ function validateReferences(ids) {
+  const assets=getState()?.assets||[];
+  if(ids.length>6)throw new Error('Use até seis referências por pedido.');
+  let bytes=0;
+  for(const id of ids){const a=assets.find(a=>a.id===id);if(!a)throw new Error('Arquivo não encontrado nesta empresa.');if(a.mime?.startsWith('image/')||a.mime==='application/pdf')bytes+=a.size||0;}
+  if(bytes>20*1024*1024)throw new Error('Use até 20 MB de imagens e PDFs por pedido.');
+ }
+ async function attachmentChange(event) {
+  if(!active()||view!=='video'||!['astra-video-file','astra-video-library'].includes(event.target.id))return;
+  const chat=videoChat(), t=ticket(), projectId=project?.id;
+  if(busy||chat.uploading||chatWorking()||chatPending())return;
+  const isCurrent=()=>current(t)&&projectId===project?.id;
+  try {
+   if(event.target.id==='astra-video-library') {
+    const id=event.target.value;if(!id||chat.attachments.includes(id))return;
+    validateReferences([...chat.attachments,id]);chat.attachments.push(id);paint();return;
+   }
+   const file=event.target.files?.[0];if(!file)return;
+   if(!['image/png','image/jpeg','image/webp','video/mp4','application/pdf'].includes(file.type))throw new Error('Envie MP4, PNG, JPG, WebP ou PDF.');
+   if(file.size>25*1024*1024)throw new Error('Envie arquivos de até 25 MB.');
+   if(chat.attachments.length>=6)throw new Error('Use até seis referências por pedido.');
+   if(!uploadFile)throw new Error('O envio de arquivos não está disponível. Recarregue o painel.');
+   chat.uploading=true;setControlState();
+   const asset=await uploadFile('/api/portal/'+encodeURIComponent(t.company)+'/files',file);
+   if(!isCurrent())return;await refresh(false);if(!isCurrent())return;
+   validateReferences([...chat.attachments,asset.id]);chat.attachments.push(asset.id);paint();
+   if(asset.mime==='video/mp4'&&!project){const source=$('#cloud-create-project select[name="sourceAssetId"]');if(source)source.value=asset.id;}
+   toast('Arquivo salvo na Biblioteca e anexado ao pedido.');
+  }catch(error){if(isCurrent())toast(error.message,true);}
+  finally{chat.uploading=false;event.target.value='';if(isCurrent()){const label=$('#astra-video-file')?.parentElement;if(label?.firstChild)label.firstChild.textContent='Anexar arquivo, imagem ou vídeo';setControlState();}}
+ }
  function input(event) {
   if (!active() || view !== 'video' || busy) return;
   if(event.target.id==='astra-video-prompt'){videoChat().prompt=event.target.value;return;}
@@ -358,7 +395,7 @@ export function createCloudToolsUI({api, endpoint, getState, esc, toast, refresh
  }
  function listen() {
   if (listening) return; listening = true;
-  document.addEventListener('click', click); document.addEventListener('input', input); document.addEventListener('submit', submit);
+  document.addEventListener('change', attachmentChange); document.addEventListener('click', click); document.addEventListener('input', input); document.addEventListener('submit', submit);
  }
  function mount(nextView) {
   if (!ACTIVE_VIEWS.has(nextView)) { dispose(); return; }
@@ -370,7 +407,7 @@ export function createCloudToolsUI({api, endpoint, getState, esc, toast, refresh
  }
  function dispose() {
   releaseOwned(); epoch++; view = ''; if (timer) clearInterval(timer); timer = null;
-  if (listening) { document.removeEventListener('click', click); document.removeEventListener('input', input); document.removeEventListener('submit', submit); listening = false; }
+  if (listening) { document.removeEventListener('change', attachmentChange); document.removeEventListener('click', click); document.removeEventListener('input', input); document.removeEventListener('submit', submit); listening = false; }
   const field = $('#cloud-private-input'); if (field) field.value = '';
   const img = $('#cloud-remote-frame'); if (img) { img.removeAttribute('src'); img.hidden = true; }
   resetData();

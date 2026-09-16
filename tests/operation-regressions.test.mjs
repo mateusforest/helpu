@@ -53,7 +53,7 @@ test('mídia desaprovada e publicações antigas não viram confirmação', asyn
   const started = Date.now();
   let timestamp = new Date(started).toISOString();
   const provider = createProviders(async url => Response.json(url.includes('/17841400000000001?') ? {
-    id: '17841400000000001',
+    user_id: '17841400000000001',
     username: 'fixture'
   } : url.includes('/container?') ? {
     status_code: 'PUBLISHED'

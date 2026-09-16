@@ -1,3 +1,4 @@
+import {createWhatsAppChat} from './whatsapp-chat.mjs';
 import {resolveOpenAIConfig} from './openai-config.mjs';
 import {createStripeBilling} from './stripe-billing.mjs';
 import {createInstagramLogin} from './instagram-login.mjs';
@@ -49,7 +50,7 @@ const statuses = {
   messages: ['draft', 'recorded'],
   tasks: ['todo', 'doing', 'done']
 };
-export async function createPortal({db, dataDir, userFrom, json, safeOrigin, providers = createProviders(), startScheduler = true, browserLaunch, conversationRespond, publicationFetch, publicationResolve,cloud=false,storageClient,instagramLoginFetch,instagramLoginEnv,stripeFetch,stripeEnv,runtimeEnv,runtimeFetch,openaiEnv=process.env}) {
+export async function createPortal({db, dataDir, userFrom, json, safeOrigin, providers = createProviders(), startScheduler = true, browserLaunch, conversationRespond, publicationFetch, publicationResolve,cloud=false,storageClient,instagramLoginFetch,instagramLoginEnv,stripeFetch,stripeEnv,runtimeEnv,runtimeFetch,whatsappChatEnv=process.env,whatsappChatFetch,openaiEnv=process.env}) {
   const cloudRuntime=createCloudRuntime({env:runtimeEnv,fetcher:runtimeFetch});
   if(db.dialect==='postgres'){
     const migration=await db.prepare('SELECT version FROM portal_migrations ORDER BY version DESC LIMIT 1').get();
@@ -778,6 +779,7 @@ export async function createPortal({db, dataDir, userFrom, json, safeOrigin, pro
     reviewPublication: publication.review,cloud,runtimeTools,
     browserOverride:cloudRuntime.configured?runtimeTools.browser:undefined
   });
+  const whatsappChat=createWhatsAppChat({db,metadata,saveMetadata,conversation,assetPath,env:whatsappChatEnv,fetcher:whatsappChatFetch});
   async function verifyPublication(job, content, external) {
     const org = job.org_id, providerId = external.publishedId;
     let evidence;
@@ -1332,6 +1334,7 @@ export async function createPortal({db, dataDir, userFrom, json, safeOrigin, pro
           brief: 'Os registros locais não têm trabalho pendente. Revise lacunas e resultados antes de propor uma nova frente.'
         }, null, 'daily-director:' + date);
       }
+      await whatsappChat.tick();
       const job = await db.prepare("UPDATE jobs SET state='working',attempts=attempts+1,lease_until=?,updated_at=? WHERE id=(SELECT id FROM jobs WHERE state IN ('queued','waiting_provider') AND scheduled_at<=? ORDER BY scheduled_at LIMIT 1) AND state IN ('queued','waiting_provider') RETURNING *").get(Date.now() + 180000, Date.now(), Date.now());
       if (!job) return;
       try {
@@ -1473,6 +1476,7 @@ export async function createPortal({db, dataDir, userFrom, json, safeOrigin, pro
   async function handle(req, res, pathname) {
     const url = new URL(req.url, 'http://localhost');
     if(pathname==='/api/connect/instagram/callback'){try{await instagramLogin.callback(req,res);}catch{if(!res.headersSent)res.writeHead(303,{Location:'/retorno.html?connection=failed','Cache-Control':'no-store','Referrer-Policy':'no-referrer'}).end();}return true;}
+    if(pathname==='/webhooks/helpu-whatsapp'){await whatsappChat.webhook(req,res,url,readRaw);return true;}
     if (pathname.startsWith('/webhooks/')) {
       const [, , org, provider] = pathname.split('/');
       await webhook(req, res, url, org, provider);
@@ -1565,6 +1569,12 @@ export async function createPortal({db, dataDir, userFrom, json, safeOrigin, pro
     }
     const parts = pathname.split('/').filter(Boolean), org = parts[2], section = parts[3], kind = parts[4], id = parts[5];
     await access(org, user);
+    if(section==='whatsapp-chat'){
+      if(req.method==='GET')json(res,200,await whatsappChat.status(org,user));
+      else if(req.method==='POST')json(res,200,await whatsappChat.save(org,user,await body(req)));
+      else fail('Método não permitido.',405);
+      return true;
+    }
     if(section==='billing'){
       if(req.method==='GET'&&!kind)json(res,200,await billing.state(org,user));
       else if(req.method==='POST'&&kind){await body(req);json(res,200,await billing.action(org,user,kind));}

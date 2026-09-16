@@ -34,7 +34,7 @@ function fixture() {
   if (url.endsWith('/import')) return {assetId: 'generated-video', url: 'https://unsafe.example/should-not-be-used'};
   return {};
  };
- const context = vm.createContext({document, console, structuredClone, crypto: {randomUUID: () => 'export-key'}, setInterval(fn) { timers.push(fn); return timers.length; }, clearInterval(id) { timers[id - 1] = null; }, __deps: {api, endpoint: tail => '/api/portal/' + state.company.id + '/' + tail, getState: () => state, esc, toast: (...args) => messages.push(args), refresh: async () => {}}});
+ const context = vm.createContext({document, console, structuredClone, crypto: {randomUUID: () => 'export-key'}, setInterval(fn) { timers.push(fn); return timers.length; }, clearInterval(id) { timers[id - 1] = null; }, __deps: {api, endpoint: tail => '/api/portal/' + state.company.id + '/' + tail, getState: () => state, esc, toast: (...args) => messages.push(args), refresh: async () => {},uploadFile:async(url,file)=>{calls.push({url,method:'UPLOAD',body:{name:file.name}});const asset={id:'uploaded',name:file.name,mime:file.type,size:file.size};state.assets.push(asset);return asset;}}});
  vm.runInContext(source.replace(/export function /g, 'function ') + '\nglobalThis.ui=createCloudToolsUI(__deps);globalThis.point=remotePoint;', context);
  const ui = context.ui;
  return {ui, state, calls, nodes, handlers, timers, messages, document, point: context.point,
@@ -103,7 +103,7 @@ test('troca de empresa limpa imediatamente uma tela e entrada privada já visív
 });
 
 test('editor salva revisão, acompanha exportação e usa somente arquivo importado da biblioteca', async () => {
- const f = fixture(); await f.mount('video'); assert.match(f.ui.videos(), /Meu vídeo/); assert.doesNotMatch(f.ui.videos(), /value="photo"/);
+ const f = fixture(); await f.mount('video'); assert.match(f.ui.videos(), /Meu vídeo/); assert.doesNotMatch(f.ui.videos().match(/<select name="sourceAssetId">[\s\S]*?<\/select>/)?.[0]||'', /value="photo"/);
  await f.click('select-project', {id: 'project-one'});
  f.input(0, 'text', 'Nova legenda'); await f.click('export-video');
  const save = f.calls.find(c => c.method === 'PATCH'); const generation = f.calls.find(c => c.url.endsWith('/exports'));
@@ -226,4 +226,20 @@ test('resposta atrasada do chat não aparece na empresa seguinte',async()=>{
  const release=f.hold('/api/portal/company-a/conversations/video-thread');const pending=f.click('refresh-video-chat');await flush();
  f.state.company.id='company-b';await f.mount('video');release({messages:[{role:'assistant',text:'SEGREDO EMPRESA A'}],jobs:[]});await pending;
  assert.doesNotMatch(f.ui.videos(),/SEGREDO EMPRESA A/);
+});
+
+test('vídeo aceita referências e upload direto mesmo com runtime ausente',async()=>{
+ const f=fixture();f.setStatus({configured:false,available:false});await f.mount('video');
+ await f.handlers.change({target:{id:'astra-video-file',value:'file',files:[{name:'referencia.png',type:'image/png',size:100}]}});
+ assert.equal(f.calls.filter(c=>c.method==='UPLOAD').length,1);assert.match(f.ui.videos(),/referencia.png ×/);
+ assert.match(f.ui.videos(),/Falta conectar o serviço online/);
+ await f.handlers.change({target:{id:'astra-video-file',value:'file',files:[{name:'large.mp4',type:'video/mp4',size:26*1024*1024}]}});
+ assert.equal(f.calls.filter(c=>c.method==='UPLOAD').length,1);assert.match(f.messages.at(-1)[0],/25 MB/);
+});
+test('referências de vídeo seguem no pedido do mesmo projeto e são removíveis',async()=>{
+ const f=fixture();await f.mount('video');await f.click('select-project',{id:'project-one'});
+ await f.handlers.change({target:{id:'astra-video-library',value:'photo'}});
+ f.typeChat('Use esta imagem como referência');await f.submit({id:'astra-video-chat'});
+ const request=f.calls.find(c=>c.url.endsWith('/messages')&&c.method==='POST');assert.deepEqual(Array.from(request.body.attachments),['photo']);
+ assert.doesNotMatch(f.ui.videos(),/Foto ×/);
 });

@@ -76,3 +76,40 @@ A seção Biblioteca → Astra Vídeo reúne o chat à esquerda e a prévia das 
 A tela acompanha novas revisões e a exportação, preserva a conversa por projeto na sessão do navegador e oferece edição manual de textos, cores, duração e cortes. A criação manual tem escolhas de duração inicial (15, 30 ou 60 segundos) e estilo claro/escuro. O formato disponível continua vertical. A prévia é uma representação aproximada da cena; o MP4 final é conferido após exportação.
 
 A interface permanece visível quando falta o serviço online, com os controles de execução desabilitados. Esta alteração não hospeda o serviço, não muda a automação de acesso e não realiza chamadas pagas. A interface foi conferida em navegador com dados simulados, em computador e celular; a exportação real foi testada separadamente com vídeo sintético e FFmpeg.
+
+
+## Conversa do painel no WhatsApp oficial da Helpu
+
+O chat inicial tem **Expandir para WhatsApp**. Cada usuário informa o próprio telefone, autoriza o recebimento e escolhe conversar e executar ou somente planejar. Pode vincular a conversa aberta ou iniciar uma conversa dedicada, acessível também pelo painel. A verificação é feita enviando ao número oficial uma mensagem com código aleatório, de uso único, válido por dez minutos. O servidor confere a assinatura da Meta, o número oficial e o remetente; salvar um telefone não autoriza acesso à empresa. Um telefone fica vinculado a uma empresa/usuário por vez.
+
+Número oficial indicado pelo responsável: **+55 54 99990-2688**. É o destinatário dos pedidos, separado dos números pessoais dos usuários e dos canais de atendimento das empresas. Não reutilize automaticamente o token/Phone Number ID do número anterior: devem pertencer a este número registrado na Cloud API.
+
+Na Vercel/servidor, configurar os campos de .env.example:
+
+- HELPU_WHATSAPP_NUMBER=5554999902688
+- HELPU_WHATSAPP_PHONE_NUMBER_ID: identificador fornecido pela Meta, não o telefone.
+- HELPU_WHATSAPP_ACCESS_TOKEN: token do número oficial.
+- HELPU_WHATSAPP_APP_SECRET: segredo do aplicativo responsável pelos webhooks.
+- HELPU_WHATSAPP_VERIFY_TOKEN: segredo de verificação do webhook.
+- HELPU_WHATSAPP_API_VERSION=v24.0
+- HELPU_WHATSAPP_DAILY_MESSAGES=60: limite de tentativas de envio por empresa em 24 horas; entre 1 e 500.
+
+Callback: https://www.helpumkt.com/webhooks/helpu-whatsapp. Cadastrar o mesmo token de verificação na Meta e assinar o campo messages. A criação deste código não registra o telefone na Meta nem publica o aplicativo. O status configurado indica presença das credenciais; a confirmação efetiva do usuário depende de um webhook válido. Sem credenciais, a interface salva a preferência e explica a pendência.
+
+As mensagens de texto recebidas são persistidas e processadas pelo worker já existente, usando o mesmo motor, contexto da empresa, ferramentas, limites e regras de aprovação do chat. A rotina não usa um novo agente nem uma chamada de IA para confirmar telefone. Respostas e arquivos da conversa vinculada são enviados pela Cloud API; mídia privada é transferida ao endpoint de mídia autenticado da Meta. PNG/JPEG até 5 MB, MP4 até 16 MB e PDF até 25 MB são enviados como arquivo; outros formatos/tamanhos recebem aviso para baixar na Biblioteca.
+
+O worker precisa continuar ativo online (HELPU_AUTOMATIONS_ENABLED, CRON_SECRET e invocação recorrente de /api/worker conforme este documento). Fechar o computador não interrompe um worker hospedado. Esta entrega não configura a infraestrutura automaticamente.
+
+Proteções: isolamento por empresa e usuário, revalidação de associação, consumo atômico do código, deduplicação de mensagens/eventos, reserva de cada envio antes da chamada externa e ausência de repetição automática quando a entrega fica incerta. Desativar no painel ou enviar SAIR bloqueia novos pedidos e envios. Pedidos já iniciados devem ser pausados na conversa. Reativar exige nova comprovação do telefone.
+
+Limites desta etapa: entrada pelo WhatsApp é por texto; arquivos de referência são enviados no painel. Fora da janela de atendimento de 24 horas, respostas ficam aguardando uma nova mensagem do usuário. Lembretes proativos e modelos aprovados para envio fora da janela ainda não foram implementados neste fluxo. Não há publicação automática por habilitar o WhatsApp. Testes usam números fictícios e transportes simulados, em SQLite e PostgreSQL; nenhuma mensagem real foi enviada.
+
+Referência: [Meta — WhatsApp Cloud API](https://www.postman.com/meta/whatsapp-business-platform/documentation/wlk6lh4/whatsapp-cloud-api).
+
+## Anexos diretamente no Astra Vídeo
+
+O editor aceita upload de MP4, PNG, JPEG, WebP e PDF, até 25 MB por arquivo, e seleção de referências já salvas. Até seis arquivos por pedido, com limite conjunto de 20 MB para imagens e PDFs. O upload usa o armazenamento privado existente e fica disponível mesmo sem runtime de vídeo; os identificadores seguem no pedido da conversa. Trocar de empresa/projeto durante o upload não anexa o arquivo à conversa seguinte.
+
+Um MP4 enviado pode ser selecionado como vídeo de base e editado por cortes, textos e cores. Imagens e PDFs são referências para o Astra; esta entrega não implementa inclusão de imagens como camadas da timeline, edição de áudio ou importação completa da interface original ASTRA-VIDEO. A pasta original já foi localizada, sem necessidade de reenvio.
+
+**Falta conectar o serviço online** significa que o runtime de vídeo ainda não foi hospedado/configurado. Não é aprovação do cliente. **Validar conexão**, na inteligência do chat, é uma verificação diferente: testa o acesso ao provedor configurado. A presença de uma chave não prova acesso ao modelo.

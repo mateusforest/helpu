@@ -39,7 +39,7 @@ let boot=null,S=null,org='',view='conversation',query='',studioFilter='all',sele
 async function api(route,method='GET',data){const res=await fetch(route,{method,credentials:'same-origin',headers:data===undefined?{}:{'Content-Type':'application/json'},body:data===undefined?undefined:JSON.stringify(data)});let value;try{value=await res.json();}catch{throw new Error('Não foi possível ler a resposta. Atualize a página.');}if(res.status===401){location.assign('entrar.html');throw new Error('Entre para continuar.');}if(!res.ok)throw new Error(value.error||'Não foi possível concluir.');return value;}
 const endpoint=tail=>'/api/portal/'+org+'/'+tail;
 const accountUI=createAccountUI({api,esc,getState:()=>S,onUser:user=>{boot.user={...boot.user,...user};$('#user-initials').textContent=user.name.split(' ').filter(Boolean).map(x=>x[0]).slice(0,2).join('').toUpperCase();},toast});
-const cloudToolsUI=createCloudToolsUI({api,endpoint,getState:()=>S,esc,toast,refresh,renderText:renderChatText});
+const cloudToolsUI=createCloudToolsUI({api,endpoint,getState:()=>S,esc,toast,refresh,renderText:renderChatText,uploadFile:(url,file)=>uploadFile(url,file)});
 const conversationUI=createConversationUI({api,endpoint,getState:()=>S,esc,toast,refresh,openDialog,closeDialog});
 function toast(message,error=false){clearTimeout(toastTimer);const el=$('#toast');el.textContent=message;el.className='toast'+(error?' error':'');el.hidden=false;toastTimer=setTimeout(()=>el.hidden=true,6500);}
 function filtered(rows){return query?rows.filter(row=>JSON.stringify(row).toLocaleLowerCase('pt-BR').includes(query)):rows;}
