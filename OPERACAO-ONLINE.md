@@ -82,11 +82,11 @@ A interface permanece visível quando falta o serviço online, com os controles 
 
 O chat inicial tem **Expandir para WhatsApp**. Cada usuário informa o próprio telefone, autoriza o recebimento e escolhe conversar e executar ou somente planejar. Pode vincular a conversa aberta ou iniciar uma conversa dedicada, acessível também pelo painel. A verificação é feita enviando ao número oficial uma mensagem com código aleatório, de uso único, válido por dez minutos. O servidor confere a assinatura da Meta, o número oficial e o remetente; salvar um telefone não autoriza acesso à empresa. Um telefone fica vinculado a uma empresa/usuário por vez.
 
-Número oficial indicado pelo responsável: **+55 54 99990-2688**. É o destinatário dos pedidos, separado dos números pessoais dos usuários e dos canais de atendimento das empresas. Não reutilize automaticamente o token/Phone Number ID do número anterior: devem pertencer a este número registrado na Cloud API.
+Decisão atual: usar o **número de teste fornecido pela Meta** até adquirir um número exclusivo da Helpu. O **+55 54 99990-2688** continua pessoal e pode ser cadastrado como destinatário autorizado do teste. O número de teste, seu Phone Number ID e token precisam corresponder ao mesmo aplicativo. Não reutilize automaticamente os dados do número anterior.
 
 Na Vercel/servidor, configurar os campos de .env.example:
 
-- HELPU_WHATSAPP_NUMBER=5554999902688
+- HELPU_WHATSAPP_NUMBER: número de teste exibido na Etapa 1, completo com código do país, somente dígitos.
 - HELPU_WHATSAPP_PHONE_NUMBER_ID: identificador fornecido pela Meta, não o telefone.
 - HELPU_WHATSAPP_ACCESS_TOKEN: token do número oficial.
 - HELPU_WHATSAPP_APP_SECRET: segredo do aplicativo responsável pelos webhooks.
@@ -113,3 +113,11 @@ O editor aceita upload de MP4, PNG, JPEG, WebP e PDF, até 25 MB por arquivo, e 
 Um MP4 enviado pode ser selecionado como vídeo de base e editado por cortes, textos e cores. Imagens e PDFs são referências para o Astra; esta entrega não implementa inclusão de imagens como camadas da timeline, edição de áudio ou importação completa da interface original ASTRA-VIDEO. A pasta original já foi localizada, sem necessidade de reenvio.
 
 **Falta conectar o serviço online** significa que o runtime de vídeo ainda não foi hospedado/configurado. Não é aprovação do cliente. **Validar conexão**, na inteligência do chat, é uma verificação diferente: testa o acesso ao provedor configurado. A presença de uma chave não prova acesso ao modelo.
+
+### Configuração temporária com o número de teste
+
+Na Meta, fechar o cadastro de número de produção e voltar a Configuração básica → Etapa 1. Experimente. Usar o número de teste existente, adicionar/verificar o telefone pessoal na lista de destinatários e gerar o token temporário. Copiar o número de teste, Phone Number ID e token para os respectivos campos HELPU_WHATSAPP_* do .env.local privado e da Vercel. O segredo do app vem de Configurações do app → Básico. O VERIFY_TOKEN é um segredo criado pela Helpu para validar o webhook, diferente do token de acesso.
+
+O número oficial não tem mais valor pessoal padrão. O código preserva o código internacional dos números da Meta (inclusive +1), sem adicionar 55 automaticamente. Somente a entrada de um telefone pessoal sem código internacional presume Brasil; para outros países, informar + e o código do país.
+
+Publicar manualmente as alterações e as variáveis antes de verificar o callback. Assinar messages e confirmar a assinatura do aplicativo na WABA. O envio inicial de teste do painel da Meta não comprova ainda o recebimento do webhook nem o processamento do Astra. Validar depois o fluxo completo: confirmação do telefone no painel → mensagem ao número de teste → pedido por texto → resposta no WhatsApp e no painel. O token temporário precisa ser renovado quando expirar. O ambiente de teste não é o lançamento para todos os clientes.

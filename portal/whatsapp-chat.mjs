@@ -4,9 +4,9 @@ import fs from 'node:fs';
 const hash = value => createHash('sha256').update(value).digest('hex');
 const parse = row => row ? {...JSON.parse(row.data), org: row.org_id, recordId: row.id} : null;
 const fail = (text, status = 422) => { throw Object.assign(new Error(text), {status}); };
-export function whatsappPhone(value) {
+export function whatsappPhone(value, {international = false} = {}) {
   let n = String(value || '').replace(/\D/g, '');
-  if (n.length === 10 || n.length === 11) n = '55' + n;
+  if (!international && !String(value || '').trim().startsWith('+') && (n.length === 10 || n.length === 11)) n = '55' + n;
   if (!/^[1-9]\d{9,14}$/.test(n)) fail('Informe o telefone com DDD e código do país.');
   return n;
 }
@@ -14,9 +14,9 @@ export function whatsappPhone(value) {
 const phoneKey = n => /^55\d{2}9\d{8}$/.test(n) ? n.slice(0,4) + n.slice(5) : n;
 
 export function createWhatsAppChat({db, metadata, saveMetadata, conversation, assetPath, env = process.env, fetcher = fetch, now = Date.now}) {
-  const officialPhone = whatsappPhone(env.HELPU_WHATSAPP_NUMBER || '5554999902688');
+  const officialPhone = env.HELPU_WHATSAPP_NUMBER ? whatsappPhone(env.HELPU_WHATSAPP_NUMBER, {international:true}) : '';
   const config = () => ({token: env.HELPU_WHATSAPP_ACCESS_TOKEN, phoneId: env.HELPU_WHATSAPP_PHONE_NUMBER_ID, secret: env.HELPU_WHATSAPP_APP_SECRET, verify: env.HELPU_WHATSAPP_VERIFY_TOKEN});
-  const configured = () => Object.values(config()).every(Boolean);
+  const configured = () => !!officialPhone && Object.values(config()).every(Boolean);
   const key = user => 'whatsapp-chat:' + user;
   const claimId = phone => 'wa-phone:' + hash(phoneKey(phone));
   const getClaim = async phone => parse(await db.prepare("SELECT * FROM records WHERE id=? AND kind='whatsapp_chat_link'").get(claimId(phone)));
@@ -33,7 +33,7 @@ export function createWhatsAppChat({db, metadata, saveMetadata, conversation, as
     return {officialPhone, configured: configured(), phone: saved.phone || '', verified: !!mine, enabled: !!(mine && link.enabled), threadId: mine ? link.threadId : '', mode: mine ? link.mode : saved.mode || 'execute', pending: !!saved.codeHash && saved.expiresAt > now(), lastError: uncertain ? 'Uma entrega não foi confirmada. Confira a conversa no painel; o envio não será repetido automaticamente.' : '', deliveryState: mine && Number(link.lastInboundAt)<now()-86400000 ? 'waiting_window' : ''};
   }
   async function save(org, user, input) {
-    const old = await metadata(org, key(user.id)), phone = whatsappPhone(input.phone || old.phone);
+    const old = await metadata(org, key(user.id)), phone = input.phone ? whatsappPhone(input.phone, {international:input.phone===old.phone||String(input.phone).replace(/\D/g,'')===officialPhone}) : whatsappPhone(old.phone, {international:true});
     if (phoneKey(phone) === phoneKey(officialPhone)) fail('Informe seu WhatsApp pessoal de contato. O número oficial da Helpu recebe os pedidos.');
     const mode = input.mode === 'plan' ? 'plan' : 'execute';
     if (input.enabled === false) {
@@ -62,10 +62,10 @@ export function createWhatsAppChat({db, metadata, saveMetadata, conversation, as
   }
   async function receive(value) {
     if (!configured() || String(value.metadata?.phone_number_id) !== String(config().phoneId)) return;
-    if (value.metadata?.display_phone_number && phoneKey(whatsappPhone(value.metadata.display_phone_number)) !== phoneKey(officialPhone)) return;
+    if (value.metadata?.display_phone_number && phoneKey(whatsappPhone(value.metadata.display_phone_number, {international:true})) !== phoneKey(officialPhone)) return;
     for (const msg of (value.messages || []).slice(0,100)) {
       if (!msg.id || !msg.from) continue;
-      const phone = whatsappPhone(msg.from), time = Number(msg.timestamp)*1000;
+      const phone = whatsappPhone(msg.from, {international:true}), time = Number(msg.timestamp)*1000;
       if (!Number.isFinite(time) || time < now()-86400000 || time > now()+300000) continue;
       const text = String(msg.text?.body || '').slice(0,16000), code = /^HELPU ([a-f0-9]{32})$/i.exec(text.trim());
       if (code) {

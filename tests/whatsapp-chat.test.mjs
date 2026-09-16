@@ -5,12 +5,13 @@ import os from 'node:os';
 import path from 'node:path';
 import {createHmac} from 'node:crypto';
 import {createHelpuServer} from '../server.mjs';
+import {whatsappPhone,createWhatsAppChat} from '../portal/whatsapp-chat.mjs';
 import {createDatabase} from '../portal/database.mjs';
 import {PGlite} from '@electric-sql/pglite';
 
 for(const postgres of [false,true])test('WhatsApp oficial: telefone, conversa e isolamento em '+(postgres?'PostgreSQL':'SQLite'),async t=>{
  const dataDir=fs.mkdtempSync(path.join(os.tmpdir(),'helpu-wa-chat-')),sent=[];
- const env={HELPU_WHATSAPP_NUMBER:'5511999990000',HELPU_WHATSAPP_PHONE_NUMBER_ID:'official-phone',HELPU_WHATSAPP_ACCESS_TOKEN:'fake-token',HELPU_WHATSAPP_APP_SECRET:'fake-secret',HELPU_WHATSAPP_VERIFY_TOKEN:'fake-verify'};
+ const env={HELPU_WHATSAPP_NUMBER:'15551234567',HELPU_WHATSAPP_PHONE_NUMBER_ID:'official-phone',HELPU_WHATSAPP_ACCESS_TOKEN:'fake-token',HELPU_WHATSAPP_APP_SECRET:'fake-secret',HELPU_WHATSAPP_VERIFY_TOKEN:'fake-verify'};
  let database,pg,failSend=false;
  if(postgres){
   pg=await PGlite.create({parsers:{20:Number}});
@@ -42,6 +43,7 @@ for(const postgres of [false,true])test('WhatsApp oficial: telefone, conversa e 
   const thread=(await api(one,'conversations','POST',{title:'Minha campanha'})).body.id;
   const saved=await api(one,'whatsapp-chat','POST',{phone:'(11) 98888-7777',enabled:true,consent:true,mode:'execute',threadId:thread});
   assert.equal(saved.status,200);assert.equal(saved.body.enabled,false);
+  assert.equal(new URL(saved.body.connectUrl).pathname,'/15551234567');
   const code=new URL(saved.body.connectUrl).searchParams.get('text');
   await t.test('código só confirma no telefone certo, com assinatura e número oficial certos',async()=>{
    assert.equal(await webhook(code,undefined,{valid:false}),403);
@@ -93,3 +95,15 @@ for(const postgres of [false,true])test('WhatsApp oficial: telefone, conversa e 
 });
 
 test('webhook oficial é encaminhado à função online e dispara o worker autenticado',()=>{const config=JSON.parse(fs.readFileSync(new URL('../vercel.json',import.meta.url)));assert.ok(config.rewrites.some(r=>r.source==='/webhooks/helpu-whatsapp'&&r.destination==='/api/runtime'));const source=fs.readFileSync(new URL('../api/runtime.mjs',import.meta.url),'utf8');assert.match(source,/route==='\/webhooks\/helpu-whatsapp'/);});
+
+test('telefones da Meta preservam país; entrada brasileira continua simples',()=>{
+ assert.equal(whatsappPhone('15551234567',{international:true}),'15551234567');
+ assert.equal(whatsappPhone('+1 (555) 123-4567'),'15551234567');
+ assert.equal(whatsappPhone('(54) 99990-2688'),'5554999902688');
+ assert.equal(whatsappPhone('5554999902688',{international:true}),'5554999902688');
+ assert.throws(()=>whatsappPhone('123',{international:true}));
+});
+test('credenciais sem número oficial não indicam canal configurado',async()=>{
+ const chat=createWhatsAppChat({db:{},metadata:async()=>({}),env:{HELPU_WHATSAPP_ACCESS_TOKEN:'test',HELPU_WHATSAPP_PHONE_NUMBER_ID:'test',HELPU_WHATSAPP_APP_SECRET:'test',HELPU_WHATSAPP_VERIFY_TOKEN:'test'}});
+ const state=await chat.status('org',{id:1});assert.equal(state.configured,false);assert.equal(state.officialPhone,'');
+});
