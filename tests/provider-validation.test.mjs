@@ -193,7 +193,8 @@ test('revisão visual envia a imagem real e exige um critério visual explícito
   }), e => e.state === 'blocked');
 });
 const identity = {
-  id: '17841400000000001',
+  id: 'app-scoped-id',
+  user_id: '17841400000000001',
   username: 'eme.test'
 };
 const media = {
@@ -375,4 +376,16 @@ test('confirmação de navegador exige ator e identidade observada, mantém exec
       force: true
     });
   }
+});
+
+test('Instagram compara user_id profissional e preserva inteiros grandes',async()=>{
+ const expected='17841400000000001';
+ const provider=createProviders(async url=>{
+  assert.equal(new URL(url).searchParams.get('fields'),'user_id,username');
+  return new Response('{"id":"999999","user_id":17841400000000001,"username":"helpu"}',{headers:{'Content-Type':'application/json'}});
+ });
+ assert.equal((await provider.instagramIdentity({accessToken:'fake-token',accountId:expected})).id,expected);
+ for(const data of [{id:expected,user_id:'17841400000000002',username:'helpu'},{id:expected,username:'helpu'},{user_id:expected,username:''}]){
+  await assert.rejects(createProviders(async()=>Response.json(data)).instagramIdentity({accessToken:'fake-token',accountId:expected}),e=>e.state==='blocked');
+ }
 });
