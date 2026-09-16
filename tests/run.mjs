@@ -27,3 +27,4 @@ import './runtime-video-real.test.mjs';
 import './runtime-gateway.test.mjs';
 import './runtime-integration.test.mjs';
 import './cloud-tools-ui.test.mjs';
+import './openai-config.test.mjs';

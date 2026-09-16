@@ -59,3 +59,12 @@ Depois da hospedagem, ainda é necessário testar com uma conta autorizada: logi
 Testes do navegador usam Playwright simulado: isolamento por empresa, controle humano, snapshots, identidade, rede, recuperação e arquivos. Testes do gateway cobrem autenticação, limites, erro incerto e relógio da fila. A integração exercita chat → fila → MP4 verificado → Biblioteca/conversa, com provedor simulado. Há também um teste real de FFmpeg com fonte sintética, sem API paga.
 
 Referências de infraestrutura: [Docker e sandbox do Playwright](https://playwright.dev/docs/docker), [limite de payload das Vercel Functions](https://vercel.com/docs/errors/function_payload_too_large). Arquivos de vídeo são transferidos entre servidores e o armazenamento privado; o frontend envia identificadores de arquivos, evitando transportar MP4 pela resposta da Function.
+
+
+## Chave e modelos da OpenAI
+
+O iniciador local le `.env.local` e depois `.env`, preservando variaveis ja definidas no terminal. Preencha `OPENAI_API_KEY` e `OPENAI_MODEL=gpt-6-astra` no `.env.local` privado e reinicie o servidor. `OPENAI_TASK_MODEL` e opcional e mantem `gpt-5-mini` como padrao das tarefas especificas.
+
+Na Vercel, cadastre essas mesmas variaveis em Production e faca um novo deploy manual: arquivos locais nao sao enviados como configuracao da hospedagem. A chave permanece no servidor e nao deve ser incluida no Git. Configuracoes salvas em Conexoes de cada empresa tem prioridade sobre os padroes do ambiente. A chave da plataforma atende empresas sem chave propria, com cobranca na conta do titular da chave; esta configuracao nao implementa um teto financeiro.
+
+Desconectar a OpenAI no painel bloqueia tambem o uso da chave do ambiente para aquela empresa. Salvar a conexao novamente reabilita o uso dos padroes. Os valores do ambiente nao sao copiados para os registros das empresas. Chave preenchida indica configuracao, nao validacao de acesso: use Verificar acesso antes de iniciar a operacao.

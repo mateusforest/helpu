@@ -13,10 +13,13 @@ export function checkNode(version = process.versions.node) {
 
 export function loadConfiguration(directory = project) {
   checkNode();
-  const envFile = path.join(directory, '.env');
-  if (fs.existsSync(envFile)) {
-    try { process.loadEnvFile(envFile); }
-    catch { throw new Error('Não foi possível carregar o arquivo .env. Confira o formato e a permissão de leitura.'); }
+  // Existing process variables win; local overrides the shared development file.
+  for (const name of ['.env.local', '.env']) {
+    const envFile = path.join(directory, name);
+    if (fs.existsSync(envFile)) {
+      try { process.loadEnvFile(envFile); }
+      catch { throw new Error(`Não foi possível carregar o arquivo ${name}. Confira o formato e a permissão de leitura.`); }
+    }
   }
   const value = process.env.HELPU_PORT ?? '4173';
   if (!/^\d+$/.test(value) || Number(value) < 1 || Number(value) > 65535) {

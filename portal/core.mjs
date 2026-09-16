@@ -1,3 +1,4 @@
+import {resolveOpenAIConfig} from './openai-config.mjs';
 import {createStripeBilling} from './stripe-billing.mjs';
 import {createInstagramLogin} from './instagram-login.mjs';
 import {filterAsync, mapAsync} from "./async-collections.mjs";
@@ -48,7 +49,7 @@ const statuses = {
   messages: ['draft', 'recorded'],
   tasks: ['todo', 'doing', 'done']
 };
-export async function createPortal({db, dataDir, userFrom, json, safeOrigin, providers = createProviders(), startScheduler = true, browserLaunch, conversationRespond, publicationFetch, publicationResolve,cloud=false,storageClient,instagramLoginFetch,instagramLoginEnv,stripeFetch,stripeEnv,runtimeEnv,runtimeFetch}) {
+export async function createPortal({db, dataDir, userFrom, json, safeOrigin, providers = createProviders(), startScheduler = true, browserLaunch, conversationRespond, publicationFetch, publicationResolve,cloud=false,storageClient,instagramLoginFetch,instagramLoginEnv,stripeFetch,stripeEnv,runtimeEnv,runtimeFetch,openaiEnv=process.env}) {
   const cloudRuntime=createCloudRuntime({env:runtimeEnv,fetcher:runtimeFetch});
   if(db.dialect==='postgres'){
     const migration=await db.prepare('SELECT version FROM portal_migrations ORDER BY version DESC LIMIT 1').get();
@@ -274,9 +275,13 @@ export async function createPortal({db, dataDir, userFrom, json, safeOrigin, pro
   async function list(org, kind, limit = 500) {
     return (await db.prepare('SELECT * FROM records WHERE org_id=? AND kind=? ORDER BY created_at DESC LIMIT ?').all(org, kind, limit)).map(decodeRecord);
   }
-  async function integration(org, id) {
+  async function storedIntegration(org, id) {
     const row = await db.prepare('SELECT sealed FROM integrations WHERE org_id=? AND provider=?').get(org, id);
     return row ? unseal(row.sealed) : {};
+  }
+  async function integration(org, id) {
+    const saved = await storedIntegration(org, id);
+    return id === 'openai' ? resolveOpenAIConfig(saved, openaiEnv) : saved;
   }
   async function integrationState(org) {
     return await mapAsync(CONNECTORS, async def => {
@@ -1913,7 +1918,8 @@ export async function createPortal({db, dataDir, userFrom, json, safeOrigin, pro
       const def = CONNECTORS.find(c => c.id === kind);
       if (!def) fail('Integração inválida.');
       if (req.method === 'PUT') {
-        const d = await body(req), config = await integration(org, kind);
+        const d = await body(req), config = await storedIntegration(org, kind);
+        if (kind === 'openai') delete config.environmentDisabled;
         const validation = validateConnectionPatch(kind, d);
         if (!validation.ok) fail(validation.errors[0].message, 400);
         for (const [f, , secret] of def.fields) if (d[f] !== undefined && (!secret || d[f] !== '')) config[f] = str(d[f], 10000);
@@ -1932,7 +1938,10 @@ export async function createPortal({db, dataDir, userFrom, json, safeOrigin, pro
         return true;
       }
       if (req.method === 'DELETE') {
-        await db.prepare('DELETE FROM integrations WHERE org_id=? AND provider=?').run(org, kind);
+        if (kind === 'openai') {
+          // A disconnected company must not silently resume using the platform key.
+          await db.prepare('INSERT INTO integrations(org_id,provider,sealed,updated_at) VALUES(?,?,?,?) ON CONFLICT(org_id,provider) DO UPDATE SET sealed=excluded.sealed,verified_at=NULL,error=NULL,updated_at=excluded.updated_at').run(org, kind, seal({environmentDisabled:true}), Date.now());
+        } else await db.prepare('DELETE FROM integrations WHERE org_id=? AND provider=?').run(org, kind);
         await saveMetadata(org, 'validation:' + kind, {
           status: 'not_configured'
         });
