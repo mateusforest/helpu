@@ -12,10 +12,15 @@ function fixture() {
  const document = {hidden: false, querySelectorAll: () => [], querySelector(selector) { if (!nodes.has(selector)) nodes.set(selector, node()); return nodes.get(selector); }, addEventListener(name, fn) { handlers[name] = fn; }, removeEventListener(name) { delete handlers[name]; }};
  const state = {company: {id: 'company-a'}, assets: [{id: 'own-video', name: 'Meu vídeo', mime: 'video/mp4'}, {id: 'photo', name: 'Foto', mime: 'image/png'}]};
  let status = {configured: true, available: true, browser: true, video: true}, failedType = false, exportState = 'queued';
+ let chat = {messages:[],jobs:[]}, failSend=false;
  let project = {id: 'project-one', name: 'Vídeo inicial', revision: 1, scenes: [{duration: 5, text: 'Olá', background: '#ffffff', textColor: '#171717'}]};
  const api = async (url, method = 'GET', body) => {
   calls.push({url, method, body});
   if (pending.has(url)) return pending.get(url);
+  if(url.endsWith('/conversations')&&method==='POST')return {id:'video-thread'};
+  if(url.endsWith('/conversations/video-thread/messages')){if(failSend)throw Error('Resposta perdida');chat.messages.push({role:'user',text:body.text});chat.jobs=[{id:'chat-job',state:'queued'}];return {id:'chat-job'};}
+  if(url.endsWith('/conversations/video-thread/stop')){chat.jobs=[{id:'chat-job',state:'canceled'}];return {requested:true};}
+  if(url.endsWith('/conversations/video-thread'))return structuredClone(chat);
   if (url.endsWith('/status')) return status;
   if (url.endsWith('/runtime/browser')) return {profiles: [{id: 'instagram', name: 'Instagram', open: false, accountLabel: ''}]};
   if (url.endsWith('/frame')) return {image: 'aW1n', width: 1200, height: 800};
@@ -38,7 +43,7 @@ function fixture() {
   submit(form) { return handlers.submit({preventDefault() {}, target: form}); },
   input(index, field, value) { handlers.input({target: {dataset: {index: String(index), sceneField: field}, value}}); },
   hold(url) { let resolve; pending.set(url, new Promise(r => resolve = r)); return value => { pending.delete(url); resolve(value); }; },
-  setStatus(value) { status = value; }, setProject(value) { project = {...project, ...value}; }, failType() { failedType = true; }, finishExport() { exportState = 'complete'; },
+  setChat(value){chat=value;}, failChat(value){failSend=value;}, typeChat(value){handlers.input({target:{id:'astra-video-prompt',value}});}, setStatus(value) { status = value; }, setProject(value) { project = {...project, ...value}; }, failType() { failedType = true; }, finishExport() { exportState = 'complete'; },
  };
 }
 
@@ -183,4 +188,42 @@ test('cortes negativos, invertidos ou longos são bloqueados antes de qualquer e
  f.input(0, 'in', '6'); await f.click('save-project'); assert.match(f.messages.at(-1)[0], /início e o fim/);
  f.input(0, 'out', '66.5'); await f.click('export-video'); assert.match(f.messages.at(-1)[0], /0,2 a 60 segundos/);
  assert.equal(f.calls.filter(c => c.method === 'PATCH' || c.url.endsWith('/exports')).length, 0);
+});
+
+
+test('Astra mostra chat, prévia e edição manual sem confundir prévia com MP4',async()=>{
+ const f=fixture();await f.mount('video');await f.click('select-project',{id:'project-one'});
+ assert.match(f.ui.videos(),/Converse com o Astra/);assert.match(f.ui.videos(),/Editar manualmente/);assert.match(f.ui.videos(),/layout aproximado/);
+ f.input(0,'text','<script>alert(1)</script>');
+ assert.match(f.document.querySelector('#astra-scene-preview').innerHTML,/&lt;script&gt;/);
+ assert.doesNotMatch(f.document.querySelector('#astra-scene-preview').innerHTML,/<script>/);
+});
+test('chat salva edição antes de pedir ao Astra e acompanha a revisão sem sobrescrever',async()=>{
+ const f=fixture();await f.mount('video');await f.click('select-project',{id:'project-one'});
+ f.input(0,'text','Primeira versão');f.typeChat('Deixe o texto mais curto');await f.submit({id:'astra-video-chat'});
+ const send=f.calls.find(c=>c.url.endsWith('/messages'));
+ assert.match(send.body.text,/projeto project-one, revisão 2/);assert.equal(send.body.mode,'execute');assert.ok(send.body.idempotencyKey);
+ assert.ok(f.calls.findIndex(c=>c.method==='PATCH')<f.calls.indexOf(send));
+ const writes=f.calls.filter(c=>c.method==='PATCH').length;f.input(0,'text','Conflito');await f.click('save-project');assert.equal(f.calls.filter(c=>c.method==='PATCH').length,writes);
+ f.setProject({revision:3,scenes:[{duration:5,text:'Texto do Astra',background:'#ffffff',textColor:'#171717'}]});
+ f.setChat({messages:[{role:'assistant',text:'Texto atualizado.'}],jobs:[{id:'chat-job',state:'succeeded'}]});
+ await f.click('refresh-video-chat');assert.match(f.ui.videos(),/Texto do Astra/);assert.match(f.ui.videos(),/Texto atualizado/);
+ f.input(0,'text','Ajuste manual final');await f.click('save-project');assert.equal(f.calls.filter(c=>c.method==='PATCH').at(-1).body.expectedRevision,3);
+});
+test('chat usa pausa existente e mantém idempotência após resposta perdida',async()=>{
+ const f=fixture();await f.mount('video');await f.click('select-project',{id:'project-one'});f.typeChat('Troque a cor');f.failChat(true);
+ await f.submit({id:'astra-video-chat'});f.failChat(false);await f.submit({id:'astra-video-chat'});
+ const sends=f.calls.filter(c=>c.url.endsWith('/messages'));assert.equal(sends.length,2);assert.equal(sends[0].body.idempotencyKey,sends[1].body.idempotencyKey);
+ await f.click('pause-video-chat');assert.ok(f.calls.some(c=>c.url.endsWith('/video-thread/stop')));
+});
+test('sem serviço, seção permanece visível mas não cria projeto ou chama inteligência',async()=>{
+ const f=fixture();f.setStatus({configured:false,available:false,video:false});await f.mount('video');
+ assert.match(f.ui.videos(),/Converse com o Astra/);f.typeChat('Crie um vídeo');await f.submit({id:'astra-video-chat'});
+ assert.equal(f.calls.filter(c=>c.method==='POST').length,0);
+});
+test('resposta atrasada do chat não aparece na empresa seguinte',async()=>{
+ const f=fixture();await f.mount('video');await f.click('select-project',{id:'project-one'});f.typeChat('Ajuste o vídeo');await f.submit({id:'astra-video-chat'});
+ const release=f.hold('/api/portal/company-a/conversations/video-thread');const pending=f.click('refresh-video-chat');await flush();
+ f.state.company.id='company-b';await f.mount('video');release({messages:[{role:'assistant',text:'SEGREDO EMPRESA A'}],jobs:[]});await pending;
+ assert.doesNotMatch(f.ui.videos(),/SEGREDO EMPRESA A/);
 });

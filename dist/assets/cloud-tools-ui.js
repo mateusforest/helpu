@@ -12,9 +12,10 @@ export function remotePoint(rect, imageWidth, imageHeight, clientX, clientY) {
  return {x: Math.min(imageWidth - 1, Math.max(0, Math.floor((clientX - rect.left) * imageWidth / rect.width))), y: Math.min(imageHeight - 1, Math.max(0, Math.floor((clientY - rect.top) * imageHeight / rect.height)))};
 }
 
-export function createCloudToolsUI({api, endpoint, getState, esc, toast, refresh}) {
+export function createCloudToolsUI({api, endpoint, getState, esc, toast, refresh, renderText = esc}) {
  let view = '', company = '', epoch = 0, timer = null, listening = false, busy = false, loading = false;
  let runtime = null, loadError = '', profiles = [], selectedChannel = '', humanOwned = false, frameBusy = false, frameWidth = 0, frameHeight = 0;
+ let videoChats = new Map(), previewScene = 0, lastChatPoll = 0, chatPollBusy = false;
  let projects = [], project = null, draft = [], dirty = false, exportJob = null, exportKey = null, importedAssetId = '', pollBusy = false;
  const $ = selector => document.querySelector(selector);
  const button = (text, action, extra = '', primary = false) => `<button type="button" class="p-button ${primary ? 'primary' : 'secondary'}" data-cloud-action="${action}" ${extra}>${text}</button>`;
@@ -24,6 +25,7 @@ export function createCloudToolsUI({api, endpoint, getState, esc, toast, refresh
  const ownUrl = id => '/api/portal/files/' + encodeURIComponent(id);
  const projectName = p => p?.name || 'Vídeo sem nome';
  function resetData() {
+  videoChats = new Map(); previewScene = 0; chatPollBusy = false; lastChatPoll = 0;
   runtime = null; loadError = ''; profiles = []; selectedChannel = ''; humanOwned = false; frameBusy = false; frameWidth = 0; frameHeight = 0;
   projects = []; project = null; draft = []; dirty = false; exportJob = null; exportKey = null; importedAssetId = ''; pollBusy = false; busy = false; loading = false;
  }
@@ -95,12 +97,79 @@ export function createCloudToolsUI({api, endpoint, getState, esc, toast, refresh
   const progress = Math.min(100, Math.max(0, Number(exportJob.progress) || 0));
   return `<section class="cloud-export" aria-live="polite"><h3>${esc(EXPORT_STATES[exportJob.state] || 'Conferindo a exportação')}</h3>${['queued', 'working'].includes(exportJob.state) ? `<progress max="100" value="${progress}" aria-label="Progresso da exportação"></progress><p>Você pode sair desta tela. O serviço online continua a exportação.</p>` : ''}${exportJob.state === 'failed' ? `<p class="form-error">${esc(exportJob.error || 'Revise o projeto e tente exportar novamente.')}</p>` : ''}${exportJob.state === 'complete' && !importedAssetId ? `<p>Salve o arquivo na Biblioteca para assistir e baixar.</p>${button('Salvar na Biblioteca', 'import-video', busy ? 'disabled' : '', true)}` : ''}${importedAssetId ? `<video controls preload="metadata" src="${ownUrl(importedAssetId)}" aria-label="Vídeo exportado"></video><a class="p-button secondary" href="${ownUrl(importedAssetId)}" download>Baixar MP4</a><a class="p-button secondary" href="#/studio">Ver Biblioteca</a>` : ''}</section>`;
  }
+
+ function videoChat() {
+  const key = project?.id || 'new';
+  if (!videoChats.has(key)) {
+   let thread = ''; try { thread = sessionStorage.getItem('helpu-video:' + company + ':' + key) || ''; } catch {}
+   videoChats.set(key, {thread, messages: [], jobs: [], prompt: '', pending: null, loaded: false});
+  }
+  return videoChats.get(key);
+ }
+ const videoReady = () => !!runtime?.configured && !!runtime?.available && runtime.video !== false;
+ const chatPending = () => !!videoChat().thread && !videoChat().loaded;
+ const chatWorking = () => videoChat().jobs.some(j => ['queued','working','waiting_provider'].includes(j.state));
+ function chatMessages() {
+  const chat=videoChat();
+  return (chat.messages.length ? chat.messages.map(m=>'<article class="astra-bubble '+(m.role==='user'?'is-user':'')+'"><strong>'+(m.role==='user'?'Você':'Astra')+'</strong><div class="astra-message-text">'+(m.role==='user'?esc(String(m.text).split('\n\nContexto do editor Astra Vídeo:')[0]):renderText(m.text))+'</div></article>').join('') : '<div class="astra-chat-welcome"><h3>O que vamos criar?</h3><p>Peça um vídeo ou explique o que quer mudar. As cenas aparecerão no editor ao lado.</p></div>') + (chatWorking()?'<p class="astra-chat-status" role="status">O Astra está trabalhando no pedido… '+button('Pausar','pause-video-chat')+'</p>':'')+(chat.jobs[0]?.error?'<p class="form-error">'+esc(chat.jobs[0].error)+'</p>':'');
+ }
+ function chatPanel() {
+  const chat=videoChat();
+  return '<aside class="astra-chat"><div class="cloud-card-line"><h2>Converse com o Astra</h2>'+button('Atualizar','refresh-video-chat')+'</div><div id="astra-chat-messages" class="astra-chat-messages" aria-live="polite">'+chatMessages()+'</div><form id="astra-video-chat"><label class="sr-only" for="astra-video-prompt">Pedido para o Astra Vídeo</label><textarea id="astra-video-prompt" maxlength="6000" rows="4" placeholder="Ex.: crie um vídeo de 15 segundos para apresentar minha empresa">'+esc(chat.prompt)+'</textarea><div class="astra-chat-send"><small>Usa o contexto da sua empresa</small><button class="p-button primary" type="submit" '+(busy||chatWorking()||chatPending()||queueBlocked()||!videoReady()?'disabled':'')+'>Enviar pedido ↑</button></div></form><p class="micro-copy">Peça alterações aqui ou ajuste as cenas manualmente. Gerar o vídeo não publica nas redes.</p></aside>';
+ }
+ function previewContent() {
+  previewScene=Math.min(Math.max(0,previewScene),Math.max(0,draft.length-1));
+  const scene=draft[previewScene];
+  if (!scene) return '';
+  const asset=(getState()?.assets||[]).find(a=>a.id===scene.sourceAssetId&&a.mime==='video/mp4');
+  return '<div class="astra-preview-frame" style="background:'+color(scene.background,'#ffffff')+';color:'+color(scene.textColor,'#171717')+'">'+(asset?'<video controls preload="metadata" src="'+ownUrl(asset.id)+'#t='+Math.max(0,Number(scene.in)||0)+','+Math.max(0,Number(scene.out)||0)+'" aria-label="Gravação de base da cena"></video>':'')+'<p class="astra-preview-text">'+esc(scene.text||'Seu texto aparece aqui')+'</p></div><p class="micro-copy">Prévia da cena '+(previewScene+1)+' · layout aproximado. O MP4 final aparece após a exportação.</p><div class="astra-scene-tabs">'+draft.map((_,i)=>button('Cena '+(i+1),'preview-scene','data-index="'+i+'" '+(i===previewScene?'aria-current="true"':''))).join('')+'</div>';
+ }
+ async function pollVideoChat(force=false) {
+  if (!active()||view!=='video'||document.hidden||chatPollBusy||busy) return;
+  const chat=videoChat(); if(!chat.thread||(!force&&chat.loaded&&!chatWorking())||(!force&&Date.now()-lastChatPoll<3500))return;
+  const t=ticket(),id=project?.id; chatPollBusy=true;lastChatPoll=Date.now();
+  try {
+   const data=await api(endpoint('conversations/'+encodeURIComponent(chat.thread)));
+   if(!current(t)||id!==project?.id)return;
+   chat.messages=data.messages||[];chat.jobs=data.jobs||[];chat.loaded=true;
+   const messages=$('#astra-chat-messages');if(messages)messages.innerHTML=chatMessages();
+   if(project&&!dirty){
+    const next=await api(t.base+'video/projects/'+encodeURIComponent(id));
+    if(!current(t)||id!==project?.id||dirty)return;
+    if(next.revision!==project.revision||JSON.stringify(next.latestExport)!==JSON.stringify(project.latestExport)){
+     project=next;draft=structuredClone(next.scenes||[]);exportJob=next.latestExport||null;importedAssetId=next.latestExport?.assetId||'';paint();
+    }
+   }
+   setControlState();
+  }catch {if(current(t)){const messages=$('#astra-chat-messages');if(messages)messages.innerHTML=chatMessages()+'<p role="status">Não foi possível atualizar o andamento. Tentaremos novamente.</p>';}}
+  finally{chatPollBusy=false;}
+ }
+ async function sendVideoChat() {
+  const chat=videoChat(),text=chat.prompt.trim();
+  if(!text||chatWorking()||chatPending()||busy)return;
+  if(!videoReady()){toast('O editor precisa do serviço de vídeo online para executar pedidos.',true);return;}
+  if(queueBlocked()){toast('Ative o processamento online antes de enviar o pedido.',true);return;}
+  await withAction(async t=>{
+   if(dirty)await save(t); if(!current(t))return;
+   if(!project){
+    const created=await api(t.base+'video/projects','POST',{name:text.slice(0,70),scenes:[newScene()]});
+    if(!current(t))return; project=created;projects=[created,...projects];draft=structuredClone(created.scenes||[newScene()]);videoChats.set(created.id,chat);videoChats.delete('new');
+   }
+   const id=project.id;
+   if(!chat.thread){const created=await api(endpoint('conversations'),'POST',{title:('Vídeo: '+projectName(project)).slice(0,70)});if(!current(t)||project?.id!==id)return;chat.thread=created.id;try{sessionStorage.setItem('helpu-video:'+company+':'+id,chat.thread);}catch{}}
+   const payload=text+'\n\nContexto do editor Astra Vídeo: projeto '+id+', revisão '+project.revision+'. Trabalhe neste projeto existente e consulte a revisão atual antes de alterar. Pedido restrito à criação e edição de vídeo, sem publicar. Não exporte novamente se já houver exportação em andamento.';
+   if(!chat.pending||chat.pending.prompt!==text)chat.pending={prompt:text,text:payload,key:crypto.randomUUID()};
+   await api(endpoint('conversations/'+encodeURIComponent(chat.thread)+'/messages'),'POST',{text:chat.pending.text,mode:'execute',attachments:[],idempotencyKey:chat.pending.key});
+   if(!current(t)||project?.id!==id)return;chat.pending=null;chat.prompt='';chat.loaded=false;chat.jobs=[{state:'queued'}];paint();
+  });
+  await pollVideoChat(true);
+ }
+
  function videoContent() {
   const blocked = readiness('video');
-  if (blocked) return blocked;
   const assets = (getState()?.assets || []).filter(a => a.mime?.startsWith('video/'));
-  return `${queueNotice()}<div class="cloud-video-layout"><aside class="cloud-project-list"><h2>Seus projetos</h2>${button('Novo vídeo', 'new-project', busy ? 'disabled' : '', true)}${projects.map(p => `<button type="button" class="cloud-project-choice" data-cloud-action="select-project" data-id="${esc(p.id)}" ${project?.id === p.id ? 'aria-current="true"' : ''} ${busy ? 'disabled' : ''}>${esc(projectName(p))}</button>`).join('') || '<p>Crie seu primeiro projeto.</p>'}</aside><div class="cloud-video-editor">
-  ${!project ? `<h2>Crie um vídeo com cenas.</h2><p>Combine textos, cores e duração. Se quiser, use um vídeo da Biblioteca como gravação de base.</p><form id="cloud-create-project"><label class="p-field"><span>Nome do projeto</span><input name="name" maxlength="100" required placeholder="Vídeo da minha empresa"></label><label class="p-field"><span>Vídeo de base</span><select name="sourceAssetId"><option value="">Criar somente com textos e cores</option>${assets.map(a => `<option value="${esc(a.id)}">${esc(a.name)}</option>`).join('')}</select></label><button type="submit" class="p-button primary" ${busy ? 'disabled' : ''}>Criar projeto</button></form><p class="micro-copy">Para usar uma gravação, envie o arquivo primeiro à <a href="#/studio">Biblioteca</a>.</p>` : `<div class="cloud-card-line"><div><h2>${esc(projectName(project))}</h2><p>Vídeo vertical · <span id="cloud-scene-total">${draft.reduce((n, s) => n + (Number(s.duration) || 0), 0)}</span> segundos${project.sourceAssetId ? ' · gravação de base vinculada' : ''}</p></div><span id="cloud-save-state" class="p-tag">${dirty ? 'Alterações não salvas' : 'Projeto salvo'}</span></div><div class="cloud-scenes">${draft.map(sceneFields).join('')}</div><div class="cloud-editor-actions">${button('Adicionar cena', 'add-scene', `${draft.length >= VIDEO_LIMITS.scenes || busy ? 'disabled' : ''}`)}${button('Salvar alterações', 'save-project', busy ? 'disabled' : '')}${button('Gerar MP4', 'export-video', `${busy || queueBlocked() || ['queued', 'working'].includes(exportJob?.state) ? 'disabled' : ''}`, true)}</div><p class="micro-copy">Até 32 cenas, com 0,2 a 60 segundos por cena e 120 segundos no total. Use até 280 caracteres por cena. A exportação usa a versão salva e não publica o arquivo.</p><div id="cloud-export-result">${exportContent()}</div>`}</div></div>`;
+  return `${blocked}${queueNotice()}<div class="astra-project-toolbar"><details><summary>Seus projetos</summary><aside class="cloud-project-list"><h2>Seus projetos</h2>${button('Novo vídeo', 'new-project', busy ? 'disabled' : '', true)}${projects.map(p => `<button type="button" class="cloud-project-choice" data-cloud-action="select-project" data-id="${esc(p.id)}" ${project?.id === p.id ? 'aria-current="true"' : ''} ${busy ? 'disabled' : ''}>${esc(projectName(p))}</button>`).join('') || '<p>Crie seu primeiro projeto.</p>'}</aside></details><span class="p-tag">Vertical · Reels e Stories · 1080 × 1920</span></div><div class="cloud-video-layout">${chatPanel()}<div class="cloud-video-editor">
+  ${!project ? `<h2>Crie um vídeo com cenas.</h2><p>Combine textos, cores e duração. Se quiser, use um vídeo da Biblioteca como gravação de base.</p><form id="cloud-create-project"><label class="p-field"><span>Nome do projeto</span><input name="name" maxlength="100" required placeholder="Vídeo da minha empresa"></label><label class="p-field"><span>Vídeo de base</span><select name="sourceAssetId"><option value="">Criar somente com textos e cores</option>${assets.map(a => `<option value="${esc(a.id)}">${esc(a.name)}</option>`).join('')}</select></label><div class="astra-quick-settings"><label class="p-field"><span>Duração inicial</span><select name="duration"><option value="15">15 segundos</option><option value="30">30 segundos</option><option value="60">60 segundos</option></select></label><label class="p-field"><span>Estilo inicial</span><select name="style"><option value="light">Claro e minimalista</option><option value="dark">Escuro e elegante</option></select></label></div><button type="submit" class="p-button primary" ${busy ? 'disabled' : ''}>Criar projeto</button></form><p class="micro-copy">Para usar uma gravação, envie o arquivo primeiro à <a href="#/studio">Biblioteca</a>.</p>` : `<div class="cloud-card-line"><div><h2>${esc(projectName(project))}</h2><p>Vídeo vertical · <span id="cloud-scene-total">${draft.reduce((n, s) => n + (Number(s.duration) || 0), 0)}</span> segundos${project.sourceAssetId ? ' · gravação de base vinculada' : ''}</p></div><span id="cloud-save-state" class="p-tag">${dirty ? 'Alterações não salvas' : 'Projeto salvo'}</span></div><div id="astra-scene-preview" class="astra-scene-preview">${previewContent()}</div><details class="astra-manual-editor"><summary>Editar manualmente · textos, cores e cortes</summary><div class="cloud-scenes">${draft.map(sceneFields).join('')}</div></details><div class="cloud-editor-actions">${button('Adicionar cena', 'add-scene', `${draft.length >= VIDEO_LIMITS.scenes || busy ? 'disabled' : ''}`)}${button('Salvar alterações', 'save-project', busy ? 'disabled' : '')}${button('Gerar MP4', 'export-video', `${busy || queueBlocked() || ['queued', 'working'].includes(exportJob?.state) ? 'disabled' : ''}`, true)}</div><p class="micro-copy">Até 32 cenas, com 0,2 a 60 segundos por cena e 120 segundos no total. Use até 280 caracteres por cena. A exportação usa a versão salva e não publica o arquivo.</p><div id="cloud-export-result">${exportContent()}</div>`}</div></div>`;
  }
  function videos() {
   ensureCompany();
@@ -117,7 +186,7 @@ export function createCloudToolsUI({api, endpoint, getState, esc, toast, refresh
   if (!active()) return;
   document.querySelectorAll('#cloud-tools-root input, #cloud-tools-root select, #cloud-tools-root textarea, #cloud-tools-root button').forEach(el => {
    const action = el.dataset?.cloudAction;
-   el.disabled = busy || (action === 'export-video' && (queueBlocked() || ['queued', 'working'].includes(exportJob?.state))) || (action === 'remove-scene' && draft.length < 2) || (action === 'add-scene' && draft.length >= VIDEO_LIMITS.scenes);
+   el.disabled = busy || (view === 'video' && ((!videoReady() && action !== 'reload') || ((chatWorking() || chatPending()) && action !== 'pause-video-chat' && action !== 'refresh-video-chat' && action !== 'preview-scene') || (el.type === 'submit' && el.closest?.('#astra-video-chat') && queueBlocked()))) || (action === 'export-video' && (queueBlocked() || ['queued', 'working'].includes(exportJob?.state))) || (action === 'remove-scene' && draft.length < 2) || (action === 'add-scene' && draft.length >= VIDEO_LIMITS.scenes);
   });
  }
  async function load() {
@@ -156,7 +225,7 @@ export function createCloudToolsUI({api, endpoint, getState, esc, toast, refresh
   try {
    const value = await api(t.base + 'video/exports/' + encodeURIComponent(exportId));
    if (!current(t) || exportId !== exportJob?.id) return;
-   exportJob = value; if (value.state === 'failed') exportKey = null; const result = $('#cloud-export-result'); if (result) result.innerHTML = exportContent();
+   exportJob = value; if(value.assetId)importedAssetId=value.assetId; if (value.state === 'failed') exportKey = null; const result = $('#cloud-export-result'); if (result) result.innerHTML = exportContent();
    const exportButton = $('[data-cloud-action="export-video"]'); if (exportButton) exportButton.disabled = busy || queueBlocked() || ['queued', 'working'].includes(value.state);
   } catch (error) { if (current(t)) toast(error.message || 'Não foi possível conferir a exportação.', true); }
   finally { if (current(t)) pollBusy = false; }
@@ -189,7 +258,12 @@ export function createCloudToolsUI({api, endpoint, getState, esc, toast, refresh
   const b = event.target.closest('[data-cloud-action]'); if (!b || !$('#cloud-tools-root')?.contains(b)) return;
   const action = b.dataset.cloudAction, id = b.dataset.id;
   if (busy) return;
+  if(action==='refresh-video-chat'){await pollVideoChat(true);return;}
+  if (action === 'preview-scene') { previewScene=Number(b.dataset.index)||0; const preview=$('#astra-scene-preview');if(preview)preview.innerHTML=previewContent();return; }
+  if (action === 'pause-video-chat') { const chat=videoChat();const job=chat.jobs.find(j=>['queued','working','waiting_provider'].includes(j.state));try{if(job?.id)await api(endpoint('conversations/'+encodeURIComponent(chat.thread)+'/stop'),'POST',{});await pollVideoChat(true);}catch{toast('Não foi possível confirmar a pausa. Confira o andamento antes de editar.',true);}return; }
+  if(view==='video'&&(chatWorking()||chatPending())){toast('Aguarde o Astra concluir ou pause o pedido antes de editar.',true);return;}
   if (action === 'reload') { await load(); return; }
+  if(view==='video'&&!videoReady())return;
   await withAction(async t => {
    if (action === 'open-browser') {
     if (selectedChannel && selectedChannel !== id) { releaseOwned(); selectedChannel = ''; }
@@ -215,7 +289,7 @@ export function createCloudToolsUI({api, endpoint, getState, esc, toast, refresh
     await human(t, selectedChannel, {type: 'scroll', dy: action === 'scroll-up' ? -500 : 500}); if (current(t)) await frame();
    } else if (action === 'new-project') {
     if (dirty) { toast('Salve suas alterações antes de abrir outro projeto.', true); return; }
-    project = null; draft = []; exportJob = null; exportKey = null; importedAssetId = ''; paint();
+    project = null; previewScene = 0; draft = []; exportJob = null; exportKey = null; importedAssetId = ''; paint();
    } else if (action === 'select-project') {
     if (dirty) { toast('Salve suas alterações antes de abrir outro projeto.', true); return; }
     const value = await api(t.base + 'video/projects/' + encodeURIComponent(id));
@@ -238,10 +312,13 @@ export function createCloudToolsUI({api, endpoint, getState, esc, toast, refresh
  }
  function input(event) {
   if (!active() || view !== 'video' || busy) return;
+  if(event.target.id==='astra-video-prompt'){videoChat().prompt=event.target.value;return;}
+  if(chatWorking()||chatPending()||!videoReady())return;
   const field = event.target.dataset?.sceneField, index = Number(event.target.dataset?.index);
   if (!['text', 'duration', 'background', 'textColor', 'in', 'out'].includes(field) || !Number.isInteger(index) || !draft[index]) return;
   if (['in', 'out'].includes(field) && !draft[index].sourceAssetId) return;
   draft[index][field] = event.target.value; dirty = true;
+  previewScene=index;const preview=$('#astra-scene-preview');if(preview)preview.innerHTML=previewContent();
   if (draft[index].sourceAssetId) { draft[index].duration = sceneDuration(draft[index]); const cut = $('#cloud-cut-duration-' + index); if (cut) cut.textContent = Number.isFinite(draft[index].duration) ? String(Math.round(draft[index].duration * 1000) / 1000) : '—'; }
   const status = $('#cloud-save-state'); if (status) status.textContent = 'Alterações não salvas';
   const total = $('#cloud-scene-total'); if (total) total.textContent = String(draft.reduce((n, s) => n + (Number(s.duration) || 0), 0));
@@ -249,6 +326,8 @@ export function createCloudToolsUI({api, endpoint, getState, esc, toast, refresh
  async function submit(event) {
   if (!active()) return;
   const form = event.target;
+  if(form.id==='astra-video-chat'){event.preventDefault();await sendVideoChat();return;}
+  if(view==='video'&&(chatWorking()||chatPending()||!videoReady())){event.preventDefault();return;}
   if (!['cloud-remote-type', 'cloud-confirm-account', 'cloud-create-project'].includes(form.id)) return;
   event.preventDefault();
   if (form.id === 'cloud-remote-type') {
@@ -269,7 +348,9 @@ export function createCloudToolsUI({api, endpoint, getState, esc, toast, refresh
     const name = form.elements.name.value.trim(), sourceAssetId = form.elements.sourceAssetId.value;
     if (!name) throw new Error('Dê um nome ao projeto.');
     if (name.length > VIDEO_LIMITS.name) throw new Error('Use até 100 caracteres no nome do projeto.');
-    const value = await api(t.base + 'video/projects', 'POST', {name, scenes: [newScene()], ...(sourceAssetId ? {sourceAssetId} : {})});
+    const duration=[15,30,60].includes(Number(form.elements.duration?.value))?Number(form.elements.duration.value):15;
+    const style=form.elements.style?.value==='dark'?{background:'#171717',textColor:'#ffffff'}:{};
+    const value = await api(t.base + 'video/projects', 'POST', {name, scenes: Array.from({length:3},()=>({...newScene(),duration:duration/3,...style})), ...(sourceAssetId ? {sourceAssetId} : {})});
     if (current(t)) { project = value; projects = [value, ...projects]; draft = structuredClone(value.scenes || [newScene()]); dirty = false; exportJob = null; exportKey = null; importedAssetId = ''; paint(); }
    }
   });
@@ -285,7 +366,7 @@ export function createCloudToolsUI({api, endpoint, getState, esc, toast, refresh
   if (view && view !== nextView) { releaseOwned(); epoch++; selectedChannel = ''; frameBusy = false; loading = false; pollBusy = false; }
   view = nextView; listen();
   void load();
-  if (!timer) timer = setInterval(() => { ensureCompany(); if (active()) { void frame(); void pollExport(); } }, 1000);
+  if (!timer) timer = setInterval(() => { ensureCompany(); if (active()) { void frame(); void pollExport(); void pollVideoChat(); } }, 1000);
  }
  function dispose() {
   releaseOwned(); epoch++; view = ''; if (timer) clearInterval(timer); timer = null;

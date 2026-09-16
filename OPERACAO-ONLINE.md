@@ -68,3 +68,11 @@ O iniciador local le `.env.local` e depois `.env`, preservando variaveis ja defi
 Na Vercel, cadastre essas mesmas variaveis em Production e faca um novo deploy manual: arquivos locais nao sao enviados como configuracao da hospedagem. A chave permanece no servidor e nao deve ser incluida no Git. Configuracoes salvas em Conexoes de cada empresa tem prioridade sobre os padroes do ambiente. A chave da plataforma atende empresas sem chave propria, com cobranca na conta do titular da chave; esta configuracao nao implementa um teto financeiro.
 
 Desconectar a OpenAI no painel bloqueia tambem o uso da chave do ambiente para aquela empresa. Salvar a conexao novamente reabilita o uso dos padroes. Os valores do ambiente nao sao copiados para os registros das empresas. Chave preenchida indica configuracao, nao validacao de acesso: use Verificar acesso antes de iniciar a operacao.
+
+## Astra Vídeo: conversa ao lado do editor
+
+A seção Biblioteca → Astra Vídeo reúne o chat à esquerda e a prévia das cenas à direita. O pedido usa a conversa existente da Helpu, com o identificador e a revisão do projeto aberto. Edições locais são salvas antes do envio; enquanto o pedido estiver em andamento, a edição manual fica bloqueada para evitar sobrescrita. O botão Pausar usa a pausa da conversa existente; a liberação depende da confirmação do andamento.
+
+A tela acompanha novas revisões e a exportação, preserva a conversa por projeto na sessão do navegador e oferece edição manual de textos, cores, duração e cortes. A criação manual tem escolhas de duração inicial (15, 30 ou 60 segundos) e estilo claro/escuro. O formato disponível continua vertical. A prévia é uma representação aproximada da cena; o MP4 final é conferido após exportação.
+
+A interface permanece visível quando falta o serviço online, com os controles de execução desabilitados. Esta alteração não hospeda o serviço, não muda a automação de acesso e não realiza chamadas pagas. A interface foi conferida em navegador com dados simulados, em computador e celular; a exportação real foi testada separadamente com vídeo sintético e FFmpeg.
