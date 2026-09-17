@@ -30,3 +30,4 @@ import './cloud-tools-ui.test.mjs';
 import './openai-config.test.mjs';
 
 import './whatsapp-chat.test.mjs';
+import './delivery-mode.test.mjs';

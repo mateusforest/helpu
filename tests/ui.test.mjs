@@ -14,7 +14,7 @@ test('todas as áreas e formulários produzem HTML sem erros de execução',()=>
  const ctx=vm.createContext({renderChatText,createCloudToolsUI:()=>({screens:()=>"<h1>Telas</h1>",videos:()=>"<h1>Vídeo</h1>",mount(){}}),connectionFields,instagramSetupContent,autonomySummary,panelToolsStatus,readableTerm,knowledgeTitle,createAccountUI:()=>({page:()=>'<h1>Minha conta</h1>',mount(){}}),createStudioUI,document:doc,window:{addEventListener(){}},location:{hash:'',origin:'http://localhost',assign(){}},localStorage:{getItem(){return null;},setItem(){}},setInterval(){},setTimeout(){},clearTimeout(){},__fixture:fixture,Date,Intl,URL,console,crypto:{randomUUID(){return 'test';}},createConversationUI:()=>({chat:()=>'<h1>Conversa</h1>',accounts:()=>'<h1>Contas</h1>',mount(){}})});
  const code=fs.readFileSync(new URL('../dist/assets/portal.js',import.meta.url),'utf8').replace(/^import[^\n]*\n/gm,'').replace(/init\(\);\s*$/,'');vm.runInContext(code,ctx);
  vm.runInContext("S=__fixture;org='company';boot={user:{name:'Pessoa',email:'test@example.test'},companies:[{id:'company',name:'EME'}]};",ctx);
- const routes=vm.runInContext('routes.map(x=>x[0])',ctx);assert.equal(routes.length,20);
+ const routes=vm.runInContext('routes.map(x=>x[0])',ctx);assert.equal(routes.length,19);
  assert.equal(vm.runInContext("nav.length",ctx),5);
  for(const route of routes){vm.runInContext('view='+JSON.stringify(route)+';render();',ctx);const html=nodes.get('#workspace').innerHTML;assert.ok(html.includes('<h1>'),route);assert.ok(!html.includes('[object Object]'),route);assert.ok(!html.includes('undefined'),route);}
  for(const kind of ['campaigns','content','leads','tasks','metrics','pages','knowledge']){vm.runInContext('editRecord('+JSON.stringify(kind)+')',ctx);assert.ok(nodes.get('#dialog-body').innerHTML.includes('dialog-form'),kind);}
@@ -24,7 +24,7 @@ test('todas as áreas e formulários produzem HTML sem erros de execução',()=>
  Object.assign(igFixture,{configured:true,verifiedAt:Date.now(),validation:{status:'blocked'}});
  vm.runInContext("view='integrations';render();",ctx);assert.doesNotMatch(nodes.get('#workspace').innerHTML,/>Conectado</);
  igFixture.validation={status:'validated'};
- vm.runInContext("view='integrations';render();",ctx);assert.match(nodes.get('#workspace').innerHTML,/>Conectado</);
+ vm.runInContext("view='integrations';render();",ctx);assert.doesNotMatch(nodes.get('#workspace').innerHTML,/Entrar com Instagram|Meta Ads|Perfil da Empresa no Google/);assert.match(nodes.get('#workspace').innerHTML,/WhatsApp da Helpu/);
  Object.assign(igFixture,{configured:false,verifiedAt:null,validation:null});
  const now=Date.now();Object.assign(fixture.records,{campaigns:[{id:'campaign',name:'Campanha',status:'planning',channels:['instagram']}],content:[{id:'content',title:'Peça',status:'review',format:'image',channel:'instagram'}],leads:[{id:'lead',name:'Contato',stage:'new',consent:true,phone:'5511999999999'}],messages:[{id:'message',leadId:'lead',text:'Olá',channel:'whatsapp',direction:'incoming',status:'recorded'}],tasks:[{id:'task',title:'Tarefa',status:'todo'}],metrics:[{id:'metric',date:'2026-09-11',clicks:3,channel:'instagram',source:'manual'}],pages:[{id:'page',title:'Página',active:true}],knowledge:[{id:'knowledge',title:'Oferta',text:'Informações'}]});
  fixture.jobs=[{id:'job',kind:'agent',payload:{agent:'creative'},state:'succeeded',createdAt:now,updatedAt:now,output:{summary:'Resultado',questions:[],recommendations:['Próximo passo']}}];fixture.audit=[{created_at:now,action:'Registro criado',actor:'1',note:'Registro'}];

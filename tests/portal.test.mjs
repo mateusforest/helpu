@@ -75,7 +75,7 @@ test('portal: isolamento, persistência e operação verificável', async t => {
   };
   let server = await createHelpuServer({
     dataDir,
-    portalOptions: {
+    portalOptions: {deliveryOnly:false,
       startScheduler: false,
       providers
     }
@@ -385,7 +385,7 @@ test('portal: isolamento, persistência e operação verificável', async t => {
       assert.equal(one.id, two.id);
       const second = await createHelpuServer({
         dataDir,
-        portalOptions: {
+        portalOptions: {deliveryOnly:false,
           startScheduler: false,
           providers
         }
@@ -456,7 +456,7 @@ test('portal: isolamento, persistência e operação verificável', async t => {
       await new Promise(r => server.close(r));
       server = await createHelpuServer({
         dataDir,
-        portalOptions: {
+        portalOptions: {deliveryOnly:false,
           startScheduler: false,
           providers
         }

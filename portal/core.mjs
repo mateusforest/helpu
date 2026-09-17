@@ -50,7 +50,7 @@ const statuses = {
   messages: ['draft', 'recorded'],
   tasks: ['todo', 'doing', 'done']
 };
-export async function createPortal({db, dataDir, userFrom, json, safeOrigin, providers = createProviders(), startScheduler = true, browserLaunch, conversationRespond, publicationFetch, publicationResolve,cloud=false,storageClient,instagramLoginFetch,instagramLoginEnv,stripeFetch,stripeEnv,runtimeEnv,runtimeFetch,whatsappChatEnv=process.env,whatsappChatFetch,openaiEnv=process.env}) {
+export async function createPortal({db, dataDir, userFrom, json, safeOrigin, providers = createProviders(), startScheduler = true, browserLaunch, conversationRespond, publicationFetch, publicationResolve,cloud=false,storageClient,instagramLoginFetch,instagramLoginEnv,stripeFetch,stripeEnv,runtimeEnv,runtimeFetch,whatsappChatEnv=process.env,whatsappChatFetch,openaiEnv=process.env,deliveryOnly=true}) {
   const cloudRuntime=createCloudRuntime({env:runtimeEnv,fetcher:runtimeFetch});
   if(db.dialect==='postgres'){
     const migration=await db.prepare('SELECT version FROM portal_migrations ORDER BY version DESC LIMIT 1').get();
@@ -398,6 +398,7 @@ export async function createPortal({db, dataDir, userFrom, json, safeOrigin, pro
     if(parentOperation&&(parentOperation.paused||['cancelled','uncertain'].includes(parentOperation.state)))throw new ProviderError('A operação de origem foi pausada ou exige conferência; esta ação não será iniciada.','canceled');
   }
   async function queue(org, user, kind, payload = {}, scheduledAt = null, key = randomUUID(), options = {}) {
+    if(deliveryOnly && ['publish','insights','metaCampaign','googlePresence','send'].includes(kind)) fail('A Helpu entrega o conteúdo pelo WhatsApp vinculado; a publicação é manual. Esta ação não está disponível.',409);
     await checkParent(org, payload);
     payload={...payload};delete payload.mediaAuthorization;
     if(kind==='image')payload.provider='openai';
@@ -760,6 +761,7 @@ export async function createPortal({db, dataDir, userFrom, json, safeOrigin, pro
     }
   });
   const conversation = await createConversation({
+    deliveryOnly,
     db,
     dataDir,
     kernel,
@@ -849,6 +851,7 @@ export async function createPortal({db, dataDir, userFrom, json, safeOrigin, pro
     }
   }
   async function execute(job) {
+    if(deliveryOnly && ['publish','insights','metaCampaign','googlePresence','send'].includes(job.kind)) throw new ProviderError('Ação anterior suspensa: a Helpu agora prepara e entrega conteúdo para publicação manual.','blocked');
     if (job.kind === 'agent' && job.idempotency_key.startsWith('daily-director:')) {
       const priority = await routinePriority(job.org_id);
       if (!priority.intelligenceRequired) throw new ProviderError(priority.message, 'blocked');
@@ -1606,7 +1609,9 @@ export async function createPortal({db, dataDir, userFrom, json, safeOrigin, pro
       if(!verified||verified.sha256!==hash)fail('O arquivo não pôde ser confirmado.',409);
       json(res,201,{id:verified.id,name:verified.name,mime:verified.mime,size:verified.size,url:'/api/portal/files/'+verified.id});return true;
     }
+    if(deliveryOnly && section==='runtime' && kind==='browser') fail('As telas de contas foram desativadas no fluxo de entrega.',409);
     if (await runtimeTools.handle(req,res,org,parts,user,body,json)) return true;
+    if(deliveryOnly && section==='browser') fail('Acesso a contas pelo navegador não faz parte da entrega de conteúdo.',409);
     if (await conversation.handle(req, res, org, section, kind, id, user, body)) return true;
     if (section === 'studio') {
       try {

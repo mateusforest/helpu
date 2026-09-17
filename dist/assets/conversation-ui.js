@@ -61,7 +61,7 @@ export function createConversationUI({api,endpoint,getState,esc,toast,refresh,op
   const requestedThread=thread,sequence=++loadSequence,base='/api/portal/'+org+'/';loading=true;
   const current=()=>sequence===loadSequence&&getState()?.company.id===org&&thread===requestedThread;
   try{
-   const [ts,bs,next,wa]=await Promise.all([api(base+'conversations'),api(base+'browser'),requestedThread?api(base+'conversations/'+requestedThread):Promise.resolve(null),api(base+'whatsapp-chat')]);
+   const [ts,bs,next,wa]=await Promise.all([api(base+'conversations'),currentView==='browser'?api(base+'browser'):Promise.resolve({profiles:[]}),requestedThread?api(base+'conversations/'+requestedThread):Promise.resolve(null),api(base+'whatsapp-chat')]);
    if(!current())return;
    const whatsappChanged=JSON.stringify(whatsappInfo)!==JSON.stringify(wa);
    const profilesChanged=JSON.stringify(profiles)!==JSON.stringify(bs.profiles),threadsChanged=JSON.stringify(threads)!==JSON.stringify(ts.conversations),sig=next?JSON.stringify(next):'',changed=next&&sig!==signature;

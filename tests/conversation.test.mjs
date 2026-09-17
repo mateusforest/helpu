@@ -65,7 +65,7 @@ test('conversa executa ferramentas autorizadas e preserva estado', async t => {
   };
   const server = await createHelpuServer({
     dataDir,
-    portalOptions: {
+    portalOptions: {deliveryOnly:false,
       startScheduler: false,
       browserLaunch: launch,
       conversationRespond: async (config, body) => {

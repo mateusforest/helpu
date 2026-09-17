@@ -150,7 +150,7 @@ test('operação preserva entregas, retomadas, rascunhos e progresso de cada pub
   };
   const server = await createHelpuServer({
     dataDir,
-    portalOptions: {
+    portalOptions: {deliveryOnly:false,
       startScheduler: false,
       providers,
       conversationRespond: async () => responses.shift() || answer('Resposta preservada.')

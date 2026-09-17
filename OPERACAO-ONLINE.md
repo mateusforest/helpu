@@ -1,3 +1,19 @@
+# Direção atual: criação e entrega pelo WhatsApp
+
+A Helpu prepara imagens, vídeos, campanhas e legendas; o cliente publica manualmente. A única integração de canal no produto é o WhatsApp oficial da Helpu. Não é necessário conectar redes sociais dos clientes. OpenAI e o serviço de exportação de vídeo continuam sendo infraestrutura de criação.
+
+Número oficial escolhido: +55 54 99990-2690. Registrado somente na configuração local; cadastro/validação na Meta e configuração na hospedagem ainda precisam ser concluídos. Tokens e IDs não foram substituídos automaticamente: devem pertencer ao novo número.
+
+Cada entrega deve incluir arquivo realmente gerado, legenda copiável, sugestão de data/horário com fuso e instrução de postagem. Referência comercial de outra agência não define preço nem quantidade contratada da Helpu.
+
+O chat vinculado entrega respostas e arquivos dentro da janela de conversa permitida. Lembretes proativos, confirmação posterior de postagem e templates fora dessa janela ainda são pendências, não recursos concluídos. O serviço de exportação de vídeo ainda precisa ser hospedado. O calendário agora apenas registra a data editorial, sem criar uma publicação automática.
+
+Novos pedidos e itens antigos de publicação, anúncios, consulta social e envio comercial são bloqueados pelo servidor. O envio de respostas e materiais usa exclusivamente a ponte do WhatsApp vinculado. O parâmetro interno deliveryOnly é verdadeiro por padrão; somente os testes de regressão dos módulos antigos o desativam explicitamente, sem opção no painel.
+
+As conexões antigas e seus dados são preservados para histórico. As ferramentas de navegador, publicação, anúncios e consulta de redes não são oferecidas ao Astra. Instruções anteriores abaixo sobre essas integrações são históricas e não fazem parte do lançamento atual.
+
+---
+
 # Operação online da Helpu
 
 Implementação de 15/09/2026. O código está preparado para execução independente do computador do usuário. Isso não significa que o novo serviço já foi hospedado: não houve deploy, conexão a contas reais ou publicação nesta alteração.

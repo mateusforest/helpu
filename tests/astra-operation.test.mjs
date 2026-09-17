@@ -19,7 +19,7 @@ test('Astra consulta andamento da empresa e agenda com fuso, respeitando Planeja
  let responses=[],bodies=[];
  const answer={status:'completed',output:[{type:'message',content:[{type:'output_text',text:'Pedido registrado.'}]}]};
  const tool=(name,args)=>({status:'completed',output:[{type:'function_call',call_id:'test-call',name,arguments:JSON.stringify(args)}]});
- const server=await createHelpuServer({dataDir,portalOptions:{startScheduler:false,conversationRespond:async(c,body)=>{bodies.push(structuredClone(body));return responses.shift()||answer;}}});
+ const server=await createHelpuServer({dataDir,portalOptions: {deliveryOnly:false,startScheduler:false,conversationRespond:async(c,body)=>{bodies.push(structuredClone(body));return responses.shift()||answer;}}});
  await new Promise(r=>server.listen(0,'127.0.0.1',r));
  const origin='http://127.0.0.1:'+server.address().port;
  let cookie='',org='';

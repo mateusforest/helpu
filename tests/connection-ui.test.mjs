@@ -14,9 +14,9 @@ test('o fluxo comum do Instagram explica a preparação sem encaminhar o cliente
 });
 test('autonomia distingue autorização da criação, rotina, publicação e ferramentas pendentes',()=>{
  const state={company:{policy:{enabled:true,autoMedia:true,allowPublishing:true,autoReply:false}},integrations:[{id:'openai',configured:true}],worker:{running:false}};
- let html=autonomySummary(state,esc);assert.match(html,/não há execução recente confirmada/);assert.match(html,/revisar e aprovar/);assert.match(html,/não precisa aprovar a geração novamente/);assert.match(html,/ativar o serviço de vídeo/);
+ let html=autonomySummary(state,esc);assert.match(html,/não há execução recente confirmada/);assert.match(html,/publica manualmente/);assert.match(html,/não precisa aprovar a geração novamente/);assert.match(html,/ativar o serviço de vídeo/);
  state.worker.running=true;html=autonomySummary(state,esc);assert.match(html,/preparar conteúdos e gerar imagens/);
- assert.match(panelToolsStatus(true),/Falta ativar o serviço online/);
- assert.match(panelToolsStatus(true,{available:true}),/serviço online está acessível/);
+ assert.match(panelToolsStatus(true),/Falta ativar o serviço de vídeo online/);
+ assert.match(panelToolsStatus(true,{available:true,video:true}),/serviço de vídeo está acessível/);
  assert.match(panelToolsStatus(true,{available:true}),/href="#\/video"/);
 });

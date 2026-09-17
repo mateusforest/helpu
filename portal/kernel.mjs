@@ -175,12 +175,12 @@ export function createKernel({db, company, record, list: records, saveRecord, sy
     await sync(op);
     return op;
   }
-  async function register(org, userId, threadId, jobId, objective, {force = false} = {}) {
+  async function register(org, userId, threadId, jobId, objective, {force = false, manualPublication = false} = {}) {
     if (!force && !(/\b(prepare|preparar|crie|criar|produza|produzir|planeje|planejar|publique|publicar|agende|agendar|envie|enviar|execute|organize|faça|fazer|monte|preciso|quero|gostaria|vamos)\b/i).test(objective)) return null;
     const existing = await db.prepare("SELECT * FROM records WHERE org_id=? AND kind='operations' AND external_id=?").get(org, jobId);
     if (existing) return decode(existing);
-    const firstInstagram = (/\binstagram\b/i).test(objective) && (/\b(publique|publicar|publique|publica[çc][aã]o)\b/i).test(objective);
-    const id = randomUUID(), now = Date.now(), type = !force && ((/\b(publica[çc][aã]o|postagem|post)\b/i).test(objective) || firstInstagram) ? 'post' : 'general';
+    const firstInstagram = !manualPublication && (/\binstagram\b/i).test(objective) && (/\b(publique|publicar|publique|publica[çc][aã]o)\b/i).test(objective);
+    const id = randomUUID(), now = Date.now(), type = !manualPublication && !force && ((/\b(publica[çc][aã]o|postagem|post)\b/i).test(objective) || firstInstagram) ? 'post' : 'general';
     const data = {
       companyId: org,
       threadId,

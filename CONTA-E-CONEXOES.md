@@ -1,3 +1,13 @@
+# Escopo atual: entrega pelo WhatsApp
+
+A Helpu cria o material e o cliente publica manualmente. O painel oferece o vínculo com o WhatsApp oficial da Helpu na conversa; não pede conexão às redes sociais do cliente. OpenAI e exportação de vídeo continuam como serviços internos de criação.
+
+O número oficial escolhido é +55 54 99990-2690. A configuração local foi atualizada, mas a ativação na Meta e na hospedagem continua pendente. Consulte OPERACAO-ONLINE.md para os limites atuais da entrega e do vídeo.
+
+As seções anteriores abaixo documentam integrações preservadas para histórico e não representam o fluxo de lançamento atual.
+
+---
+
 # Conta, Instagram e Stripe
 
 **Atualização em 15/09/2026:** o acesso às telas remotas de Instagram, WhatsApp, Facebook e Google e o Astra Vídeo online estão implementados, aguardando hospedagem e validação real. Os acessos ficam em Minha empresa → Telas das contas e Biblioteca → Astra Vídeo. A configuração OAuth/API é separada. Veja [Operação online](OPERACAO-ONLINE.md) para ativação e limites atuais; o diagnóstico de ferramentas pendentes abaixo descreve a versão anterior.
