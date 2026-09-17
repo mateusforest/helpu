@@ -52,7 +52,9 @@ export function checkDependencies(directory = project) {
   for (const [name, version] of Object.entries(manifest.dependencies ?? {})) {
     let installed;
     try { installed = JSON.parse(fs.readFileSync(path.join(directory, 'node_modules', name, 'package.json'), 'utf8')); } catch {}
-    if (!installed || installed.version !== version || !fs.existsSync(path.join(directory, 'node_modules', name, installed.main || 'index.js'))) {
+    // Font packages contain data files rather than a JavaScript entry point.
+    const entry = name === 'dejavu-fonts-ttf' ? 'ttf/DejaVuSans.ttf' : installed?.main || 'index.js';
+    if (!installed || installed.version !== version || !fs.existsSync(path.join(directory, 'node_modules', name, entry))) {
       throw new Error('Dependências ausentes ou incompatíveis. Execute npm ci --ignore-scripts na pasta do projeto.');
     }
   }

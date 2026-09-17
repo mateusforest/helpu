@@ -17,7 +17,7 @@
   "functions": {
     "api/**/*.mjs": {
       "maxDuration": 300,
-      "includeFiles": "portal/migrations/**",
+      "includeFiles": "{portal/migrations/**,node_modules/ffmpeg-static/{ffmpeg,ffmpeg.LICENSE,ffmpeg.README,package.json},node_modules/@ffprobe-installer/linux-x64/{ffprobe,package.json,README.md},node_modules/dejavu-fonts-ttf/{package.json,LICENSE,ttf/DejaVuSans.ttf}}",
       "excludeFiles": "{services/**,deploy/**,runtime-data/**,.local-data/**,.superdesign/**,.git/**,.vercel/**,.env*,supabase/**,tests/**,**/*.sqlite*,**/integration.key,**/browser-profiles/**}"
     }
   },

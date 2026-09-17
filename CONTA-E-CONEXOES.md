@@ -1,64 +1,38 @@
-# Escopo atual: entrega pelo WhatsApp
+# Conta e conexões da Helpu
 
-A Helpu cria o material e o cliente publica manualmente. O painel oferece o vínculo com o WhatsApp oficial da Helpu na conversa; não pede conexão às redes sociais do cliente. OpenAI e exportação de vídeo continuam como serviços internos de criação.
+A Helpu cria o material e o cliente publica manualmente. A única integração de canal oferecida no lançamento é o **WhatsApp oficial da Helpu**. Instagram, Google, Meta Ads e telas de navegador de contas não são requisitos para usar a criação. Os dados antigos dessas integrações continuam preservados.
 
-O número oficial escolhido é +55 54 99990-2690. A configuração local foi atualizada, mas a ativação na Meta e na hospedagem continua pendente. Consulte OPERACAO-ONLINE.md para os limites atuais da entrega e do vídeo.
+## Imagens e Reels
 
-As seções anteriores abaixo documentam integrações preservadas para histórico e não representam o fluxo de lançamento atual.
+Na conversa, escolha Feed, Story, Carrossel ou Reels, ou abra **Biblioteca → Criar conteúdo**. Descreva o pedido, escolha a quantidade do carrossel ou a duração do Reels, anexe referências e acompanhe os arquivos e a legenda na mesma tela. Não há editor renderizado nem uma etapa de verificação manual de produção antes de cada pedido.
 
----
+OpenAI é a infraestrutura de inteligência e imagens, configurada pela administração. Reels de 15 ou 30 segundos são montados dentro da API da Vercel, com textos, cores, imagens e gravações enviadas. Isso não gera filmagens inéditas, voz ou música por IA. **Não é necessário contratar Render ou outro servidor para esse fluxo.**
 
-# Conta, Instagram e Stripe
+Para Feed/Carrossel, a imagem é vertical 4:5; Story e Reels são verticais 9:16. Carrossel permite três a dez imagens. Até seis anexos: PNG, JPG, WebP e, para Reels, MP4. Limites: 20 MB de imagens, 25 MB por arquivo e 30 MB no conjunto de referências do Reels. A Biblioteca e o chat geral mantêm seus próprios formatos de arquivo.
 
-**Atualização em 15/09/2026:** o acesso às telas remotas de Instagram, WhatsApp, Facebook e Google e o Astra Vídeo online estão implementados, aguardando hospedagem e validação real. Os acessos ficam em Minha empresa → Telas das contas e Biblioteca → Astra Vídeo. A configuração OAuth/API é separada. Veja [Operação online](OPERACAO-ONLINE.md) para ativação e limites atuais; o diagnóstico de ferramentas pendentes abaixo descreve a versão anterior.
+Conversar e executar autoriza gerar o material solicitado; Somente planejar não produz arquivos. Limites e proibições definidos em Autonomia continuam valendo. Cada imagem do carrossel consome uma geração do limite diário. A data do calendário é orientação para o cliente, sem publicação automática.
 
-As cinco seções da barra inferior foram mantidas. O botão do usuário abre Minha conta, com Plano, Configurações, Segurança e Faturamento. Nome e senha são editáveis, e é possível encerrar as outras sessões. E-mail, recuperação de senha e autenticação em duas etapas ainda não têm fluxo de alteração/ativação.
+O código precisa estar publicado com suas dependências e variáveis de produção. Consulte [Operação online](OPERACAO-ONLINE.md) para execução da fila, arquivos, configuração e limitações. Configuração salva não é comprovação de que um pedido real já foi produzido no domínio.
 
-Conexões reúne a inteligência e os canais. Higgsfield foi retirado das opções visíveis; registros antigos e a integração interna foram preservados. Na Vercel, não são oferecidos botões para abrir sessões locais de navegador. Os títulos antigos “Contexto: positioning”, por exemplo, aparecem em português sem alterar os dados históricos.
+## WhatsApp do usuário e número oficial
 
-## Situação da operação e das telas no painel
+**Expandir para WhatsApp** fica na tela Conversa. O usuário informa o próprio telefone, autoriza o recebimento e confirma o vínculo enviando um código ao número oficial. Depois, pode ativar ou desativar o canal e escolher conversar e executar ou somente planejar. Essa verificação protege o acesso à empresa; salvar qualquer telefone não permite ler suas conversas.
 
-O painel distingue a conexão oficial por API da tela de um serviço. O login oficial do Instagram está implementado, mas só é habilitado quando o aplicativo da Meta e suas credenciais estão configurados. O diálogo de preparação mostra o callback atual e os nomes das variáveis ausentes, sem expor segredos. A configuração manual fica nas opções técnicas; ID não aceita e-mail e token não deve receber a senha da conta. Credenciais inválidas não substituem a conexão anterior.
+Número oficial escolhido: **+55 54 99990-2690**. Está na configuração local; cadastro na Meta, Phone Number ID, token, assinatura do webhook e variáveis na hospedagem precisam corresponder ao mesmo número. O WhatsApp do cliente é um destinatário vinculado, não uma conta Business que ele precisa integrar à Helpu.
 
-WhatsApp Business, Perfil da Empresa no Google e Meta Ads ainda usam configuração técnica por API. Não há fluxo de login simplificado implementado para esses três canais. O Google atual é Perfil da Empresa, não Google Ads. Meta Ads permite criar campanhas pausadas; a montagem e ativação completas de anúncios ainda não estão prontas.
+Mensagens de texto recebidas usam o mesmo contexto e motor do chat. O envio de arquivos ocorre pelo número oficial. Fora da janela de atendimento de 24 horas, respostas aguardam nova mensagem do usuário; lembretes proativos e templates externos a essa janela ainda não estão implementados. Referências de mídia são anexadas no painel nesta etapa. Ativar o WhatsApp não publica nas redes sociais.
 
-Em **Autonomia**, o resumo explica o comportamento atual:
+Os campos HELPU_WHATSAPP_*, o callback, o worker, os limites de envio e as proteções estão em [Operação online](OPERACAO-ONLINE.md), seção Conversa do painel no WhatsApp oficial da Helpu. Nenhuma credencial deve ser colada no chat ou commitada.
 
-- **Pedido no chat:** Conversar e executar autoriza criar a imagem solicitada, com a versão do briefing, limites e proibições. Somente planejar não gera arquivos.
-- **Rotina:** pode preparar textos e conteúdos; imagens automáticas dependem da opção de geração e do serviço de execução ativo. Ativar a opção não comprova que o worker está funcionando.
-- **Publicação:** a versão atual exige conteúdo aprovado e autorização da operação, além de conta validada e permissão de publicar. Não existe aprovação automática de toda a produção nesta versão.
-- **Atendimento:** depende da opção de respostas, do recebimento configurado, das regras e de contexto suficiente.
-- **Vídeo e telas remotas:** continuam pendentes; não são habilitados por uma conexão API.
+## Minha conta
 
-Para as telas das contas dentro da Helpu online, falta implementar e hospedar o executor de navegador com controle humano, autenticação, perfis privados por empresa e armazenamento persistente. Para o Astra Vídeo, falta integrar projetos por empresa, ferramentas de edição do chat, sessão do editor e exportação com retorno à Biblioteca. A animação de textos do zero também exige cenas sem vídeo de origem, ausentes no editor atual. O detalhamento está em [PAINEL-CANAIS-E-ASTRA.md](PAINEL-CANAIS-E-ASTRA.md).
-
-Esta alteração melhora a conexão e informa o estado real; não instala esses serviços nem declara operação 100% validada. A contratação/configuração de hospedagem e os logins externos continuam pendentes.
+As cinco seções da barra inferior foram mantidas. O botão do usuário abre Minha conta, com Plano, Configurações, Segurança e Faturamento. Nome e senha são editáveis; é possível encerrar as outras sessões. Alteração de e-mail, recuperação de senha e autenticação em duas etapas ainda não têm fluxo de alteração/ativação.
 
 ## Domínio próprio: helpumkt.com
 
-Na conferência de 15/09/2026, `helpumkt.com` redireciona para `www.helpumkt.com`. O servidor responde ao teste de saúde, mas recusa a autenticação nesse domínio com HTTP 403; o endereço antigo da Vercel responde normalmente. Isso indica que o domínio novo ainda não está na lista permitida da aplicação, que usa `HELPU_PUBLIC_URL` e o endereço do deployment.
+Se o domínio abrir o painel mas o login informar domínio não habilitado, confira na Vercel → Settings → Environment Variables se HELPU_PUBLIC_URL em Production é https://www.helpumkt.com, sem caminho adicional. Faça um novo deploy manual para aplicar a alteração. O arquivo .env.local não configura a hospedagem.
 
-1. No projeto da Helpu na Vercel, abra **Settings → Environment Variables**.
-2. Atualize `HELPU_PUBLIC_URL` no ambiente **Production** para `https://www.helpumkt.com`, sem caminho adicional.
-3. Salve antes do próximo push/deploy. A mudança de variável só entra em vigor em um novo deployment. O responsável pode usar o próximo push para publicar também a correção das mensagens de login.
-4. Após o deploy, abra `https://www.helpumkt.com/entrar.html`. Sem sessão, `/api/auth/me` deve retornar HTTP 401 com uma mensagem JSON pedindo login, e não HTTP 403 de domínio recusado.
-
-A configuração da Vercel não foi alterada por esta correção. Não é necessário trocar a senha nem criar outra conta por causa desse bloqueio. Ao configurar Instagram, use `https://www.helpumkt.com/api/connect/instagram/callback` como retorno autorizado. Se já houver uma configuração externa com o endereço antigo, atualize-a também.
-
-Referência: [Vercel — alterações de variáveis exigem novo deployment](https://vercel.com/docs/environment-variables/managing-environment-variables).
-
-## Ativar o login do Instagram
-
-Ter o perfil da Helpu no Instagram é diferente de ter um aplicativo no painel de desenvolvedores da Meta. O código do login oficial está preparado; a configuração externa ainda precisa ser feita.
-
-1. Configure um aplicativo Meta com Instagram API / Instagram Login e associe a conta profissional. Configure os papéis de teste; para oferecer a conexão a outras empresas, conclua as exigências de acesso da Meta para as permissões utilizadas.
-2. Cadastre exatamente `https://helpu-seven.vercel.app/api/connect/instagram/callback` como endereço de retorno autorizado (ou o domínio definido em `HELPU_PUBLIC_URL`).
-3. Na Vercel, configure `HELPU_INSTAGRAM_APP_ID` e `HELPU_INSTAGRAM_APP_SECRET`, além de `HELPU_PUBLIC_URL`. As credenciais são de Instagram Login do aplicativo. Não coloque valores em arquivos públicos, commits ou no chat.
-4. Após um novo deploy feito pelo responsável, abra Minha empresa → Conexões → Entrar com Instagram e autorize a conta correta.
-
-O fluxo solicita `instagram_business_basic`, `instagram_business_content_publish`, `instagram_business_manage_comments` e `instagram_business_manage_messages`. O servidor valida estado, navegador, sessão e empresa antes de trocar o código. O token fica criptografado no banco. A identidade pode ser conferida em Ver acesso. O login não publica conteúdo nem prova que todas as ações do canal estão disponíveis.
-
-A validade do token retornada pela Meta é armazenada. A renovação automática ainda não foi implementada: reconecte quando o acesso expirar. Mensagens recebidas exigem também configurar o webhook já previsto no portal; não são habilitadas apenas pelo login. Nenhuma autorização real da Meta foi executada nesta entrega.
+Sem sessão, /api/auth/me deve retornar HTTP 401 pedindo login, em vez de HTTP 403 de domínio recusado. Não é necessário trocar a senha ou criar outra conta apenas por causa da configuração de domínio.
 
 ## Ativar planos e faturamento pelo Stripe
 
@@ -77,17 +51,11 @@ Esta integração permite contratar e gerenciar uma assinatura e exibir faturas.
 
 Nenhuma cobrança real foi criada. Os testes usam respostas simuladas do Stripe e da Meta, contas fictícias e bancos temporários.
 
-## Validação e referências
+## Verificação e publicação
 
-- `npm test`: autenticação, isolamento, persistência, login Instagram, Stripe e regressões do portal.
-- `npm run check` e `node scripts/build-production.mjs`: sintaxe e arquivos públicos.
-- `node tests/account-visual.mjs`: telas de conta e conexões em 1440, 390 e 320 px, com dados fictícios e chamadas externas bloqueadas.
-- [Meta: Instagram API](https://www.postman.com/meta/instagram/documentation/6yqw8pt/instagram-api).
-- [Stripe: criar Checkout](https://docs.stripe.com/api/checkout/sessions/create), [Customer Portal](https://docs.stripe.com/api/customer_portal/sessions/create), [assinaturas](https://docs.stripe.com/api/subscriptions/list) e [faturas](https://docs.stripe.com/api/invoices/list).
+- npm test: autenticação, isolamento, persistência, criação, limites, anexos, WhatsApp, Stripe e regressões do portal.
+- npm run check e node scripts/build-production.mjs: sintaxe, arquivos públicos e dependências de criação.
+- node scripts/verify-production-build.mjs: conferir o pacote compilado antes da publicação.
+- A conferência visual usa contas fictícias e chamadas externas simuladas. Ela não comprova ativação de conta externa, cobrança ou entrega real de WhatsApp.
 
-Esta entrega deve ser commitada localmente. Push e deploy permanecem com o responsável pelo projeto.
-
-
-## WhatsApp pessoal para conversar com a Helpu
-
-Expandir para WhatsApp fica na tela Conversa. Este vínculo não é a conexão WhatsApp Business da empresa: o usuário confirma seu telefone para conversar com o número oficial da Helpu, pode escolher o modo de operação e ativar/desativar. Configuração do número oficial, webhook, worker, proteções e limitações estão em OPERACAO-ONLINE.md, seção Conversa do painel no WhatsApp oficial da Helpu.
+Esta entrega deve ser commitada localmente. Push e deploy permanecem com o responsável pelo projeto. As configurações e módulos sociais antigos são preservados como histórico e não fazem parte da ativação deste fluxo.

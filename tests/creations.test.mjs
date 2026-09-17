@@ -1,0 +1,126 @@
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import fs from 'node:fs';
+import os from 'node:os';
+import path from 'node:path';
+import {createHelpuServer} from '../server.mjs';
+import {decodeGeneratedPng} from '../portal/image-generation.mjs';
+import {testPng} from './image-fixture.mjs';
+import {createDatabase} from '../portal/database.mjs';
+import {ProviderError} from '../portal/providers.mjs';
+import {PGlite} from '@electric-sql/pglite';
+
+const fakeMP4=()=>{const bytes=Buffer.alloc(64);bytes.writeUInt32BE(24);bytes.write('ftypisom',4);bytes.write('synthetic-creation-test-fixture',24);return bytes;};
+
+for(const postgres of [false,true])test('Criações: Feed, Story, Carrossel e Reels em '+(postgres?'PostgreSQL':'SQLite'),async t=>{
+ const dataDir=fs.mkdtempSync(path.join(os.tmpdir(),'helpu-creations-')),plans=[],images=[],videos=[];
+ let rendererAvailable=true,failImage=false,database,pg,conversationReplies=[];
+ if(postgres){
+  pg=await PGlite.create({parsers:{20:Number}});
+  await pg.exec('CREATE ROLE anon; CREATE ROLE authenticated; CREATE ROLE service_role; CREATE SCHEMA storage; CREATE TABLE storage.buckets(id text PRIMARY KEY,name text,public boolean,file_size_limit bigint);');
+  for(const file of ['20260913113000_preserve_helpu_data.sql','20260913140000_activate_cloud_runtime.sql'])await pg.exec(fs.readFileSync(new URL('../supabase/migrations/'+file,import.meta.url),'utf8'));
+  await pg.exec('INSERT INTO helpu.portal_migrations VALUES(1,1),(2,1),(3,1),(4,1); SET ROLE helpu_runtime;');
+  let queued=Promise.resolve();
+  database=createDatabase({pool:{async connect(){const prior=queued;let release;queued=new Promise(r=>release=r);await prior;return {async query(sql,args){const result=await pg.query(sql,args);return {...result,rowCount:result.affectedRows};},release};},async end(){}}});
+ }
+
+ const server=await createHelpuServer({dataDir,database,portalOptions:{startScheduler:false,conversationRespond:async()=>conversationReplies.shift()||({status:'completed',output:[{type:'message',content:[{type:'output_text',text:'Pedido registrado.'}]}]}),openaiEnv:{OPENAI_API_KEY:'fake-creation-key'},creationRespond:async(config,body)=>{
+  assert.equal(config.apiKey,'fake-creation-key');const input=JSON.parse(body.input);plans.push(input);
+  const count=input.request.format==='reels'?(input.request.duration===30?6:3):input.request.slideCount;
+  const value={caption:'Legenda da campanha, pronta para copiar.',slides:Array.from({length:count},(_,i)=>({title:'Página '+(i+1),text:'Mensagem '+(i+1),visualPrompt:'Fundo branco e verde. Texto na arte: Mensagem '+(i+1),background:'#ffffff',textColor:'#002200'}))};
+  return {status:'completed',output:[{type:'message',content:[{type:'output_text',text:JSON.stringify(value)}]}]};
+ },providers:{generateImage:async(config,input)=>{assert.equal(config.apiKey,'fake-creation-key');images.push(input);if(failImage)throw new ProviderError('A imagem não foi confirmada.','uncertain');const [w,h]=input.size.split('x').map(Number);return {base64:testPng(w,h).toString('base64'),requestId:'fake-image-'+images.length};}},reelsRenderer:{configured:()=>rendererAvailable,render:async input=>{videos.push(input);return {bytes:fakeMP4(),width:1080,height:1920,duration:input.scenes.reduce((n,s)=>n+s.duration,0),sha256:'test-fixture-hash'};}}}});
+ await new Promise(r=>server.listen(0,'127.0.0.1',r));const origin='http://127.0.0.1:'+server.address().port;
+ const request=async(url,method='GET',data,cookie='')=>{const r=await fetch(origin+url,{method,headers:{Origin:origin,'Content-Type':'application/json',Cookie:cookie},body:data===undefined?undefined:JSON.stringify(data)});return {status:r.status,body:await r.json(),cookie:r.headers.get('set-cookie')?.split(';')[0]};};
+ const signup=async(email,company)=>{const account=await request('/api/auth/signup','POST',{email,password:'test-only-long-password',name:'Pessoa',company});assert.equal(account.status,201);const boot=await request('/api/portal/bootstrap','GET',undefined,account.cookie);return {org:boot.body.companies[0].id,cookie:account.cookie};};
+ const api=(who,tail,method='GET',body)=>request('/api/portal/'+who.org+'/'+tail,method,body,who.cookie);
+ const upload=async(who,name,bytes)=>{const r=await fetch(origin+'/api/portal/'+who.org+'/files',{method:'POST',headers:{Origin:origin,Cookie:who.cookie,'X-File-Name':name},body:bytes});assert.equal(r.status,201);return r.json();};
+ const finish=async(who,id,maxTicks=15)=>{let state;for(let n=0;n<maxTicks;n++){state=(await api(who,'creations/'+id)).body.creation;if(state.status==='complete')return state;if(['failed','blocked','uncertain'].includes(state.status))assert.fail(JSON.stringify(state));await server.portal.tick();}assert.fail('Criação não concluiu: '+JSON.stringify(state));};
+ const one=await signup('creations-one@example.test','Marca Verde'),two=await signup('creations-two@example.test','Outra marca');
+ try{
+  await api(one,'company','PATCH',{profile:{description:'Produtos para jardinagem.',audience:'Pessoas que cuidam de plantas.',visualIdentity:'Verde e branco'},policy:{dailyRuns:40,dailyMedia:50,autoMedia:false}});
+  const owned=await upload(one,'produto.png',testPng()),foreign=await upload(two,'privada.png',testPng());
+  const payload={prompt:'Crie uma campanha para apresentar a marca.',format:'feed',requestId:'creation-feed-001',attachments:[owned.id]};let feedId;
+  await t.test('rotas exigem sessão, empresa correta e campos válidos',async()=>{
+   assert.equal((await request('/api/portal/'+one.org+'/creations')).status,401);
+   assert.equal((await request('/api/portal/'+one.org+'/creations','POST',payload)).status,401);
+   assert.equal((await request('/api/portal/'+one.org+'/creations','GET',undefined,two.cookie)).status,404);
+   assert.equal((await api(one,'creations','POST',{...payload,attachments:[foreign.id]})).status,404);
+   for(const input of [{prompt:''},{format:'landscape'},{requestId:'x'},{format:'carousel',slideCount:2},{format:'carousel',slideCount:11},{format:'reels',duration:90},{attachments:[owned.id,owned.id]}]){
+    const r=await api(one,'creations','POST',{...payload,...input});assert.equal(r.status,400,JSON.stringify(r.body));
+   }
+   const list=await api(one,'creations');assert.equal(list.body.capabilities.images,true);assert.equal(list.body.capabilities.reels,true);assert.equal(list.body.creations.length,0);assert.equal(plans.length,0);assert.equal(images.length,0);
+  });
+  await t.test('pedido repetido reutiliza criação, e Feed entrega arquivo nativo com referência',async()=>{
+   const posted=await api(one,'creations','POST',payload);assert.equal(posted.status,201,JSON.stringify(posted.body));feedId=posted.body.creation.id;
+   const repeat=await api(one,'creations','POST',payload);assert.equal(repeat.body.creation.id,feedId);
+   assert.equal((await api(one,'creations','POST',{...payload,prompt:'Mude o assunto'})).status,409);
+   assert.equal((await api(two,'creations/'+feedId)).status,404);
+   const ready=await finish(one,feedId);assert.equal(ready.format,'feed');assert.equal(ready.assets.length,1);assert.equal(ready.caption,'Legenda da campanha, pronta para copiar.');assert.equal(plans.length,1);assert.equal(images.length,1);
+   assert.equal(plans[0].company.name,'Marca Verde');assert.equal(images[0].size,'1024x1280');assert.deepEqual(images[0].images[0].bytes,testPng());
+   const asset=ready.assets[0];assert.equal(asset.width,1024);assert.equal(asset.height,1280);assert.equal(asset.mime,'image/png');
+   const file=await fetch(origin+asset.url,{headers:{Cookie:one.cookie}});assert.equal(file.status,200);assert.equal(decodeGeneratedPng(Buffer.from(await file.arrayBuffer()).toString('base64')).height,1280);
+   assert.equal((await fetch(origin+asset.url,{headers:{Cookie:two.cookie}})).status,404);
+   const again=await api(one,'creations','POST',payload);assert.equal(again.body.creation.status,'complete');await server.portal.tick();assert.equal(images.length,1);assert.equal(plans.length,1);
+   assert.doesNotMatch(JSON.stringify(ready),/fake-creation-key|b64_json|private-reference/);
+  });
+  await t.test('Story é entregue em 9:16 e carrossel mantém três páginas ordenadas',async()=>{
+   const story=await api(one,'creations','POST',{...payload,format:'story',requestId:'creation-story-001',attachments:[]});assert.equal(story.status,201);
+   const readyStory=await finish(one,story.body.creation.id);assert.equal(readyStory.assets[0].width,1008);assert.equal(readyStory.assets[0].height,1792);
+   const carousel=await api(one,'creations','POST',{...payload,format:'carousel',slideCount:3,requestId:'creation-carousel-001'});assert.equal(carousel.status,201,JSON.stringify(carousel.body));
+   const ready=await finish(one,carousel.body.creation.id);assert.deepEqual(ready.assets.map(a=>a.slideIndex),[1,2,3]);assert.equal(new Set(ready.assets.map(a=>a.id)).size,3);
+   assert.ok(ready.assets.every(a=>a.width===1024&&a.height===1280));assert.equal(images.length,5);assert.equal(plans.length,3);
+   for(let i=1;i<=3;i++)assert.ok(images[i+1].prompt.includes('página '+i+' de 3'));
+  });
+  await t.test('Reels chama o renderizador e entrega MP4 com os arquivos enviados',async()=>{
+   const source=await upload(one,'gravacao.mp4',fakeMP4());
+   const deniedImage=await api(one,'creations','POST',{...payload,requestId:'creation-image-video-ref',attachments:[source.id]});assert.equal(deniedImage.status,400);
+   const posted=await api(one,'creations','POST',{...payload,format:'reels',duration:15,requestId:'creation-reels-001',attachments:[source.id,owned.id]});assert.equal(posted.status,201,JSON.stringify(posted.body));
+   const ready=await finish(one,posted.body.creation.id);assert.equal(ready.assets.length,1);assert.equal(ready.assets[0].mime,'video/mp4');assert.equal(ready.assets[0].width,1080);assert.equal(ready.assets[0].height,1920);assert.equal(videos.length,1);assert.equal(videos[0].scenes.length,3);
+   assert.equal(videos[0].scenes.reduce((n,s)=>n+s.duration,0),15);assert.deepEqual(videos[0].assets.map(a=>a.id),[source.id,owned.id]);assert.deepEqual(videos[0].assets[0].bytes,fakeMP4());
+   assert.equal(images.length,5);assert.equal(plans.length,4);
+   const downloaded=await fetch(origin+ready.assets[0].url,{headers:{Cookie:one.cookie}});assert.deepEqual(Buffer.from(await downloaded.arrayBuffer()),fakeMP4());
+  });
+  await t.test('uma tentativa incerta não gera novamente por repetição ou consulta',async()=>{
+   failImage=true;const uncertainRequest={...payload,requestId:'creation-uncertain-001',attachments:[]};
+   const posted=await api(one,'creations','POST',uncertainRequest);assert.equal(posted.status,201);await server.portal.tick();await server.portal.tick();
+   const state=(await api(one,'creations/'+posted.body.creation.id)).body.creation;assert.equal(state.status,'uncertain');assert.equal(state.assets.length,0);const attempts=images.length,preparations=plans.length;
+   const replay=await api(one,'creations','POST',uncertainRequest);assert.equal(replay.body.creation.id,state.id);assert.equal(replay.body.creation.status,'uncertain');await server.portal.tick();assert.equal(images.length,attempts);assert.equal(plans.length,preparations);failImage=false;
+  });
+  await t.test('carrossel maior que a cota disponível é bloqueado antes de preparar',async()=>{
+   const limited=await signup('creations-limit@example.test','Marca com limite');await api(limited,'company','PATCH',{policy:{dailyMedia:2,dailyRuns:20}});
+   const beforePlans=plans.length,beforeImages=images.length;
+   const denied=await api(limited,'creations','POST',{prompt:'Carrossel com três páginas.',format:'carousel',slideCount:3,requestId:'quota-before-planning'});assert.equal(denied.status,409);assert.match(denied.body.error,/limite/);
+   assert.equal((await api(limited,'creations')).body.creations.length,0);await server.portal.tick();assert.equal(plans.length,beforePlans);assert.equal(images.length,beforeImages);
+  });
+  await t.test('cota reduzida na fila impede cobrança de plano; oito páginas cabem em oito reservas',async()=>{
+   const limited=await signup('creations-eight@example.test','Marca oito páginas');await api(limited,'company','PATCH',{policy:{dailyMedia:8,dailyRuns:20}});
+   const posted=await api(limited,'creations','POST',{prompt:'Crie oito páginas explicando os cuidados com plantas.',format:'carousel',slideCount:8,requestId:'quota-eight-pages'});assert.equal(posted.status,201);
+   const beforePlans=plans.length,beforeImages=images.length;await api(limited,'company','PATCH',{policy:{dailyMedia:3}});await server.portal.tick();
+   const blocked=(await api(limited,'creations/'+posted.body.creation.id)).body.creation;assert.equal(blocked.status,'blocked');assert.equal(plans.length,beforePlans,'Revalidar a cota antes da chamada paga de planejamento');assert.equal(images.length,beforeImages);
+   await api(limited,'company','PATCH',{policy:{dailyMedia:8}});const retry=await api(limited,'jobs/'+posted.body.creation.id,'POST',{action:'retry'});assert.equal(retry.status,200);
+   const ready=await finish(limited,posted.body.creation.id,20);assert.equal(ready.assets.length,8);assert.deepEqual(ready.assets.map(a=>a.slideIndex),[1,2,3,4,5,6,7,8]);assert.equal(plans.length,beforePlans+1);assert.equal(images.length,beforeImages+8);
+   const exhausted=await api(limited,'creations','POST',{prompt:'Mais uma imagem',format:'feed',requestId:'quota-eight-exhausted'});assert.equal(exhausted.status,409);
+  });
+  await t.test('pausar a conversa cancela a criação derivada antes de gerar arquivos',async()=>{
+   const thread=(await api(one,'conversations','POST',{title:'Pausa da criação'})).body;
+   conversationReplies=[{status:'completed',output:[{type:'function_call',name:'create_media',call_id:'create-paused',arguments:JSON.stringify({prompt:'Crie uma imagem para feed.',format:'feed'})}]}];
+   const submitted=await api(one,'conversations/'+thread.id+'/messages','POST',{text:'Crie uma imagem para feed.',mode:'execute',attachments:[owned.id]});assert.equal(submitted.status,201);await server.portal.tick();
+   const linked=(await server.database.prepare("SELECT id FROM jobs WHERE org_id=? AND kind='creation' AND json_extract(payload,'$.conversationId')=?").all(one.org,thread.id));assert.equal(linked.length,1);
+   const beforePlans=plans.length,beforeImages=images.length;assert.equal((await api(one,'conversations/'+thread.id+'/stop','POST',{})).status,200);await server.portal.tick();await server.portal.tick();
+   assert.equal(plans.length,beforePlans,'Pausar o chat deve impedir o planejamento derivado');assert.equal(images.length,beforeImages);assert.equal((await api(one,'creations/'+linked[0].id)).body.creation.status,'blocked');
+   const next=(await api(one,'conversations','POST',{title:'Pausa após o plano'})).body;
+   conversationReplies=[{status:'completed',output:[{type:'function_call',name:'create_media',call_id:'create-children-paused',arguments:JSON.stringify({prompt:'Crie três imagens para carrossel.',format:'carousel',slideCount:3})}]}];
+   await api(one,'conversations/'+next.id+'/messages','POST',{text:'Crie três imagens para carrossel.',mode:'execute'});await server.portal.tick();await server.portal.tick();
+   const children=(await api(one,'conversations/'+next.id)).body.mediaJobs;assert.equal(children.length,3);const beforeChildren=images.length;
+   assert.equal((await api(one,'conversations/'+next.id+'/stop','POST',{})).status,200);for(let i=0;i<3;i++)await server.portal.tick();assert.equal(images.length,beforeChildren,'A pausa precisa alcançar os arquivos derivados do plano');
+   const states=(await api(one,'state')).body.jobs.filter(j=>children.some(c=>c.id===j.id));assert.ok(states.every(j=>j.state==='canceled'));
+
+  });
+  await t.test('indisponibilidade do renderizador aparece antes de cobrar pela preparação',async()=>{
+   rendererAvailable=false;const before=plans.length;
+   const denied=await api(one,'creations','POST',{...payload,format:'reels',requestId:'creation-reels-unavailable'});assert.equal(denied.status,409);assert.equal((await api(one,'creations')).body.capabilities.reels,false);assert.equal(plans.length,before);
+   const privateList=await api(two,'creations');assert.equal(privateList.body.creations.length,0);
+  });
+ }finally{await server.portal.shutdown();await new Promise(r=>server.close(r));await pg?.close();}
+});

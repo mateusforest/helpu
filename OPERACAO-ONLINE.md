@@ -1,108 +1,74 @@
-# Direção atual: criação e entrega pelo WhatsApp
+# Operação atual: criar, entregar e publicar manualmente
 
-A Helpu prepara imagens, vídeos, campanhas e legendas; o cliente publica manualmente. A única integração de canal no produto é o WhatsApp oficial da Helpu. Não é necessário conectar redes sociais dos clientes. OpenAI e o serviço de exportação de vídeo continuam sendo infraestrutura de criação.
+A Helpu cria imagens, Reels, campanhas e legendas. O cliente recebe o material pelo painel e, quando o vínculo estiver ativo, pelo WhatsApp oficial da Helpu; publica manualmente. Não precisa conectar Instagram, Google, Meta Ads nem navegador de contas.
 
-Número oficial escolhido: +55 54 99990-2690. Registrado somente na configuração local; cadastro/validação na Meta e configuração na hospedagem ainda precisam ser concluídos. Tokens e IDs não foram substituídos automaticamente: devem pertencer ao novo número.
+## Criação direta no painel
 
-Cada entrega deve incluir arquivo realmente gerado, legenda copiável, sugestão de data/horário com fuso e instrução de postagem. Referência comercial de outra agência não define preço nem quantidade contratada da Helpu.
+Abra **Biblioteca → Criar conteúdo**, ou use os atalhos da conversa. O fluxo tem seleção de formato, campo do pedido, anexos e resultados. O antigo endereço **Astra Vídeo** abre a criação de Reels; não renderiza o editor.
 
-O chat vinculado entrega respostas e arquivos dentro da janela de conversa permitida. Lembretes proativos, confirmação posterior de postagem e templates fora dessa janela ainda são pendências, não recursos concluídos. O serviço de exportação de vídeo ainda precisa ser hospedado. O calendário agora apenas registra a data editorial, sem criar uma publicação automática.
+| Formato | Entrega |
+|---|---|
+| Feed | Imagem vertical 4:5 e legenda |
+| Story | Imagem vertical 9:16 e legenda |
+| Carrossel | De 3 a 10 imagens verticais 4:5, ordenadas, com legenda comum |
+| Reels | MP4 vertical de 15 ou 30 segundos, com legenda |
 
-Novos pedidos e itens antigos de publicação, anúncios, consulta social e envio comercial são bloqueados pelo servidor. O envio de respostas e materiais usa exclusivamente a ponte do WhatsApp vinculado. O parâmetro interno deliveryOnly é verdadeiro por padrão; somente os testes de regressão dos módulos antigos o desativam explicitamente, sem opção no painel.
+O Astra usa o briefing e as informações da empresa para planejar o conteúdo. Imagens são geradas pela OpenAI. Reels combina textos, cores e referências enviadas, com movimento leve em imagens e cortes de MP4. O áudio original é preservado nas cenas de vídeo; cenas sem áudio ficam em silêncio. Isso é montagem de conteúdo, não geração de novas filmagens, avatar, locução ou trilha por IA. Nenhuma dessas capacidades é anunciada como concluída.
 
-As conexões antigas e seus dados são preservados para histórico. As ferramentas de navegador, publicação, anúncios e consulta de redes não são oferecidas ao Astra. Instruções anteriores abaixo sobre essas integrações são históricas e não fazem parte do lançamento atual.
+Anexe PNG, JPG ou WebP; Reels também aceita MP4. Até seis arquivos por pedido, 20 MB de imagens no total, 25 MB por arquivo e 30 MB no conjunto de referências do Reels. PDF continua disponível na Biblioteca e na conversa geral, mas não é uma referência aceita pelo novo gerador.
 
----
+O resultado mostra os arquivos realmente salvos, suas dimensões, download individual e legenda copiável. Em falha parcial do carrossel, as imagens já concluídas ficam disponíveis; a interface não marca a entrega inteira como pronta. Pedidos anteriores do Estúdio podem ter seu briefing reaproveitado sem passar pelas antigas verificações de produção.
 
-# Operação online da Helpu
+## Hospedagem existente
 
-Implementação de 15/09/2026. O código está preparado para execução independente do computador do usuário. Isso não significa que o novo serviço já foi hospedado: não houve deploy, conexão a contas reais ou publicação nesta alteração.
+| Parte | Onde funciona |
+|---|---|
+| Painel, login, pedidos e fila | Vercel |
+| Dados e arquivos privados | Supabase/PostgreSQL já usados pela Helpu |
+| Planejamento e imagens | OpenAI, chamada apenas pelo servidor |
+| Montagem do Reels | FFmpeg dentro da API da Vercel; arquivos temporários durante a execução |
 
-## Onde cada parte funciona
+**O fluxo novo não exige Render, servidor Docker adicional, editor remoto nem HELPU_RUNTIME_URL.** Os pacotes em deploy/video e deploy/runtime ficam preservados para os módulos antigos e não são uma etapa de ativação da criação direta. O processamento usa a hospedagem da Helpu e continua sujeito aos limites e custos da Vercel e da OpenAI.
 
-| Parte | Hospedagem | Trabalho |
-|---|---|---|
-| Painel, autenticação e API | Vercel | Conversa, permissões, Biblioteca, fila e acesso autenticado às ferramentas |
-| Dados e arquivos privados | Supabase já usado pela Helpu | Empresas, pedidos, agendamentos e MP4 concluídos |
-| Serviço online | Servidor Linux com Docker e volume persistente | Chromium por empresa/canal, editor de cenas, FFmpeg e acionamento periódico da fila |
+O pacote de produção inclui FFmpeg, ffprobe e uma fonte para a renderização. scripts/build-production.mjs prepara e confere essas dependências; scripts/verify-production-build.mjs confere a inclusão no pacote compilado. A função usa o tempo máximo configurado em vercel.json. Uma compilação local ou um teste sintético não prova que a versão já está publicada.
 
-O serviço chama `POST /api/worker` a cada minuto, com `CRON_SECRET`, sem depender de uma aba aberta. A fila existente continua com trava persistente no banco. Exportações têm fila própria e volume persistente. Acompanhar o resultado no painel não é o que mantém o trabalho executando.
+## Configuração para executar online
 
-## O que foi conectado
+Conserve as variáveis de autenticação, banco, armazenamento privado e criptografia já utilizadas. Na Vercel, Production precisa de:
 
-- **Minha empresa → Telas das contas:** Instagram, WhatsApp, Facebook e Perfil da Empresa no Google. É uma tela real de navegador remoto com mouse, rolagem e entrada de texto. Não é um iframe dos sites externos.
-- **Biblioteca → Astra Vídeo:** projetos por empresa, cenas, texto, cores, fade, ordem e cortes de MP4 da Biblioteca. O mesmo projeto pode ser editado pelo chat e pelo cliente.
-- **Conversa:** ferramentas para consultar, criar, editar e exportar vídeo. A exportação concluída e verificada retorna à Biblioteca e à conversa, inclusive se o usuário saiu do painel.
-- **Arquivos:** MP4 H264 vertical 1080×1920, até 120 segundos, 32 cenas, corte individual de até 60 segundos. O vídeo mantém áudio do arquivo de origem; cenas sem áudio recebem silêncio.
-
-Este editor online não é uma cópia completa do aplicativo local ASTRA-VIDEO. Não inclui timeline avançada, geração de filmagens por modelo, avatar, locução, trilha automática, transcrição/legendas automáticas ou aplicação de logo/fonte oficial. A exportação foi testada com uma gravação sintética, sem arquivos privados do usuário.
-
-## Login e autorização
-
-1. Abra a tela do canal e assuma o controle.
-2. Faça login na página oficial exibida e conclua as verificações da plataforma.
-3. Informe a conta aberta, confirme a identidade e escolha se permite operação pelo Astra.
-4. Libere o controle humano para o agente. Durante o controle humano, a IA não recebe imagem nem texto dessa sessão.
-
-As senhas digitadas nesse controle vão apenas ao navegador remoto, por requisições autenticadas. Não entram na conversa nem em logs de conteúdo. Perfis e cookies ficam no volume privado do servidor. As sessões podem expirar ou exigir nova verificação; após reinício do serviço, as contas precisam de nova confirmação antes da automação. Interações incertas também suspendem a autorização.
-
-Entrar pelo navegador não configura OAuth/API nem comprova publicação. O login oficial por API do Instagram continua dependendo do aplicativo da Meta. WhatsApp API, Google e Meta Ads continuam com suas credenciais próprias. Facebook aberto na tela não significa campanhas de tráfego totalmente automáticas: o Astra não está autorizado a comprar ou ativar anúncios por esse controle.
-
-## Criação e aprovação
-
-Em **Conversar e executar**, o pedido autoriza gerar imagens e exportar o vídeo solicitado; não há uma segunda aprovação só para produzir o arquivo. A autorização de vídeo é vinculada à empresa, ao usuário, ao projeto e à revisão. Proibições explícitas, limites diários e pausas continuam valendo. **Somente planejar** não altera projetos nem exporta.
-
-A rotina automática depende de Autonomia, OpenAI configurada e processamento habilitado. A rotina existente prepara textos e pode gerar imagens; não foi convertida em produção diária automática de vídeos. Publicar e enviar mensagens continuam seguindo as regras e aprovações existentes. A criação de um arquivo não o publica.
-
-## Ativação pendente
-
-Use o pacote em `deploy/runtime` para instalar o serviço em um servidor Linux ligado continuamente, com HTTPS, volume privado, Chromium com sandbox e firewall de saída. O serviço tem uma única réplica por volume. Não coloque o diretório de perfis em armazenamento público.
-
-Na **Vercel / Production**, configure:
-
-```text
-HELPU_RUNTIME_URL=https://runtime.seu-dominio
-HELPU_RUNTIME_SECRET=<segredo aleatório de pelo menos 32 caracteres>
+~~~text
+OPENAI_API_KEY=<chave privada da plataforma>
+OPENAI_MODEL=gpt-6-astra
+HELPU_PUBLIC_URL=https://www.helpumkt.com
 HELPU_AUTOMATIONS_ENABLED=true
-```
+CRON_SECRET=<segredo aleatório de pelo menos 32 caracteres>
+~~~
 
-No serviço online, use o mesmo `HELPU_RUNTIME_SECRET`, `HELPU_PUBLIC_URL=https://www.helpumkt.com` e o mesmo `CRON_SECRET` da Vercel. Segredos nunca entram no frontend nem no Git. Faça o deploy manual dos commits e inicie o serviço conforme o guia. A tela de ferramentas mostra a disponibilidade real do serviço e avisa quando a fila está desativada.
+As configurações OpenAI salvas por empresa têm prioridade sobre os padrões do ambiente. Desconectar a inteligência bloqueia o uso do padrão para aquela empresa até reconfigurar. As chaves ficam no servidor, não no frontend, Git ou campos de conversa.
 
-Depois da hospedagem, ainda é necessário testar com uma conta autorizada: login, confirmação, retomada da sessão, uma criação real e uma ação com evidência no canal. O fluxo OAuth/API também precisa de validação real separada. Esses testes não foram executados nesta alteração.
+Pedidos explícitos acordam o worker na Vercel. Enquanto há etapas de criação pendentes, o processamento continua por chamadas autenticadas entre execuções da função. Uma invocação recorrente de POST /api/worker com Authorization: Bearer CRON_SECRET serve para recuperação de trabalho e rotinas. A aba aberta apenas acompanha o resultado; não executa FFmpeg nem mantém o trabalho vivo.
 
-## Verificação do código
+Faça a publicação manual do código e das variáveis na hospedagem e valide um pedido no domínio real. .env.local só configura o servidor local; não atualiza a Vercel. Esta implementação não publica commits, não contrata serviços e não registra números na Meta.
 
-Testes do navegador usam Playwright simulado: isolamento por empresa, controle humano, snapshots, identidade, rede, recuperação e arquivos. Testes do gateway cobrem autenticação, limites, erro incerto e relógio da fila. A integração exercita chat → fila → MP4 verificado → Biblioteca/conversa, com provedor simulado. Há também um teste real de FFmpeg com fonte sintética, sem API paga.
+## Autorização, limites e conclusão
 
-Referências de infraestrutura: [Docker e sandbox do Playwright](https://playwright.dev/docs/docker), [limite de payload das Vercel Functions](https://vercel.com/docs/errors/function_payload_too_large). Arquivos de vídeo são transferidos entre servidores e o armazenamento privado; o frontend envia identificadores de arquivos, evitando transportar MP4 pela resposta da Function.
+Ao clicar em Criar, ou solicitar uma criação no modo Conversar e executar, o usuário autoriza a produção solicitada. Não é necessária uma segunda aprovação para gerar o arquivo. Somente planejar prepara a orientação sem produzir. Proibições explícitas, pausas e limites por empresa continuam valendo.
 
+Carrossel consome uma geração de mídia por imagem. A quantidade escolhida precisa caber no limite disponível em Autonomia; o padrão de três páginas evita exceder sozinho o padrão de três mídias diárias. O limite operacional não é um teto financeiro da conta OpenAI.
 
-## Chave e modelos da OpenAI
+O servidor mantém a chave de cada pedido para evitar duplicação por reenvio. Uma chamada externa com resultado incerto não é repetida automaticamente como se tivesse falhado sem custo. O painel mostra estados de fila, execução, conclusão ou erro e preserva os arquivos disponíveis.
 
-O iniciador local le `.env.local` e depois `.env`, preservando variaveis ja definidas no terminal. Preencha `OPENAI_API_KEY` e `OPENAI_MODEL=gpt-6-astra` no `.env.local` privado e reinicie o servidor. `OPENAI_TASK_MODEL` e opcional e mantem `gpt-5-mini` como padrao das tarefas especificas.
-
-Na Vercel, cadastre essas mesmas variaveis em Production e faca um novo deploy manual: arquivos locais nao sao enviados como configuracao da hospedagem. A chave permanece no servidor e nao deve ser incluida no Git. Configuracoes salvas em Conexoes de cada empresa tem prioridade sobre os padroes do ambiente. A chave da plataforma atende empresas sem chave propria, com cobranca na conta do titular da chave; esta configuracao nao implementa um teto financeiro.
-
-Desconectar a OpenAI no painel bloqueia tambem o uso da chave do ambiente para aquela empresa. Salvar a conexao novamente reabilita o uso dos padroes. Os valores do ambiente nao sao copiados para os registros das empresas. Chave preenchida indica configuracao, nao validacao de acesso: use Verificar acesso antes de iniciar a operacao.
-
-## Astra Vídeo: conversa ao lado do editor
-
-A seção Biblioteca → Astra Vídeo reúne o chat à esquerda e a prévia das cenas à direita. O pedido usa a conversa existente da Helpu, com o identificador e a revisão do projeto aberto. Edições locais são salvas antes do envio; enquanto o pedido estiver em andamento, a edição manual fica bloqueada para evitar sobrescrita. O botão Pausar usa a pausa da conversa existente; a liberação depende da confirmação do andamento.
-
-A tela acompanha novas revisões e a exportação, preserva a conversa por projeto na sessão do navegador e oferece edição manual de textos, cores, duração e cortes. A criação manual tem escolhas de duração inicial (15, 30 ou 60 segundos) e estilo claro/escuro. O formato disponível continua vertical. A prévia é uma representação aproximada da cena; o MP4 final é conferido após exportação.
-
-A interface permanece visível quando falta o serviço online, com os controles de execução desabilitados. Esta alteração não hospeda o serviço, não muda a automação de acesso e não realiza chamadas pagas. A interface foi conferida em navegador com dados simulados, em computador e celular; a exportação real foi testada separadamente com vídeo sintético e FFmpeg.
-
+A criação de arquivos não publica nada nas redes. O calendário registra uma sugestão editorial. Lembretes proativos, templates de WhatsApp fora da janela de atendimento e confirmação posterior de postagem continuam pendentes. Não foi definido preço nem quantidade mensal de um plano da Helpu a partir do exemplo de outra agência.
 
 ## Conversa do painel no WhatsApp oficial da Helpu
 
 O chat inicial tem **Expandir para WhatsApp**. Cada usuário informa o próprio telefone, autoriza o recebimento e escolhe conversar e executar ou somente planejar. Pode vincular a conversa aberta ou iniciar uma conversa dedicada, acessível também pelo painel. A verificação é feita enviando ao número oficial uma mensagem com código aleatório, de uso único, válido por dez minutos. O servidor confere a assinatura da Meta, o número oficial e o remetente; salvar um telefone não autoriza acesso à empresa. Um telefone fica vinculado a uma empresa/usuário por vez.
 
-Decisão atual: usar o **número de teste fornecido pela Meta** até adquirir um número exclusivo da Helpu. O **+55 54 99990-2688** continua pessoal e pode ser cadastrado como destinatário autorizado do teste. O número de teste, seu Phone Number ID e token precisam corresponder ao mesmo aplicativo. Não reutilize automaticamente os dados do número anterior.
+Número oficial escolhido: **+55 54 99990-2690**. A configuração local foi atualizada; a ativação na Meta e as credenciais de produção na hospedagem precisam ser conferidas. Phone Number ID, token e webhook devem pertencer a esse número e aplicativo. O número de teste da Meta pode continuar sendo usado em testes controlados, com destinatários autorizados; ele não é o lançamento para todos os clientes.
 
 Na Vercel/servidor, configurar os campos de .env.example:
 
-- HELPU_WHATSAPP_NUMBER: número de teste exibido na Etapa 1, completo com código do país, somente dígitos.
+- HELPU_WHATSAPP_NUMBER=5554999902690: número oficial completo, com código do país, somente dígitos. Para testes, usar o número exibido pela Meta.
 - HELPU_WHATSAPP_PHONE_NUMBER_ID: identificador fornecido pela Meta, não o telefone.
 - HELPU_WHATSAPP_ACCESS_TOKEN: token do número oficial.
 - HELPU_WHATSAPP_APP_SECRET: segredo do aplicativo responsável pelos webhooks.
@@ -114,7 +80,7 @@ Callback: https://www.helpumkt.com/webhooks/helpu-whatsapp. Cadastrar o mesmo to
 
 As mensagens de texto recebidas são persistidas e processadas pelo worker já existente, usando o mesmo motor, contexto da empresa, ferramentas, limites e regras de aprovação do chat. A rotina não usa um novo agente nem uma chamada de IA para confirmar telefone. Respostas e arquivos da conversa vinculada são enviados pela Cloud API; mídia privada é transferida ao endpoint de mídia autenticado da Meta. PNG/JPEG até 5 MB, MP4 até 16 MB e PDF até 25 MB são enviados como arquivo; outros formatos/tamanhos recebem aviso para baixar na Biblioteca.
 
-O worker precisa continuar ativo online (HELPU_AUTOMATIONS_ENABLED, CRON_SECRET e invocação recorrente de /api/worker conforme este documento). Fechar o computador não interrompe um worker hospedado. Esta entrega não configura a infraestrutura automaticamente.
+O webhook recebido aciona o worker online com HELPU_AUTOMATIONS_ENABLED e CRON_SECRET configurados. Uma invocação recorrente autenticada de POST /api/worker permite recuperar trabalho pendente e manter o processamento do WhatsApp. Isso acontece no servidor, sem depender do computador do usuário; configurar a invocação externa não faz parte de um login no WhatsApp.
 
 Proteções: isolamento por empresa e usuário, revalidação de associação, consumo atômico do código, deduplicação de mensagens/eventos, reserva de cada envio antes da chamada externa e ausência de repetição automática quando a entrega fica incerta. Desativar no painel ou enviar SAIR bloqueia novos pedidos e envios. Pedidos já iniciados devem ser pausados na conversa. Reativar exige nova comprovação do telefone.
 
@@ -122,26 +88,8 @@ Limites desta etapa: entrada pelo WhatsApp é por texto; arquivos de referência
 
 Referência: [Meta — WhatsApp Cloud API](https://www.postman.com/meta/whatsapp-business-platform/documentation/wlk6lh4/whatsapp-cloud-api).
 
-## Anexos diretamente no Astra Vídeo
+## Verificação
 
-O editor aceita upload de MP4, PNG, JPEG, WebP e PDF, até 25 MB por arquivo, e seleção de referências já salvas. Até seis arquivos por pedido, com limite conjunto de 20 MB para imagens e PDFs. O upload usa o armazenamento privado existente e fica disponível mesmo sem runtime de vídeo; os identificadores seguem no pedido da conversa. Trocar de empresa/projeto durante o upload não anexa o arquivo à conversa seguinte.
+Os testes da criação cobrem formato, isolamento por empresa, anexos, reenvio idempotente, limites, falha parcial e retorno dos arquivos. O teste do renderizador produz MP4 a partir de material sintético. A interface é conferida em desktop e celular com dados fictícios. Chamadas pagas à OpenAI e a operação no domínio publicado exigem validação separada; não são comprovadas por esses testes.
 
-Um MP4 enviado pode ser selecionado como vídeo de base e editado por cortes, textos e cores. Imagens e PDFs são referências para o Astra; esta entrega não implementa inclusão de imagens como camadas da timeline, edição de áudio ou importação completa da interface original ASTRA-VIDEO. A pasta original já foi localizada, sem necessidade de reenvio.
-
-**Falta conectar o serviço online** significa que o runtime de vídeo ainda não foi hospedado/configurado. Não é aprovação do cliente. **Validar conexão**, na inteligência do chat, é uma verificação diferente: testa o acesso ao provedor configurado. A presença de uma chave não prova acesso ao modelo.
-
-### Configuração temporária com o número de teste
-
-Na Meta, fechar o cadastro de número de produção e voltar a Configuração básica → Etapa 1. Experimente. Usar o número de teste existente, adicionar/verificar o telefone pessoal na lista de destinatários e gerar o token temporário. Copiar o número de teste, Phone Number ID e token para os respectivos campos HELPU_WHATSAPP_* do .env.local privado e da Vercel. O segredo do app vem de Configurações do app → Básico. O VERIFY_TOKEN é um segredo criado pela Helpu para validar o webhook, diferente do token de acesso.
-
-O número oficial não tem mais valor pessoal padrão. O código preserva o código internacional dos números da Meta (inclusive +1), sem adicionar 55 automaticamente. Somente a entrada de um telefone pessoal sem código internacional presume Brasil; para outros países, informar + e o código do país.
-
-Publicar manualmente as alterações e as variáveis antes de verificar o callback. Assinar messages e confirmar a assinatura do aplicativo na WABA. O envio inicial de teste do painel da Meta não comprova ainda o recebimento do webhook nem o processamento do Astra. Validar depois o fluxo completo: confirmação do telefone no painel → mensagem ao número de teste → pedido por texto → resposta no WhatsApp e no painel. O token temporário precisa ser renovado quando expirar. O ambiente de teste não é o lançamento para todos os clientes.
-
-## Hospedagem dedicada ao vídeo (atual)
-
-O pacote atual está em `deploy/video`, separado do navegador de contas. O manifesto `deploy/video/render.yaml` prepara um serviço Docker na Render, uma instância com 1 CPU / 2 GB e 10 GB persistentes em `/data`. O plano é pago e precisa ser revisado antes de criar. Guia completo em `deploy/video/README.md`.
-
-O serviço não instala navegador nem suas dependências. Apenas `/healthz` é público, retornando disponibilidade básica; projetos, arquivos e status operacional exigem segredo e empresa. A fila é acionada a cada minuto. Não exige domínio próprio: a URL HTTPS fornecida pelo provedor pode ser usada em HELPU_RUNTIME_URL.
-
-Validação local: 21 testes passaram, incluindo exportação real de MP4 sintético com FFmpeg. Não há Docker instalado neste ambiente para validar a imagem. O build da imagem, a conta do provedor, a revisão do custo, o deploy e as variáveis na Vercel continuam pendentes. Nenhum serviço foi contratado ou publicado.
+As conexões e os projetos antigos são preservados para histórico. O fluxo de lançamento não exige login social ou hospedagem do editor antigo.

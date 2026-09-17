@@ -1,3 +1,5 @@
+import {createCreations,inlineVideoHash} from './creations.mjs';
+import {createReelsRenderer} from './reels-renderer.mjs';
 import {createWhatsAppChat} from './whatsapp-chat.mjs';
 import {resolveOpenAIConfig} from './openai-config.mjs';
 import {createStripeBilling} from './stripe-billing.mjs';
@@ -36,7 +38,7 @@ const str = (v, max = 10000) => typeof v === 'string' ? v.trim().slice(0, max) :
 const finite = (v, min = 0, max = 1e12) => Number.isFinite(Number(v)) ? Math.max(min, Math.min(max, Number(v))) : 0;
 const fields = {
   campaigns: ['name', 'objective', 'audience', 'offer', 'budget', 'startDate', 'endDate', 'channels', 'status', 'notes'],
-  content: ['title', 'caption', 'visualPrompt', 'format', 'channel', 'campaignId', 'assetId', 'mediaUrl', 'mediaType', 'carouselUrls', 'scheduledAt', 'status', 'notes'],
+  content: ['imageLayout','slideIndex','slideCount','carouselOutline','referenceAssetIds','title', 'caption', 'visualPrompt', 'format', 'channel', 'campaignId', 'assetId', 'mediaUrl', 'mediaType', 'carouselUrls', 'scheduledAt', 'status', 'notes'],
   leads: ['name', 'email', 'phone', 'company', 'source', 'stage', 'value', 'consent', 'optOut', 'notes', 'nextAction', 'nextDate', 'campaignId'],
   messages: ['leadId', 'text', 'channel', 'direction', 'template', 'language', 'parameters', 'status'],
   tasks: ['title', 'description', 'dueDate', 'priority', 'status', 'campaignId'],
@@ -50,7 +52,7 @@ const statuses = {
   messages: ['draft', 'recorded'],
   tasks: ['todo', 'doing', 'done']
 };
-export async function createPortal({db, dataDir, userFrom, json, safeOrigin, providers = createProviders(), startScheduler = true, browserLaunch, conversationRespond, publicationFetch, publicationResolve,cloud=false,storageClient,instagramLoginFetch,instagramLoginEnv,stripeFetch,stripeEnv,runtimeEnv,runtimeFetch,whatsappChatEnv=process.env,whatsappChatFetch,openaiEnv=process.env,deliveryOnly=true}) {
+export async function createPortal({db, dataDir, userFrom, json, safeOrigin, providers = createProviders(), startScheduler = true, browserLaunch, conversationRespond, publicationFetch, publicationResolve,cloud=false,storageClient,instagramLoginFetch,instagramLoginEnv,stripeFetch,stripeEnv,runtimeEnv,runtimeFetch,whatsappChatEnv=process.env,whatsappChatFetch,openaiEnv=process.env,deliveryOnly=true,creationRespond,reelsRenderer}) {
   const cloudRuntime=createCloudRuntime({env:runtimeEnv,fetcher:runtimeFetch});
   if(db.dialect==='postgres'){
     const migration=await db.prepare('SELECT version FROM portal_migrations ORDER BY version DESC LIMIT 1').get();
@@ -312,16 +314,19 @@ export async function createPortal({db, dataDir, userFrom, json, safeOrigin, pro
     for (const field of fields[kind]) {
       if (!((field in input))) continue;
       let v = input[field];
-      if (['budget', 'value', 'impressions', 'reach', 'clicks', 'leads', 'sales', 'revenue', 'spend'].includes(field)) {
+      if(['slideIndex','slideCount'].includes(field)){v=Number(v);if(!Number.isInteger(v)||v<1||v>10)fail('Página de carrossel inválida.');}
+      else if (['budget', 'value', 'impressions', 'reach', 'clicks', 'leads', 'sales', 'revenue', 'spend'].includes(field)) {
         if (v === null || v === '') v = null; else {
           if (!Number.isFinite(Number(v)) || Number(v) < 0) fail('Os valores numéricos precisam ser positivos.');
           v = finite(v);
         }
-      } else if (['consent', 'optOut', 'active'].includes(field)) v = v === true; else if (['channels', 'parameters', 'carouselUrls'].includes(field)) v = Array.isArray(v) ? v.slice(0, 12).map(x => str(x, 500)) : []; else v = str(v, field === 'text' || field === 'caption' || field === 'visualPrompt' || field === 'description' || field === 'notes' ? 20000 : 500);
+      } else if (['consent', 'optOut', 'active'].includes(field)) v = v === true; else if (['channels', 'parameters', 'carouselUrls','referenceAssetIds'].includes(field)) v = Array.isArray(v) ? v.slice(0, 12).map(x => str(x, 500)) : []; else v = str(v, field === 'text' || field === 'caption' || field === 'visualPrompt' || field === 'description' || field === 'notes' || field === 'carouselOutline' ? 20000 : 500);
       result[field] = v;
     }
     if (!internal && statuses[kind] && result.status && !statuses[kind].includes(result.status)) fail('Essa situação depende da confirmação do serviço.');
     if (kind === 'content') {
+      if(result.imageLayout&&!['feed','story','carousel'].includes(result.imageLayout))fail('Formato de imagem inválido.');
+      if(result.referenceAssetIds){if(result.referenceAssetIds.length>6)fail('Use até seis referências.');for(const assetId of result.referenceAssetIds)if(!await db.prepare('SELECT 1 FROM assets WHERE org_id=? AND id=?').get(org,assetId))fail('Referência não encontrada nesta empresa.',404);}
       result.format = result.format || 'image';
       result.channel = result.channel || 'instagram';
       if (!CONTENT_FORMATS.includes(result.format) || !CHANNELS.includes(result.channel)) fail('Formato ou canal inválido.');
@@ -390,19 +395,25 @@ export async function createPortal({db, dataDir, userFrom, json, safeOrigin, pro
     return await record(org, kind, id);
   }
   async function checkParent(org, payload) {
-    if (!payload.parentJobId) return;
-    const parent = await db.prepare('SELECT cancel_requested,payload FROM jobs WHERE id=? AND org_id=?').get(payload.parentJobId, org);
-    if (!parent) fail('Execução de origem não encontrada.', 404);
-    if (parent.cancel_requested) throw new ProviderError('A conversa foi pausada; esta ação derivada não será iniciada.', 'canceled');
-    const parentOperation=parse(parent.payload).operationId?await kernel.get(org,parse(parent.payload).operationId):null;
-    if(parentOperation&&(parentOperation.paused||['cancelled','uncertain'].includes(parentOperation.state)))throw new ProviderError('A operação de origem foi pausada ou exige conferência; esta ação não será iniciada.','canceled');
+    const seen=new Set();
+    while(payload.parentJobId){
+      if(seen.has(payload.parentJobId)||seen.size>=12)throw new ProviderError('A origem deste pedido é inválida.','blocked');
+      seen.add(payload.parentJobId);
+      const parent=await db.prepare('SELECT cancel_requested,payload FROM jobs WHERE id=? AND org_id=?').get(payload.parentJobId,org);
+      if(!parent)fail('Execução de origem não encontrada.',404);
+      if(parent.cancel_requested)throw new ProviderError('A conversa foi pausada; esta ação derivada não será iniciada.','canceled');
+      payload=parse(parent.payload);
+      const operation=payload.operationId?await kernel.get(org,payload.operationId):null;
+      if(operation&&(operation.paused||['cancelled','uncertain'].includes(operation.state)))throw new ProviderError('A operação de origem foi pausada ou exige conferência; esta ação não será iniciada.','canceled');
+    }
   }
   async function queue(org, user, kind, payload = {}, scheduledAt = null, key = randomUUID(), options = {}) {
+    if(kind==='creation'&&!options.explicitCreation)fail('Use a tela de criação para este pedido.',409);
     if(deliveryOnly && ['publish','insights','metaCampaign','googlePresence','send'].includes(kind)) fail('A Helpu entrega o conteúdo pelo WhatsApp vinculado; a publicação é manual. Esta ação não está disponível.',409);
     await checkParent(org, payload);
     payload={...payload};delete payload.mediaAuthorization;
     if(kind==='image')payload.provider='openai';
-    if (!['agent', 'image', 'video', 'publish', 'send', 'insights', 'metaCampaign', 'googlePresence', 'conversation'].includes(kind)) fail('Ação inválida.');
+    if (!['agent', 'image', 'video', 'publish', 'send', 'insights', 'metaCampaign', 'googlePresence', 'conversation','creation'].includes(kind)) fail('Ação inválida.');
     if (['image', 'video', 'publish'].includes(kind)) await record(org, 'content', payload.contentId);
     if (kind === 'send') await record(org, 'messages', payload.messageId);
     if (kind === 'metaCampaign') await record(org, 'campaigns', payload.campaignId);
@@ -425,6 +436,7 @@ export async function createPortal({db, dataDir, userFrom, json, safeOrigin, pro
       }
     }
     if(kind==='image'){let prepared;try{prepared=await imageWorkflow.prepare(org,payload.contentId);}catch(e){if(e instanceof ProviderError)e.status=409;throw e;}if(options.explicitImage)payload.mediaAuthorization={actor:user,sourceHash:prepared.sourceHash};}
+    if(kind==='video'&&payload.provider==='astra-inline'){if(!reels.configured())fail('O processamento de Reels não está disponível nesta hospedagem.',409);const content=await record(org,'content',payload.contentId);if(options.explicitVideo)payload.mediaAuthorization={actor:user,sourceHash:inlineVideoHash(content,payload)};}
     if(kind==='video'&&payload.provider==='astra-runtime'){
       const project=await runtimeTools.project(org,payload.projectId);
       if(project.revision!==payload.revision)fail('O projeto de vídeo mudou. Confira a versão antes de exportar.',409);
@@ -474,7 +486,7 @@ export async function createPortal({db, dataDir, userFrom, json, safeOrigin, pro
   async function jobTarget(job) {
     const p = parse(job.payload), kind = p.contentId ? 'content' : p.messageId ? 'messages' : p.campaignId ? 'campaigns' : null;
     const item = kind ? decodeRecord(await db.prepare('SELECT * FROM records WHERE org_id=? AND kind=? AND id=?').get(job.org_id, kind, p.contentId || p.messageId || p.campaignId)) : null;
-    const channel = job.kind==='video'&&p.provider==='astra-runtime'?'other':job.kind==='image'&&p.provider==='openai'?'openai':['image', 'video'].includes(job.kind) ? 'higgsfield' : job.kind === 'googlePresence' ? 'google' : ['metaCampaign', 'insights'].includes(job.kind) ? 'metaAds' : job.kind === 'agent' ? 'openai' : item?.channel || p.channel || 'other';
+    const channel = job.kind==='video'&&['astra-runtime','astra-inline'].includes(p.provider)?'other':job.kind==='image'&&p.provider==='openai'?'openai':['image', 'video'].includes(job.kind) ? 'higgsfield' : job.kind === 'googlePresence' ? 'google' : ['metaCampaign', 'insights'].includes(job.kind) ? 'metaAds' : job.kind === 'agent' ? 'openai' : item?.channel || p.channel || 'other';
     return {
       channel,
       item
@@ -526,7 +538,7 @@ export async function createPortal({db, dataDir, userFrom, json, safeOrigin, pro
       error,
       external: ext
     });
-    if(['image','video'].includes(row.kind)&&['succeeded','blocked','failed','uncertain','canceled'].includes(state))await conversation.mediaResult(row,state,output||{},error);
+    if(['image','video'].includes(row.kind)&&['succeeded','blocked','failed','uncertain','canceled'].includes(state)){if(parse(row.payload).creationId&&state==='succeeded'){const content=await record(row.org_id,'content',parse(row.payload).contentId);output={...output,summary:(parse(row.payload).slideIndex?'Página '+parse(row.payload).slideIndex+' · ':'')+(output?.summary||'Arquivo pronto.')+(content.caption?'\n\nLegenda:\n'+content.caption:'')};}await conversation.mediaResult(row,state,output||{},error);}
   }
   async function authorizeJob(job) {
     if (job.kind === 'publish' && parse(job.external).publishedId) return;
@@ -553,7 +565,7 @@ export async function createPortal({db, dataDir, userFrom, json, safeOrigin, pro
       risk: ['image', 'video'].includes(job.kind) ? 'medium' : 'high',
       operationId: (await kernel.jobOperation(job))?.id,
       userId: job.user_id,
-      approval: (job.kind==='image' && parse(job.payload).mediaAuthorization?.actor===job.user_id && parse(job.payload).mediaAuthorization?.sourceHash===(await imageWorkflow.prepare(job.org_id,parse(job.payload).contentId)).sourceHash)||(job.kind==='video'&&parse(job.payload).provider==='astra-runtime'&&parse(job.payload).mediaAuthorization?.actor===job.user_id&&parse(job.payload).mediaAuthorization?.projectId===parse(job.payload).projectId&&parse(job.payload).mediaAuthorization?.revision===parse(job.payload).revision)
+      approval: (job.kind==='video'&&parse(job.payload).provider==='astra-inline'&&parse(job.payload).mediaAuthorization?.actor===job.user_id&&parse(job.payload).mediaAuthorization?.sourceHash===inlineVideoHash(await record(job.org_id,'content',parse(job.payload).contentId),parse(job.payload)))||(job.kind==='image' && parse(job.payload).mediaAuthorization?.actor===job.user_id && parse(job.payload).mediaAuthorization?.sourceHash===(await imageWorkflow.prepare(job.org_id,parse(job.payload).contentId)).sourceHash)||(job.kind==='video'&&parse(job.payload).provider==='astra-runtime'&&parse(job.payload).mediaAuthorization?.actor===job.user_id&&parse(job.payload).mediaAuthorization?.projectId===parse(job.payload).projectId&&parse(job.payload).mediaAuthorization?.revision===parse(job.payload).revision)
     });
   }
   async function beforeMutation(job) {
@@ -728,6 +740,8 @@ export async function createPortal({db, dataDir, userFrom, json, safeOrigin, pro
     integration
   });
   const imageWorkflow=createImageWorkflow({record,company,metadata,saveMetadata,studio,integration,providers,storeAsset,assetPath,systemUpdate,setJob,beforeMutation});
+  const reels=reelsRenderer||createReelsRenderer();
+  const creations=createCreations({db,company,integration,queue,saveRecord,record,assetPath,storeAsset,systemUpdate,setJob,beforeMutation,renderer:reels,respond:creationRespond});
   const runtimeTools=createRuntimeTools({runtime:cloudRuntime,db,assetPath,storeAsset,saveRecord,record,metadata,saveMetadata,queue,systemUpdate,setJob,beforeMutation});
   publication = await createPublicationWorkflow({
     db,
@@ -761,7 +775,7 @@ export async function createPortal({db, dataDir, userFrom, json, safeOrigin, pro
     }
   });
   const conversation = await createConversation({
-    deliveryOnly,
+    deliveryOnly,creations,
     db,
     dataDir,
     kernel,
@@ -861,7 +875,8 @@ export async function createPortal({db, dataDir, userFrom, json, safeOrigin, pro
     await kernel.beforeJob(job);
     await authorizeJob(job);
     if (!external.publishedId && (external.request_id || external.containerId) && Date.now() - job.created_at > 86400000) throw new ProviderError('O prazo de acompanhamento terminou. Confira o serviço antes de repetir.', 'uncertain');
-    if (['agent', 'conversation', 'image', 'video', 'send'].includes(job.kind) && !external.request_id) await budget(org, job.kind, job.id, policy);
+    if (['agent', 'conversation','creation', 'image', 'video', 'send'].includes(job.kind) && !external.request_id) await budget(org, job.kind, job.id, policy);
+    if(job.kind==='creation'){await creations.run(job);return;}
     if (job.kind === 'conversation') {
       const result = await conversation.run(job);
       await setJob(job.id, 'succeeded', {
@@ -943,6 +958,7 @@ export async function createPortal({db, dataDir, userFrom, json, safeOrigin, pro
       return;
     }
     if(job.kind==='image'&&payload.provider==='openai'){const output=await imageWorkflow.run(job);await setJob(job.id,'succeeded',{output});return;}
+    if(job.kind==='video'&&payload.provider==='astra-inline'){await creations.render(job);return;}
     if(job.kind==='video'&&payload.provider==='astra-runtime'){await runtimeTools.run(job);return;}
     if (job.kind === 'image' || job.kind === 'video') {
       const content = await record(org, 'content', payload.contentId), config = await integration(org, 'higgsfield');
@@ -1572,6 +1588,7 @@ export async function createPortal({db, dataDir, userFrom, json, safeOrigin, pro
     }
     const parts = pathname.split('/').filter(Boolean), org = parts[2], section = parts[3], kind = parts[4], id = parts[5];
     await access(org, user);
+    if(section==='creations'){if(req.method==='GET')json(res,200,kind?{creation:await creations.get(org,kind)}:await creations.list(org));else if(req.method==='POST'&&!kind)json(res,201,{creation:await creations.submit(org,user.id,await body(req))});else fail('Método não permitido.',405);return true;}
     if(section==='whatsapp-chat'){
       if(req.method==='GET')json(res,200,await whatsappChat.status(org,user));
       else if(req.method==='POST')json(res,200,await whatsappChat.save(org,user,await body(req)));

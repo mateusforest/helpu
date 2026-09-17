@@ -103,7 +103,20 @@ test('inicialização e desenvolvimento local', {
       assert.equal(fs.existsSync(path.join(fixture, '.local-data')), false);
     });
     fs.cpSync(path.join(project, 'node_modules'), path.join(fixture, 'node_modules'), {
-      recursive: true
+      recursive: true,
+      // Startup tests do not render; native executable copies add 160 MB of unrelated I/O.
+      filter: source => !/(?:ffmpeg-static[\\/](?:ffmpeg|ffmpeg\.exe)|@ffprobe-installer[\\/]linux-x64[\\/]ffprobe)$/.test(source)
+    });
+    await t.test('pacote de fonte sem módulo JS é válido; fonte ausente bloqueia abertura', () => {
+      const font = path.join(fixture, 'node_modules/dejavu-fonts-ttf/ttf/DejaVuSans.ttf');
+      const check = "import {checkDependencies} from './scripts/runtime.mjs'; checkDependencies();";
+      assert.equal(execute(check).status, 0);
+      fs.renameSync(font, font + '.teste');
+      try {
+        const missing = execute(check);
+        assert.equal(missing.status, 1);
+        assert.match(missing.stderr, /Dependências ausentes/);
+      } finally { fs.renameSync(font + '.teste', font); }
     });
     await t.test('.env aceita espaços, caminho relativo e prioridade do ambiente', () => {
       fs.writeFileSync(path.join(fixture, '.env'), 'HELPU_PORT=4281\nHELPU_DATA_DIR="dados com espaços"\n');

@@ -31,3 +31,13 @@ import './openai-config.test.mjs';
 
 import './whatsapp-chat.test.mjs';
 import './delivery-mode.test.mjs';
+
+import './creations.test.mjs';
+
+import './creation-ui.test.mjs';
+
+import './reels-renderer.test.mjs';
+
+import './creation-worker.test.mjs';
+
+import './reels-packaging.test.mjs';

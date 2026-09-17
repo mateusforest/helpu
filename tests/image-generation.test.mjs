@@ -6,7 +6,7 @@ import path from 'node:path';
 import {DatabaseSync} from 'node:sqlite';
 import {createHelpuServer} from '../server.mjs';
 import {createProviders,ProviderError} from '../portal/providers.mjs';
-import {decodeGeneratedPng} from '../portal/image-generation.mjs';
+import {decodeGeneratedPng,createImageWorkflow,imageLayout,imageSourceHash} from '../portal/image-generation.mjs';
 import {testPng} from './image-fixture.mjs';
 
 test('imagens OpenAI: contrato real da API e arquivo íntegro antes de declarar sucesso',async()=>{
@@ -137,4 +137,55 @@ test('imagem: conversa → OpenAI → biblioteca → resposta; isolamento, repet
    mode='success';assert.equal((await api('jobs/'+job.id,'POST',{action:'retry'})).status,200);await server.portal.tick();assert.equal((await api('state')).body.jobs.find(j=>j.id===job.id).state,'succeeded');
   });
  }finally{db.close();await server.portal.shutdown();await new Promise(r=>server.close(r));}
+});
+
+test('imagens: formatos sociais, edição real por referência e validação antes de chamar a API',async()=>{
+ const calls=[],provider=createProviders(async(url,options)=>{calls.push({url,options});return new Response(JSON.stringify({data:[{b64_json:testPng().toString('base64')}]}));});
+ for(const [layout,size] of [['feed','1024x1280'],['story','1008x1792'],['carousel','1024x1280']]){
+  const settings=imageLayout({imageLayout:layout,slideIndex:1,slideCount:3});assert.equal(settings.size,size);
+  await provider.generateImage({apiKey:'test-only'},{prompt:'Arte editorial',size});assert.equal(JSON.parse(calls.at(-1).options.body).size,size);
+ }
+ const png=testPng();await provider.generateImage({apiKey:'test-only'},{prompt:'Mantenha o produto, altere o fundo.',size:'1008x1792',images:[{mime:'image/png',bytes:png}]});
+ const edit=calls.at(-1);assert.equal(edit.url,'https://api.openai.com/v1/images/edits');assert.ok(edit.options.body instanceof FormData);assert.equal(edit.options.headers['Content-Type'],undefined);
+ assert.equal(edit.options.body.get('size'),'1008x1792');assert.equal(edit.options.body.get('input_fidelity'),'high');assert.deepEqual(Buffer.from(await edit.options.body.getAll('image[]')[0].arrayBuffer()),png);
+ const before=calls.length;
+ for(const input of [{size:'1080x1920'},{images:[{mime:'video/mp4',bytes:png}]},{images:Array(7).fill({mime:'image/png',bytes:png})}])await assert.rejects(provider.generateImage({apiKey:'test-only'},{prompt:'Teste',...input}),e=>e.state==='blocked');
+ assert.equal(calls.length,before);
+ assert.throws(()=>imageLayout({imageLayout:'carousel',slideIndex:4,slideCount:3}),e=>e.state==='blocked');
+ assert.throws(()=>imageLayout({imageLayout:'wide'}),e=>e.state==='blocked');
+});
+
+test('imagens: páginas ordenadas, referências privadas, reuso e formato incorreto cercado',async()=>{
+ const directory=fs.mkdtempSync(path.join(os.tmpdir(),'helpu-image-layout-')),contents=new Map(),meta=new Map(),assets=new Map(),requests=[],brand={name:'Marca',profile:{visualIdentity:'Verde e branco'}};
+ let assetSequence=0,badSize=false,changes=0;
+ const ref='private-reference';assets.set(ref,path.join(directory,'ref.png'));fs.writeFileSync(assets.get(ref),testPng());
+ const jobs=[];
+ const workflow=createImageWorkflow({
+  record:async(org,kind,id)=>{assert.equal(org,1);return contents.get(id);},company:async()=>brand,
+  metadata:async(org,key)=>meta.get(key)||{},saveMetadata:async(org,key,data)=>meta.set(key,data),studio:{inspect:async()=>({blockers:[]})},integration:async()=>({apiKey:'test-only'}),
+  assetPath:async(org,id)=>{if(org!==1||!assets.has(id))throw new ProviderError('Arquivo não encontrado.','blocked');return assets.get(id);},
+  providers:{generateImage:async(config,input)=>{requests.push(input);const [w,h]=input.size.split('x').map(Number);return {base64:testPng(badSize?16:w,badSize?16:h).toString('base64'),requestId:'request-'+requests.length};}},
+  storeAsset:async(org,name,bytes)=>{const id='generated-'+(++assetSequence),file=path.join(directory,id+'.png');assets.set(id,file);fs.writeFileSync(file,bytes);return {id,url:'/files/'+id};},
+  systemUpdate:async(org,kind,id,data)=>contents.set(id,{...contents.get(id),...data}),beforeMutation:async()=>{changes++;},
+  setJob:async(id,state,patch)=>{const job=jobs.find(j=>j.id===id);if(patch.external)job.external=JSON.stringify(patch.external);}
+ });
+ const job=id=>{const next={id:jobs.length+1,org_id:1,payload:JSON.stringify({contentId:id}),external:'{}'};jobs.push(next);return next;};
+ try{
+  const outline=JSON.stringify([{title:'Capa'},{title:'Benefícios'},{title:'Próximo passo'}]);
+  for(let index=1;index<=3;index++){
+   const id='slide-'+index;contents.set(id,{id,title:'Campanha',caption:'Conheça a marca.',visualPrompt:'Página '+index,format:'carousel',imageLayout:'carousel',slideIndex:index,slideCount:3,carouselOutline:outline,referenceAssetIds:[ref]});
+   const result=await workflow.run(job(id));assert.equal(result.generation.width,1024);assert.equal(result.generation.height,1280);assert.equal(result.generation.slideIndex,index);assert.equal(contents.get(id).status,'review');
+   assert.match(requests.at(-1).prompt,new RegExp('página '+index+' de 3'));assert.ok(requests.at(-1).prompt.includes('Benefícios'));assert.deepEqual(requests.at(-1).images[0].bytes,testPng());
+  }
+  assert.equal(new Set([...contents.values()].map(c=>c.assetId)).size,3);
+  const reused=await workflow.run(job('slide-2'));assert.equal(reused.reused,true);assert.equal(requests.length,3);
+  const second=contents.get('slide-2');assert.notEqual(imageSourceHash(second,brand,{},{}),imageSourceHash({...second,slideIndex:3},brand,{},{}));assert.notEqual(imageSourceHash(second,brand,{},{}),imageSourceHash({...second,referenceAssetIds:[]},brand,{},{}));
+  contents.set('story',{title:'Story',caption:'Story',visualPrompt:'Produto',imageLayout:'story',format:'story'});
+  const story=await workflow.run(job('story'));assert.equal(story.generation.width*16,story.generation.height*9);assert.equal(story.generation.height,1792);
+  contents.set('wrong',{title:'Formato errado',visualPrompt:'Produto',imageLayout:'feed',format:'image'});badSize=true;const wrong=job('wrong');
+  await assert.rejects(workflow.run(wrong),e=>e.state==='uncertain'&&/tamanho/.test(e.message));assert.ok(JSON.parse(wrong.external).imageStartedAt);const attempts=requests.length;
+  await assert.rejects(workflow.run(wrong),e=>e.state==='uncertain');assert.equal(requests.length,attempts);assert.equal(contents.get('wrong').assetId,undefined);
+  contents.set('foreign',{title:'Referência alheia',visualPrompt:'Teste',imageLayout:'feed',referenceAssetIds:['other-company-file']});const mutations=changes;
+  await assert.rejects(workflow.run(job('foreign')),e=>e.state==='blocked');assert.equal(changes,mutations);assert.equal(requests.length,attempts);
+ }finally{fs.rmSync(directory,{recursive:true,force:true});}
 });

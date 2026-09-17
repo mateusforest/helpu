@@ -4,7 +4,7 @@ import {timingSafeEqual} from 'node:crypto';
 import {waitUntil,attachDatabasePool,getDeadline} from '@vercel/functions';
 import {createDatabase} from '../portal/database.mjs';
 import {createHelpuServer} from '../server.mjs';
-import {runCloudWorker} from '../portal/cloud-worker.mjs';
+import {runCreationWorker,continueCreations} from '../portal/creation-worker.mjs';
 
 let ready;
 async function application(){
@@ -23,7 +23,8 @@ export default async function handler(req,res){
     if(route==='/api/worker'){
       if(req.method!=='POST'||!process.env.CRON_SECRET||!secretMatches(req.headers.authorization)){json(res,401,{error:'Acesso não autorizado.'});return;}
       const app=await application();
-      const result=await runCloudWorker(app,{enabled:process.env.HELPU_AUTOMATIONS_ENABLED==='true'});
+      if(req.headers['x-helpu-creation-wake']==='1'){waitUntil(runCreationWorker(app).catch(()=>console.error('helpu_creation_worker_failed')));json(res,202,{state:'accepted'});return;}
+      const result=await runCreationWorker(app);
       json(res,200,result);return;
     }
     const app=await application();
@@ -32,8 +33,12 @@ export default async function handler(req,res){
       json(res,200,{status:'ok',storage:'supabase',runtime:'vercel'});return;
     }
     await app.handle(req,res);
+    // An authenticated poll can resume a queued creation if a previous wake was lost.
+    if(req.method==='GET'&&res.statusCode===200&&/^\/api\/portal\/[^/]+\/creations(?:\/[^/]+)?$/.test(route)){
+      waitUntil(continueCreations(app).catch(()=>console.error('helpu_creation_wake_failed')));
+    }
     if(req.method==='POST'&&res.statusCode>=200&&res.statusCode<300&&(route.startsWith('/api/portal/')||route==='/webhooks/helpu-whatsapp')&&process.env.HELPU_AUTOMATIONS_ENABLED==='true'&&(!getDeadline()||getDeadline().getTime()-Date.now()>150000)){
-      waitUntil(runCloudWorker(app,{enabled:true}).catch(()=>console.error('helpu_worker_failed')));
+      waitUntil(runCreationWorker(app).catch(()=>console.error('helpu_worker_failed')));
     }
   }catch{
     if(!res.headersSent)json(res,503,{error:'O serviço está temporariamente indisponível. Tente novamente.'});else res.destroy();
