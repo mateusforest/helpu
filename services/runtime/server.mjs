@@ -3,7 +3,6 @@ import fs from 'node:fs';
 import path from 'node:path';
 import {fileURLToPath} from 'node:url';
 import {timingSafeEqual} from 'node:crypto';
-import {createBrowserService} from './browser.mjs';
 import {createVideoService} from './video.mjs';
 
 const uuid=/^[a-f\d]{8}-[a-f\d]{4}-[a-f\d]{4}-[a-f\d]{4}-[a-f\d]{12}$/i;
@@ -13,11 +12,12 @@ async function read(req,limit){const chunks=[];let size=0;for await(const b of r
 async function input(req){try{const value=JSON.parse((await read(req,262144)).toString('utf8'));if(!value||typeof value!=='object'||Array.isArray(value))fail('Dados inválidos.');return value;}catch(e){if(e.status)throw e;fail('Dados inválidos.');}}
 const json=(res,status,value)=>{res.writeHead(status,{'Content-Type':'application/json; charset=utf-8','Cache-Control':'private, no-store','X-Content-Type-Options':'nosniff'});res.end(JSON.stringify(value));};
 
-export function createRuntimeServer({secret,browser,video,worker={status:()=>({configured:false})}}){
+export function createRuntimeServer({secret,browser,video,publicHealth=false,worker={status:()=>({configured:false})}}){
   if(String(secret||'').length<32)throw new Error('HELPU_RUNTIME_SECRET deve ter pelo menos 32 caracteres.');
   const expected=Buffer.from('Bearer '+secret);
   return http.createServer(async(req,res)=>{
     try{
+      if(publicHealth && req.method==='GET' && req.url==='/healthz'){json(res,200,{ok:true});return;}
       const token=Buffer.from(String(req.headers.authorization||''));
       if(token.length!==expected.length||!timingSafeEqual(token,expected))fail('Acesso não autorizado.',401);
       const org=id(req.headers['x-helpu-company']),actor=String(req.headers['x-helpu-actor']||''),job=req.headers['x-helpu-job'];
@@ -25,8 +25,9 @@ export function createRuntimeServer({secret,browser,video,worker={status:()=>({c
       if(version!=='v1'||parts.length>6)fail('Recurso não encontrado.',404);
       const human=()=>{if(!/^[A-Za-z0-9_-]{1,80}$/.test(actor))fail('Usuário autenticado obrigatório.',403);return actor;};
       let value;
-      if(group==='status'&&!target&&req.method==='GET'){const bc=await browser.capabilities?.(),vc=await video.capabilities?.();value={protocol:1,browser:bc===true||bc?.available===true,video:vc===true||vc?.available===true,videoCapabilities:vc,worker:worker.status()};}
+      if(group==='status'&&!target&&req.method==='GET'){const bc=await browser?.capabilities?.(),vc=await video.capabilities?.();value={protocol:1,browser:bc===true||bc?.available===true,video:vc===true||vc?.available===true,videoCapabilities:vc,worker:worker.status()};}
       else if(group==='browser'){
+        if(!browser)fail('Navegador desativado neste serviço.',404);
         if(!target&&req.method==='GET')value={profiles:await browser.list(org,actor||undefined)};
         else if(target==='release'&&req.method==='POST'){await input(req);await browser.release(id(job));value={ok:true};}
         else if(target==='assets'&&action&&req.method==='PUT')value=await browser.importAsset(org,{id:id(action),name:decodeURIComponent(req.headers['x-helpu-filename']||'arquivo'),bytes:await read(req,50*1024*1024)});
@@ -77,11 +78,13 @@ export function createWorkerClock({url,secret,fetcher=fetch,intervalMs=60000}){
 
 async function main(){
   const dataDir=path.resolve(process.env.HELPU_RUNTIME_DATA||'/data');fs.mkdirSync(dataDir,{recursive:true,mode:0o700});
-  const browser=await createBrowserService({dataDir:path.join(dataDir,'browser')}),video=await createVideoService({dataDir:path.join(dataDir,'video')});
+  const videoOnly=process.env.HELPU_RUNTIME_MODE==='video';
+  const browser=videoOnly?null:await (await import('./browser.mjs')).createBrowserService({dataDir:path.join(dataDir,'browser')});
+  const video=await createVideoService({dataDir:path.join(dataDir,'video')});
   const worker=createWorkerClock({url:process.env.HELPU_PUBLIC_URL,secret:process.env.CRON_SECRET});
-  const server=createRuntimeServer({secret:process.env.HELPU_RUNTIME_SECRET,browser,video,worker});
+  const server=createRuntimeServer({secret:process.env.HELPU_RUNTIME_SECRET,browser,video,worker,publicHealth:videoOnly});
   server.requestTimeout=120000;server.headersTimeout=15000;
   server.listen(Number(process.env.PORT||8080),'0.0.0.0',()=>{worker.start();console.log('Serviço online Helpu iniciado.');});
-  for(const sig of ['SIGINT','SIGTERM'])process.once(sig,async()=>{worker.stop();server.close();await Promise.allSettled([browser.shutdown(),video.shutdown()]);process.exit(0);});
+  for(const sig of ['SIGINT','SIGTERM'])process.once(sig,async()=>{worker.stop();server.close();await Promise.allSettled([browser?.shutdown(),video.shutdown()]);process.exit(0);});
 }
 if(process.argv[1]&&path.resolve(process.argv[1])===fileURLToPath(import.meta.url))main().catch(()=>{console.error('Não foi possível iniciar o serviço. Confira configuração e permissões do volume.');process.exitCode=1;});

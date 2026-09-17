@@ -1,0 +1,27 @@
+# Serviço pago. Revise o valor exibido pela Render antes de criar.
+services:
+  - type: web
+    name: helpu-video
+    runtime: docker
+    plan: 1c-2g
+    region: virginia
+    numInstances: 1
+    dockerfilePath: ./deploy/video/Dockerfile
+    dockerContext: .
+    autoDeployTrigger: off
+    healthCheckPath: /healthz
+    disk:
+      name: helpu-video-data
+      mountPath: /data
+      sizeGB: 10
+    envVars:
+      - key: HELPU_RUNTIME_MODE
+        value: video
+      - key: HELPU_RUNTIME_DATA
+        value: /data
+      - key: HELPU_PUBLIC_URL
+        value: https://www.helpumkt.com
+      - key: HELPU_RUNTIME_SECRET
+        sync: false
+      - key: CRON_SECRET
+        sync: false

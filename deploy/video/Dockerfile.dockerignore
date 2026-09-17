@@ -1,0 +1,8 @@
+**
+!services/
+!services/runtime/
+!services/runtime/server.mjs
+!services/runtime/video.mjs
+!deploy/
+!deploy/video/
+!deploy/video/start.mjs

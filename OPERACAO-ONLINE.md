@@ -137,3 +137,11 @@ Na Meta, fechar o cadastro de número de produção e voltar a Configuração b�
 O número oficial não tem mais valor pessoal padrão. O código preserva o código internacional dos números da Meta (inclusive +1), sem adicionar 55 automaticamente. Somente a entrada de um telefone pessoal sem código internacional presume Brasil; para outros países, informar + e o código do país.
 
 Publicar manualmente as alterações e as variáveis antes de verificar o callback. Assinar messages e confirmar a assinatura do aplicativo na WABA. O envio inicial de teste do painel da Meta não comprova ainda o recebimento do webhook nem o processamento do Astra. Validar depois o fluxo completo: confirmação do telefone no painel → mensagem ao número de teste → pedido por texto → resposta no WhatsApp e no painel. O token temporário precisa ser renovado quando expirar. O ambiente de teste não é o lançamento para todos os clientes.
+
+## Hospedagem dedicada ao vídeo (atual)
+
+O pacote atual está em `deploy/video`, separado do navegador de contas. O manifesto `deploy/video/render.yaml` prepara um serviço Docker na Render, uma instância com 1 CPU / 2 GB e 10 GB persistentes em `/data`. O plano é pago e precisa ser revisado antes de criar. Guia completo em `deploy/video/README.md`.
+
+O serviço não instala navegador nem suas dependências. Apenas `/healthz` é público, retornando disponibilidade básica; projetos, arquivos e status operacional exigem segredo e empresa. A fila é acionada a cada minuto. Não exige domínio próprio: a URL HTTPS fornecida pelo provedor pode ser usada em HELPU_RUNTIME_URL.
+
+Validação local: 21 testes passaram, incluindo exportação real de MP4 sintético com FFmpeg. Não há Docker instalado neste ambiente para validar a imagem. O build da imagem, a conta do provedor, a revisão do custo, o deploy e as variáveis na Vercel continuam pendentes. Nenhum serviço foi contratado ou publicado.

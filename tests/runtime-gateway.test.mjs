@@ -40,3 +40,17 @@ test('relógio chama worker autenticado sem depender de painel e evita sobreposi
  const clock=createWorkerClock({url:'https://www.helpumkt.com',secret,fetcher:async(url,opts)=>{calls++;assert.equal(url,'https://www.helpumkt.com/api/worker');assert.equal(opts.method,'POST');assert.equal(opts.headers.Authorization,'Bearer '+secret);await new Promise(resolve=>{release=resolve;});return Response.json({state:'checked'});}});
  const pending=clock.tick();await clock.tick();assert.equal(calls,1);release();await pending;assert.equal(clock.status().state,'checked');clock.stop();await clock.tick();assert.equal(calls,1);
 });
+
+test('serviço dedicado expõe apenas saúde pública e vídeo autenticado',async t=>{
+ const server=createRuntimeServer({secret,browser:null,video:{capabilities:async()=>({available:true}),list:async company=>[{company}]},publicHealth:true});
+ await new Promise(r=>server.listen(0,'127.0.0.1',r));
+ t.after(()=>new Promise(r=>{server.closeAllConnections();server.close(r);}));
+ const base='http://127.0.0.1:'+server.address().port;
+ const health=await fetch(base+'/healthz');assert.equal(health.status,200);assert.deepEqual(await health.json(),{ok:true});
+ assert.equal((await fetch(base+'/v1/video/projects')).status,401);
+ const headers={Authorization:'Bearer '+secret,'X-Helpu-Company':org};
+ const status=await (await fetch(base+'/v1/status',{headers})).json();assert.equal(status.browser,false);assert.equal(status.video,true);
+ assert.equal((await fetch(base+'/v1/browser',{headers})).status,404);
+ assert.deepEqual(await (await fetch(base+'/v1/video/projects',{headers})).json(),{projects:[{company:org}]});
+ assert.equal((await fetch(base+'/v1/video/projects',{headers:{...headers,'X-Helpu-Company':'invalid'}})).status,400);
+});
