@@ -96,8 +96,9 @@ async function run(binary, args, { signal, cwd }) {
     child.on('close', code => {
       if (code === 0) return resolve(output);
       // Log categories only: FFmpeg output may contain private paths or user text.
-      const category = /No such filter/.test(diagnostic) ? 'missing_filter' : /Error loading.*font|fontselect.*failed/i.test(diagnostic) ? 'font_error' : /Invalid data found/.test(diagnostic) ? 'invalid_media' : 'process_failed';
-      console.error('helpu_reels_process_failed', { binary: path.basename(binary), code, category, aborted: signal.aborted });
+      const category = /No such filter/.test(diagnostic) ? 'missing_filter' : /Error loading.*font|fontselect.*failed/i.test(diagnostic) ? 'font_error' : /Invalid data found/.test(diagnostic) ? 'invalid_media' : /pthread_create|Resource temporarily unavailable|Cannot allocate memory/i.test(diagnostic) ? 'resource_limit' : /timebase|time base/i.test(diagnostic) ? 'timeline_mismatch' : /Invalid argument|Error initializing|Failed to configure/i.test(diagnostic) ? 'invalid_filter_configuration' : 'process_failed';
+      const stage=path.basename(String(args.at(-1))).replace(/[^a-z0-9_.-]/gi,'').slice(0,40);
+      console.error('helpu_reels_process_failed', { binary: path.basename(binary), code, category, stage, aborted: signal.aborted });
       reject(error(signal.aborted ? 'O vídeo excedeu o tempo de processamento disponível.' : 'Não foi possível concluir o processamento do vídeo.'));
     });
   });
@@ -226,7 +227,7 @@ export function createReelsRenderer({ env = process.env, ffmpegPath, ffprobePath
         await fs.writeFile(path.join(work, 'concat.txt'), parts.join('\n'), { mode: 0o600 });
         let output = path.join(work, 'reels.mp4');
         if(overlap&&scenes.length>1){
-          const args=['-v','error','-y','-threads','2','-filter_complex_threads','1'];for(let i=0;i<scenes.length;i++)args.push('-i',`scene-${i}.mp4`);
+          const args=['-v','error','-y','-threads','2','-filter_complex_threads','1'];for(let i=0;i<scenes.length;i++)args.push('-threads','2','-i',`scene-${i}.mp4`);
           // MP4 edit lists, AAC priming and source frame rates can leave different
           // clocks on the segments. Normalize both tracks before combining them.
           const filters=[];
@@ -250,7 +251,7 @@ export function createReelsRenderer({ env = process.env, ffmpegPath, ffprobePath
           await run(ffmpeg,['-v','error','-y','-i',output,'-filter_complex',filters.join(';'),'-map','0:v','-map','[a]','-t',String(expected),'-c:v','copy','-c:a','aac','-b:a','192k','-movflags','+faststart',withEffects],{signal,cwd:work});output=withEffects;
         }
         if(opts.musicAssetId){
-          const music=imported.get(opts.musicAssetId);if(!music?.mime.startsWith('audio/'))throw error('Escolha um arquivo de áudio da empresa para a trilha.');
+          const music=imported.get(opts.musicAssetId);if(!music?.audio||!(music.mime.startsWith('audio/')||music.mime==='video/mp4'))throw error('Escolha um áudio ou um vídeo com faixa de áudio para a trilha.');
           const mixed=path.join(work,'mixed.mp4'),duration=scenes.reduce((n,s)=>n+s.duration,0);
           await run(ffmpeg,['-v','error','-y','-i',output,'-stream_loop','-1','-protocol_whitelist','file,pipe','-i',music.file,'-filter_complex',`[1:a]volume=${opts.musicVolume},afade=t=in:d=0.5,afade=t=out:st=${Math.max(0,duration-1)}:d=1[m];[0:a][m]amix=inputs=2:duration=first:normalize=0,alimiter=limit=0.95[a]`,'-map','0:v','-map','[a]','-c:v','copy','-c:a','aac','-b:a','192k','-t',String(duration),'-movflags','+faststart',mixed],{signal,cwd:work});output=mixed;
         }

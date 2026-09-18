@@ -25,7 +25,7 @@ const fakeMP4=()=>{const bytes=Buffer.alloc(64);bytes.writeUInt32BE(24);bytes.wr
 
 for(const postgres of [false,true])test('Criações: Feed, Story, Carrossel e Reels em '+(postgres?'PostgreSQL':'SQLite'),async t=>{
  const dataDir=fs.mkdtempSync(path.join(os.tmpdir(),'helpu-creations-')),plans=[],images=[],videos=[];
- let rendererAvailable=true,failImage=false,database,pg,conversationReplies=[];
+ let omitRequired=false,rendererAvailable=true,failImage=false,database,pg,conversationReplies=[];
  const conversationBodies=[];
  if(postgres){
   pg=await PGlite.create({parsers:{20:Number}});
@@ -38,13 +38,14 @@ for(const postgres of [false,true])test('Criações: Feed, Story, Carrossel e Re
 
  const server=await createHelpuServer({dataDir,database,portalOptions:{startScheduler:false,conversationRespond:async(config,body)=>{conversationBodies.push(body);return conversationReplies.shift()||({status:'completed',output:[{type:'message',content:[{type:'output_text',text:'Pedido registrado.'}]}]});},openaiEnv:{OPENAI_API_KEY:'fake-creation-key'},creationRespond:async(config,body)=>{
   assert.equal(config.apiKey,'fake-creation-key');const input=JSON.parse(typeof body.input==='string'?body.input:body.input[0].content[0].text);plans.push(input);
-  const isVideo=input.request.format==='reels',count=isVideo?(input.request.styleRecipe?.length||(input.request.duration===30?6:3)):input.request.slideCount;
+  const isVideo=input.request.format==='reels',count=isVideo?Math.max(input.request.requiredSourceAssetIds?.length||0,input.request.styleRecipe?.length||(input.request.duration===30?6:3)):input.request.slideCount;
   const value={caption:'Legenda da campanha, pronta para copiar.',slides:Array.from({length:count},(_,i)=>({title:'Página '+(i+1),text:'Mensagem '+(i+1),visualPrompt:'Fundo branco e verde. Texto na arte: Mensagem '+(i+1),background:'#ffffff',textColor:'#002200'}))};
   if(isVideo){
    const options=input.request.videoOptions,visual=input.references.filter(a=>!a.mime.startsWith('audio/')&&!input.request.referenceOnlyIds?.includes(a.id));
    value.videoStyle=Object.fromEntries(['font','fontSize','accent','motion','textAnimation','transition','fit'].map(k=>[k,options[k]]));
    if(input.adjustment){value.videoStyle.fontSize=88;value.videoStyle.accent='#ab2211';}
    value.slides.forEach((s,i)=>Object.assign(s,{sourceAssetId:visual[i%visual.length]?.id||null,in:0,duration:input.request.prompt==='Tour horizontal'?[12,2,1][i]:input.request.duration/count,position:input.adjustment?'top':'center'}));
+   if(omitRequired)value.slides.forEach(s=>s.sourceAssetId=null);
    if(visual.length)assert.ok(body.input[0].content.some(p=>p.type==='input_image'));
   }
   return {status:'completed',output:[{type:'message',content:[{type:'output_text',text:JSON.stringify(value)}]}]};
@@ -132,6 +133,23 @@ for(const postgres of [false,true])test('Criações: Feed, Story, Carrossel e Re
    const posted=await api(one,'creations','POST',{prompt:'Use a referência somente como estilo',format:'reels',duration:15,requestId:'music-style-001',attachments:[source.id,music.id],referenceOnlyIds:[source.id]});assert.equal(posted.status,201,JSON.stringify(posted.body));
    await finish(one,posted.body.creation.id);assert.equal(videos.at(-1).options.musicAssetId,music.id);assert.ok(videos.at(-1).scenes.every(s=>!s.sourceAssetId));
    assert.equal((await api(one,'creations','POST',{prompt:'Teste música privada',format:'reels',requestId:'invalid-music-001',videoOptions:{musicAssetId:foreign.id}})).status,400);
+  });
+  await t.test('pedido com todas as imagens cria cenas suficientes e rejeita omissões',async()=>{
+   const photos=[];for(let i=0;i<5;i++)photos.push((await upload(one,'foto-'+i+'.png',testPng())).id);
+   const source=await upload(one,'musica-no-video.mp4',fakeMP4());
+   const input={prompt:'Use todas as imagens com a música do vídeo',format:'reels',duration:15,requestId:'all-images-track-001',attachments:[...photos,source.id],referenceOnlyIds:[source.id],videoOptions:{musicAssetId:source.id,sourceAudio:false}};
+   const posted=await api(one,'creations','POST',input);assert.equal(posted.status,201,JSON.stringify(posted.body));
+   await finish(one,posted.body.creation.id);assert.equal(videos.at(-1).scenes.length,5);assert.deepEqual(videos.at(-1).scenes.map(s=>s.sourceAssetId),photos);assert.equal(videos.at(-1).options.musicAssetId,source.id);
+   const before=videos.length;omitRequired=true;
+   try{
+    const missing=await api(one,'creations','POST',{...input,requestId:'all-images-track-002'});assert.equal(missing.status,201);
+    await server.portal.tick();const state=(await api(one,'creations/'+missing.body.creation.id)).body.creation;assert.equal(state.status,'failed');assert.match(state.error,/deixou de incluir/);assert.equal(videos.length,before);
+   }finally{omitRequired=false;}
+  });
+  await t.test('sem música não reativa automaticamente a trilha anexada',async()=>{
+   const wav=Buffer.alloc(100);wav.write('RIFF',0);wav.write('WAVE',8);const music=await upload(one,'silenciar.wav',wav);
+   const posted=await api(one,'creations','POST',{prompt:'Sem música',format:'reels',requestId:'explicit-no-music-001',attachments:[music.id],videoOptions:{musicAssetId:null,sourceAudio:false}});assert.equal(posted.status,201);
+   await finish(one,posted.body.creation.id);assert.equal(videos.at(-1).options.musicAssetId,null);assert.equal(videos.at(-1).options.sourceAudio,false);
   });
   await t.test('uma tentativa incerta não gera novamente por repetição ou consulta',async()=>{
    failImage=true;const uncertainRequest={...payload,requestId:'creation-uncertain-001',attachments:[]};

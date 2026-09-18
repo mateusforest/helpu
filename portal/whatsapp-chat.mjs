@@ -2,6 +2,7 @@ import {createHash, createHmac, randomBytes, randomUUID, timingSafeEqual} from '
 import fs from 'node:fs';
 import {receiveWhatsAppMedia} from './whatsapp-media.mjs';
 
+export const whatsappBatchDelay = env => {const value=Number(env.HELPU_WHATSAPP_BATCH_MS ?? 6000);return Number.isFinite(value)?Math.max(0,Math.min(15000,value)):6000;};
 const hash = value => createHash('sha256').update(value).digest('hex');
 const parse = row => row ? {...JSON.parse(row.data), org: row.org_id, recordId: row.id} : null;
 const fail = (text, status = 422) => { throw Object.assign(new Error(text), {status}); };
@@ -99,7 +100,7 @@ export function createWhatsAppChat({db, metadata, saveMetadata, conversation, as
       const eventId = 'wa-in:' + hash(msg.id);
       const media=['image','video','document','audio'].includes(msg.type)&&msg[msg.type]?.id?{id:String(msg[msg.type].id),filename:msg[msg.type].filename,sha256:msg[msg.type].sha256}:null;
       const caption=String(msg[msg.type]?.caption||'').slice(0,16000);
-      await db.prepare('INSERT INTO records(id,org_id,kind,data,external_id,created_at,updated_at) VALUES(?,?,?,?,?,?,?) ON CONFLICT(id) DO NOTHING').run(eventId,link.org,'whatsapp_chat_inbox',JSON.stringify({phone,threadId:link.threadId,generation:link.generation,mode:link.mode,text:msg.type==='text'?text:caption,media,unsupported:msg.type!=='text'&&!media,state:'queued'}),eventId,now(),now());
+      await db.prepare('INSERT INTO records(id,org_id,kind,data,external_id,created_at,updated_at) VALUES(?,?,?,?,?,?,?) ON CONFLICT(id) DO NOTHING').run(eventId,link.org,'whatsapp_chat_inbox',JSON.stringify({phone,threadId:link.threadId,generation:link.generation,mode:link.mode,sentAt:time,receivedAt:now(),receivedOrder:performance.timeOrigin+performance.now(),text:msg.type==='text'?text:caption,media,unsupported:msg.type!=='text'&&!media,state:'queued'}),eventId,now(),now());
     }
   }
   async function webhook(req, res, url, readRaw) {
@@ -149,23 +150,81 @@ export function createWhatsAppChat({db, metadata, saveMetadata, conversation, as
     if(!configured())return;
     // Bound network work so deliveries cannot consume the entire online worker lease.
     let totalSent=0;
-    for(const row of await db.prepare("SELECT * FROM records WHERE kind='whatsapp_chat_inbox' AND json_extract(data,'$.state')='queued' ORDER BY created_at LIMIT 10").all()) {
-      const event=parse(row),link=await getClaim(event.phone);
-      if(!link?.enabled||link.org!==event.org||link.threadId!==event.threadId||link.generation!==event.generation||!await member(link)){await put(row.kind,row.id,row.org_id,{...event,state:'canceled'});continue;}
-      try {
-        const attachments=[];
-        if(event.media){
-          if(!storeAsset)throw new Error('Recebimento de arquivos indisponível.');
-          const fixedHash=hash(row.id),fixedId=fixedHash.slice(0,8)+'-'+fixedHash.slice(8,12)+'-'+fixedHash.slice(12,16)+'-'+fixedHash.slice(16,20)+'-'+fixedHash.slice(20,32);
-          let asset=await db.prepare('SELECT id FROM assets WHERE id=? AND org_id=?').get(fixedId,link.org);
-          if(!asset){const file=await receiveWhatsAppMedia({media:event.media,token:config().token,phoneId:config().phoneId,version:/^v\d+\.\d+$/.test(env.HELPU_WHATSAPP_API_VERSION||'')?env.HELPU_WHATSAPP_API_VERSION:'v24.0',fetcher});asset=await storeAsset(link.org,file.name,file.bytes,null,fixedId);}
-          const current=await getClaim(event.phone);if(!current?.enabled||current.generation!==link.generation||!await member(current)){await put(row.kind,row.id,row.org_id,{...event,state:'canceled'});continue;}
-          attachments.push(asset.id);
+    // Freeze each burst before submitting it. A retry must use exactly the same
+    // input even when new messages arrive while the worker is busy.
+    const queued=await db.prepare("SELECT * FROM records WHERE kind='whatsapp_chat_inbox' AND json_extract(data,'$.state')='queued' ORDER BY created_at,id LIMIT 100").all();
+    const groups=new Map();
+    for(const row of queued){const event=parse(row),key=event.org+':'+event.generation+':'+event.threadId;if(!groups.has(key))groups.set(key,[]);groups.get(key).push(row);}
+    for(const rows of groups.values()){
+      const first=parse(rows[0]),link=await getClaim(first.phone);
+      if(!link?.enabled||link.org!==first.org||link.threadId!==first.threadId||link.generation!==first.generation||!await member(link)){
+        for(const row of rows)await put(row.kind,row.id,row.org_id,{...parse(row),state:'canceled'});
+        continue;
+      }
+      if(await db.prepare("SELECT 1 FROM jobs WHERE org_id=? AND kind='conversation' AND json_extract(payload,'$.conversationId')=? AND state IN ('queued','working')").get(link.org,link.threadId))continue;
+      if(await db.prepare("SELECT 1 FROM records WHERE org_id=? AND kind='whatsapp_chat_batch' AND json_extract(data,'$.threadId')=? AND json_extract(data,'$.state')='queued' LIMIT 1").get(link.org,link.threadId))continue;
+      // Check the newest inbox row as well, so a bounded read cannot cut an album.
+      const newest=await db.prepare("SELECT MAX(created_at) AS latest FROM records WHERE org_id=? AND kind='whatsapp_chat_inbox' AND json_extract(data,'$.generation')=? AND json_extract(data,'$.state')='queued'").get(link.org,link.generation);
+      if(now()-Number(newest.latest)<whatsappBatchDelay(env))continue;
+      const selected=rows.slice(0,24).sort((a,b)=>(parse(a).sentAt||a.created_at)-(parse(b).sentAt||b.created_at)||(parse(a).receivedOrder||a.created_at)-(parse(b).receivedOrder||b.created_at));
+      const batchId='wa-batch:'+hash(selected.map(r=>r.id).join(':'));
+      await db.exec('BEGIN IMMEDIATE');
+      try{
+        await put('whatsapp_chat_batch',batchId,link.org,{phone:link.phone,threadId:link.threadId,generation:link.generation,inboxIds:selected.map(r=>r.id),state:'queued'});
+        for(const row of selected)await put(row.kind,row.id,row.org_id,{...parse(row),state:'batched',batchId});
+        await db.exec('COMMIT');
+      }catch(error){await db.exec('ROLLBACK');throw error;}
+    }
+    for(const row of await db.prepare("SELECT * FROM records WHERE kind='whatsapp_chat_batch' AND json_extract(data,'$.state')='queued' ORDER BY created_at,id LIMIT 4").all()){
+      const batch=parse(row),link=await getClaim(batch.phone);
+      if(!link?.enabled||link.org!==batch.org||link.threadId!==batch.threadId||link.generation!==batch.generation||!await member(link)){await put(row.kind,row.id,row.org_id,{...batch,state:'canceled'});continue;}
+      try{
+        const submitted=await db.prepare('SELECT 1 FROM jobs WHERE org_id=? AND idempotency_key=?').get(link.org,row.id);
+        if(!submitted&&batch.inboxIds.length<24){
+          const extra=await db.prepare("SELECT * FROM records WHERE org_id=? AND kind='whatsapp_chat_inbox' AND json_extract(data,'$.generation')=? AND json_extract(data,'$.threadId')=? AND json_extract(data,'$.state')='queued' ORDER BY created_at,id LIMIT 24").all(link.org,link.generation,link.threadId);
+          if(extra.length){
+            if(now()-Math.max(...extra.map(r=>r.created_at))<whatsappBatchDelay(env))continue;
+            const additions=extra.slice(0,24-batch.inboxIds.length);
+            const original=[];for(const inboxId of batch.inboxIds)original.push(await db.prepare('SELECT * FROM records WHERE org_id=? AND id=?').get(link.org,inboxId));
+            batch.inboxIds=[...original,...additions].sort((a,b)=>(parse(a).sentAt||a.created_at)-(parse(b).sentAt||b.created_at)||(parse(a).receivedOrder||a.created_at)-(parse(b).receivedOrder||b.created_at)).map(r=>r.id);
+            await db.exec('BEGIN IMMEDIATE');
+            try{await put(row.kind,row.id,link.org,batch);for(const inbox of additions)await put(inbox.kind,inbox.id,link.org,{...parse(inbox),state:'batched',batchId:row.id});await db.exec('COMMIT');}catch(error){await db.exec('ROLLBACK');throw error;}
+          }
         }
-        if(event.unsupported) await conversation.appendMessage(link.org,link.threadId,'assistant','Envie texto, imagem PNG/JPG/WebP, vídeo MP4 ou PDF. Áudio e outros formatos ainda não são aceitos.');
-        else await conversation.submitMessage(link.org,link.threadId,{id:link.userId},{text:event.text||'Recebi este arquivo como referência. Confirme o recebimento e pergunte o que desejo criar, sem iniciar uma geração ainda.',mode:event.mode==='plan'||link.mode==='plan'||!event.text?'plan':'execute',idempotencyKey:row.id,attachments});
-        await put(row.kind,row.id,row.org_id,{...event,state:'processed'});
-      }catch(error){if(error.status===409)continue;await put(row.kind,row.id,row.org_id,{...event,state:'failed'});await conversation.appendMessage(link.org,link.threadId,'assistant','Não consegui iniciar esse pedido. Confira o andamento e os limites da empresa no painel.');}
+        const attachments=[],texts=[];let plan=link.mode==='plan',unsupported=false;
+        for(const inboxId of batch.inboxIds){
+          const inbox=await db.prepare("SELECT * FROM records WHERE id=? AND org_id=? AND kind='whatsapp_chat_inbox'").get(inboxId,link.org);
+          if(!inbox)throw new Error('Mensagem recebida não encontrada.');
+          const event=parse(inbox);plan||=event.mode==='plan';unsupported||=event.unsupported;
+          if(event.text?.trim())texts.push(event.text.trim());
+          if(event.media){
+            if(!storeAsset)throw new Error('Recebimento de arquivos indisponível.');
+            const fixedHash=hash(inbox.id),fixedId=fixedHash.slice(0,8)+'-'+fixedHash.slice(8,12)+'-'+fixedHash.slice(12,16)+'-'+fixedHash.slice(16,20)+'-'+fixedHash.slice(20,32);
+            let asset=await db.prepare('SELECT id FROM assets WHERE id=? AND org_id=?').get(fixedId,link.org);
+            if(!asset){const file=await receiveWhatsAppMedia({media:event.media,token:config().token,phoneId:config().phoneId,version:/^v\d+\.\d+$/.test(env.HELPU_WHATSAPP_API_VERSION||'')?env.HELPU_WHATSAPP_API_VERSION:'v24.0',fetcher});asset=await storeAsset(link.org,file.name,file.bytes,null,fixedId);}
+            attachments.push(asset.id);
+          }
+        }
+        const current=await getClaim(batch.phone);
+        if(!current?.enabled||current.generation!==link.generation||!await member(current)){await put(row.kind,row.id,row.org_id,{...batch,state:'canceled'});continue;}
+        if(!submitted&&batch.inboxIds.length<24&&await db.prepare("SELECT 1 FROM records WHERE org_id=? AND kind='whatsapp_chat_inbox' AND json_extract(data,'$.generation')=? AND json_extract(data,'$.threadId')=? AND json_extract(data,'$.state')='queued' LIMIT 1").get(link.org,link.generation,link.threadId))continue;
+        const text=texts.join('\n\n');
+        if(attachments.length>8||text.length>16000){
+          await conversation.receiveReferences(link.org,link.threadId,{key:row.id,attachments,text,reply:'Recebi os arquivos. Para esta edição, escolha até oito referências e envie um pedido de até 16 mil caracteres. O material permanece na conversa.'});
+        }else if(text){
+          await conversation.submitMessage(link.org,link.threadId,{id:link.userId},{text,mode:plan?'plan':'execute',idempotencyKey:row.id,attachments});
+        }else if(attachments.length){
+          await conversation.receiveReferences(link.org,link.threadId,{key:row.id,attachments,reply:attachments.length===1?'Arquivo recebido e salvo nesta conversa.':'Recebi '+attachments.length+' arquivos e salvei nesta conversa.'});
+        }else if(unsupported){
+          await conversation.receiveReferences(link.org,link.threadId,{key:row.id,attachments:[],reply:'Envie texto, imagem PNG/JPG/WebP, vídeo MP4, PDF ou trilha MP3/WAV/OGG.'});
+        }
+        await put(row.kind,row.id,row.org_id,{...batch,state:'processed'});
+        for(const inboxId of batch.inboxIds){const inbox=await db.prepare('SELECT * FROM records WHERE id=? AND org_id=?').get(inboxId,link.org);await put(inbox.kind,inbox.id,link.org,{...parse(inbox),state:'processed'});}
+      }catch(error){
+        if(error.status===409)continue;
+        await put(row.kind,row.id,row.org_id,{...batch,state:'failed'});
+        await conversation.receiveReferences(link.org,link.threadId,{key:row.id+':error',attachments:[],reply:'Não consegui receber todo esse pedido. Confira os arquivos e o andamento no painel antes de tentar novamente.'});
+      }
     }
     for(const row of await db.prepare("SELECT * FROM records WHERE kind='whatsapp_chat_link' AND json_extract(data,'$.enabled')=1").all()) {
       const link=parse(row);if(!await member(link))continue;

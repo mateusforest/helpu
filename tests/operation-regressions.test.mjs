@@ -356,14 +356,14 @@ test('operação preserva entregas, retomadas, rascunhos e progresso de cada pub
       await server.portal.tick();
       assert.equal(sent, 1);
     });
-    await t.test('mais de seis anexos são recusados antes de criar uma execução', async () => {
+    await t.test('mais de oito anexos são recusados antes de criar uma execução', async () => {
       const thread = (await api('conversations', 'POST', {
         title: 'Anexos'
       })).body.id;
       const response = await api('conversations/' + thread + '/messages', 'POST', {
         text: 'Leia os anexos.',
         attachments: Array.from({
-          length: 7
+          length: 9
         }, () => randomUUID())
       });
       assert.equal(response.status, 422);

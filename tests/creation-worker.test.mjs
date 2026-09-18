@@ -7,7 +7,7 @@ const env={HELPU_AUTOMATIONS_ENABLED:'true',HELPU_PUBLIC_URL:'https://helpu.exam
 async function fixture(t){
  const database=createDatabase({filename:':memory:'});
  await database.exec(`CREATE TABLE jobs(id TEXT PRIMARY KEY,kind TEXT,state TEXT,payload TEXT,scheduled_at INTEGER);
- CREATE TABLE sessions(expires_at INTEGER);CREATE TABLE auth_attempts(expires_at INTEGER);
+ CREATE TABLE records(id TEXT PRIMARY KEY,kind TEXT,data TEXT,created_at INTEGER); CREATE TABLE sessions(expires_at INTEGER);CREATE TABLE auth_attempts(expires_at INTEGER);
  CREATE TABLE worker_leases(id TEXT PRIMARY KEY,owner TEXT,expires_at INTEGER,last_started_at INTEGER,last_completed_at INTEGER,last_error TEXT);`);
  t.after(()=>database.close());
  return {database,portal:{tick:async()=>{}}};
@@ -46,4 +46,16 @@ test('failed creation wake never reports success',async t=>{
  const app=await fixture(t);await app.database.prepare('INSERT INTO jobs VALUES(?,?,?,?,?)').run('plan','creation','queued','{}',1);
  assert.equal(await continueCreations(app,{env,fetcher:async()=>new Response(null,{status:503})}),false);
  await assert.rejects(continueCreations(app,{env,fetcher:async()=>{throw new Error('transport');}}),/transport/);
+});
+
+test('conversation and inbox bursts wake after quiet time without relying on cron',async t=>{
+ const app=await fixture(t),delays=[],calls=[];const options={env:{...env,...Object.fromEntries(['HELPU_WHATSAPP_NUMBER','HELPU_WHATSAPP_ACCESS_TOKEN','HELPU_WHATSAPP_PHONE_NUMBER_ID','HELPU_WHATSAPP_APP_SECRET','HELPU_WHATSAPP_VERIFY_TOKEN'].map(k=>[k,'fixture']))},now:()=>1000,sleep:async ms=>delays.push(ms),fetcher:async url=>{calls.push(url);return new Response('{}',{status:202});}};
+ await app.database.prepare('INSERT INTO records VALUES(?,?,?,?)').run('in','whatsapp_chat_inbox',JSON.stringify({state:'queued'}),1000);
+ assert.equal(await continueCreations(app,options),true);assert.deepEqual(delays,[6000]);
+ await app.database.prepare('INSERT INTO records VALUES(?,?,?,?)').run('batch','whatsapp_chat_batch',JSON.stringify({state:'queued'}),1000);
+ assert.equal(await continueCreations(app,options),true);assert.deepEqual(delays,[6000,6000],'a pending batch must still wait for late messages');
+ await app.database.prepare("UPDATE records SET data=?").run(JSON.stringify({state:'processed'}));
+ assert.equal(await continueCreations(app,options),false);
+ await app.database.prepare('INSERT INTO jobs VALUES(?,?,?,?,?)').run('chat','conversation','queued','{}',1000);
+ assert.equal(await continueCreations(app,options),true);assert.equal(calls.length,3);
 });

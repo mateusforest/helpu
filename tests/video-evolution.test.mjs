@@ -30,7 +30,7 @@ test('real exports preserve duration with mixed sources, transitions, music and 
  const renderer=createReelsRenderer({env:{},ffmpegPath:ffmpeg,ffprobePath:ffprobe,previewThresholdBytes:1});
  const samples=await renderer.sampleReferences({assets});assert.equal(samples.length,3);assert.deepEqual(samples.map(x=>x.id),['photo','footage','footage']);assert.ok(samples.every(x=>x.image.startsWith('data:image/jpeg;base64,')));
  for(const transition of ['fade','smoothleft']){
-  const result=await renderer.render({options:{aspectRatio:'16:9',quality:'high',preset:'editorial',textAnimation:transition==='fade'?'words':'rise',transition,musicAssetId:'song',soundEffects:'subtle',sourceAudio:false},assets,scenes:[{duration:2,sourceAssetId:'photo',text:'Sua marca em movimento',background:'#ffffff',textColor:'#002200'},{duration:2,sourceAssetId:'footage',text:'Um novo olhar',background:'#222222',textColor:'#ffffff'}]});
+  const result=await renderer.render({options:{aspectRatio:'16:9',quality:'high',preset:'editorial',textAnimation:transition==='fade'?'words':'rise',transition,musicAssetId:transition==='fade'?'song':'footage',soundEffects:'subtle',sourceAudio:false},assets,scenes:[{duration:2,sourceAssetId:'photo',text:'Sua marca em movimento',background:'#ffffff',textColor:'#002200'},{duration:2,sourceAssetId:'footage',text:'Um novo olhar',background:'#222222',textColor:'#ffffff'}]});
   assert.equal(result.width,1920);assert.equal(result.height,1080);assert.ok(Math.abs(result.duration-4)<0.15,`duration ${result.duration}`);
   const out=path.join(dir,transition+'.mp4');await fs.writeFile(out,result.bytes);
   assert.ok(result.previewBytes?.length>0);assert.ok(result.previewBytes.length<16*1024*1024);

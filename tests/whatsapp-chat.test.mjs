@@ -11,8 +11,8 @@ import {PGlite} from '@electric-sql/pglite';
 
 for(const postgres of [false,true])test('WhatsApp oficial: telefone, conversa e isolamento em '+(postgres?'PostgreSQL':'SQLite'),async t=>{
  const dataDir=fs.mkdtempSync(path.join(os.tmpdir(),'helpu-wa-chat-')),sent=[];
- const env={HELPU_WHATSAPP_NUMBER:'15551234567',HELPU_WHATSAPP_PHONE_NUMBER_ID:'official-phone',HELPU_WHATSAPP_ACCESS_TOKEN:'fake-token',HELPU_WHATSAPP_APP_SECRET:'fake-secret',HELPU_WHATSAPP_VERIFY_TOKEN:'fake-verify'};
- let database,pg,failSend=false,failResponse=false,responseCalls=0;
+ const env={HELPU_WHATSAPP_BATCH_MS:'0',HELPU_WHATSAPP_NUMBER:'15551234567',HELPU_WHATSAPP_PHONE_NUMBER_ID:'official-phone',HELPU_WHATSAPP_ACCESS_TOKEN:'fake-token',HELPU_WHATSAPP_APP_SECRET:'fake-secret',HELPU_WHATSAPP_VERIFY_TOKEN:'fake-verify'};
+ let database,pg,failSend=false,failResponse=false,responseCalls=0;const modelInputs=[];
  if(postgres){
   pg=await PGlite.create({parsers:{20:Number}});
   await pg.exec('CREATE ROLE anon; CREATE ROLE authenticated; CREATE ROLE service_role; CREATE SCHEMA storage; CREATE TABLE storage.buckets(id text PRIMARY KEY,name text,public boolean,file_size_limit bigint);');
@@ -22,7 +22,7 @@ for(const postgres of [false,true])test('WhatsApp oficial: telefone, conversa e 
   database=createDatabase({pool:{async connect(){const prior=queued;let release;queued=new Promise(r=>release=r);await prior;return {async query(sql,args){const result=await pg.query(sql,args);return {...result,rowCount:result.affectedRows};},release};},async end(){}}});
  }
  const inboundBytes=Buffer.from([137,80,78,71,13,10,26,10,1,2,3]);let downloads=0;
- const server=await createHelpuServer({dataDir,database,portalOptions:{startScheduler:false,whatsappChatEnv:env,openaiEnv:{OPENAI_API_KEY:'fake-openai'},whatsappChatFetch:async(url,request)=>{if(url.includes('/123456?'))return Response.json({url:'https://lookaside.fbsbx.com/media-fixture',mime_type:'image/png',file_size:inboundBytes.length});if(url==='https://lookaside.fbsbx.com/media-fixture'){downloads++;return new Response(inboundBytes);}if(url.endsWith('/media'))return {ok:true,json:async()=>({id:'uploaded-media'})};sent.push({url,body:JSON.parse(request.body)});if(failSend)throw new Error('Timeout');return {ok:true,json:async()=>({messages:[{id:'sent-'+sent.length}]})};},conversationRespond:async()=>{responseCalls++;if(failResponse)throw new Error('Falha simulada na resposta.');return {status:'completed',output:[{type:'message',content:[{type:'output_text',text:'Seu plano foi preparado.'}]}]};}}});
+ const server=await createHelpuServer({dataDir,database,portalOptions:{startScheduler:false,whatsappChatEnv:env,openaiEnv:{OPENAI_API_KEY:'fake-openai'},whatsappChatFetch:async(url,request)=>{if(url.includes('/123456?'))return Response.json({url:'https://lookaside.fbsbx.com/media-fixture',mime_type:'image/png',file_size:inboundBytes.length});if(url==='https://lookaside.fbsbx.com/media-fixture'){downloads++;return new Response(inboundBytes);}if(url.endsWith('/media'))return {ok:true,json:async()=>({id:'uploaded-media'})};sent.push({url,body:JSON.parse(request.body)});if(failSend)throw new Error('Timeout');return {ok:true,json:async()=>({messages:[{id:'sent-'+sent.length}]})};},conversationRespond:async(_config,body)=>{modelInputs.push(structuredClone(body));responseCalls++;if(failResponse)throw new Error('Falha simulada na resposta.');return {status:'completed',output:[{type:'message',content:[{type:'output_text',text:'Seu plano foi preparado.'}]}]};}}});
  await new Promise(resolve=>server.listen(0,'127.0.0.1',resolve));
  const origin='http://127.0.0.1:'+server.address().port,db=server.database;
  const request=async(url,method='GET',data,cookie='')=>{const r=await fetch(origin+url,{method,headers:{Origin:origin,'Content-Type':'application/json',Cookie:cookie},body:data===undefined?undefined:JSON.stringify(data)});return {status:r.status,body:await r.json(),cookie:r.headers.get('set-cookie')?.split(';')[0]};};
@@ -111,6 +111,67 @@ for(const postgres of [false,true])test('WhatsApp oficial: telefone, conversa e 
    const assetId=incoming.attachments[0];assert.equal((await fetch(origin+'/api/portal/files/'+assetId,{headers:{Cookie:two.cookie}})).status,404);
    await webhook('Use esta imagem como referência',undefined,{id:'inbound-image',media:'123456'});await db.scope(()=>server.portal.tick());assert.equal(downloads,1);
    assert.equal((await api(one,'conversations/'+thread)).body.messages.filter(m=>m.text==='Use esta imagem como referência').length,1);
+  });
+  await t.test('álbum sem legenda não consome IA e pedido seguinte recebe todas as referências',async()=>{
+   const before=responseCalls,old=sent.length;
+   await webhook('',undefined,{id:'album-1',media:'123456'});await webhook('',undefined,{id:'album-2',media:'123456'});
+   await db.scope(()=>server.portal.tick());await db.scope(()=>server.portal.tick());
+   assert.equal(responseCalls,before,'receipt must not start an AI job');
+   assert.equal(sent.slice(old).filter(x=>x.body.text?.body==='Recebi 2 arquivos e salvei nesta conversa.').length,1);
+   await webhook('',undefined,{id:'album-2',media:'123456'});await db.scope(()=>server.portal.tick());assert.equal(responseCalls,before);
+   await webhook('Crie o vídeo com ela',undefined,{id:'burst-command-1'});
+   await webhook('Unifique todas as imagens no vídeo',undefined,{id:'burst-command-2'});
+   await webhook('Utilize a música',undefined,{id:'burst-command-3'});
+   await db.scope(()=>server.portal.tick());await db.scope(()=>server.portal.tick());
+   assert.equal(responseCalls,before+1,'three consecutive instructions use one model run');
+   const body=modelInputs.at(-1),last=body.input.at(-1),text=last.content.find(p=>p.type==='input_text').text;
+   assert.match(text,/Crie o vídeo com ela[\s\S]*Unifique todas[\s\S]*Utilize a música/);
+   assert.equal(last.content.filter(p=>p.type==='input_image').length,3,'prior image plus the two new images');
+   assert.doesNotMatch(JSON.stringify(body),/Confirme o recebimento e pergunte/);
+  });
+  await t.test('janela curta aguarda o fim do envio de anexos antes de executar',async()=>{
+   env.HELPU_WHATSAPP_BATCH_MS='6000';const before=responseCalls;
+   await webhook('Crie uma arte com esta imagem',undefined,{id:'debounced-caption',media:'123456'});
+   await db.scope(()=>server.portal.tick());assert.equal(responseCalls,before);
+   await webhook('Use fundo claro',undefined,{id:'debounced-followup'});
+   await db.prepare("UPDATE records SET created_at=created_at-7000 WHERE kind='whatsapp_chat_inbox' AND json_extract(data,'$.state')='queued'").run();
+   await api(one,'company','PATCH',{policy:{dailyRuns:20}});
+   await db.scope(()=>server.portal.tick());await db.scope(()=>server.portal.tick());
+   assert.equal(responseCalls,before+1);assert.match(JSON.stringify(modelInputs.at(-1).input.at(-1)),/Use fundo claro/);
+   env.HELPU_WHATSAPP_BATCH_MS='0';
+  });
+  await t.test('pedido em fila e retomada usam a mensagem original, mesmo após novos anexos',async()=>{
+   const source=(await api(one,'conversations','POST',{title:'Pedido ancorado'})).body.id;
+   const posted=await api(one,'conversations/'+source+'/messages','POST',{text:'Crie um plano sobre imóveis',mode:'execute'});assert.equal(posted.status,201);
+   const asset=await db.prepare('SELECT id FROM assets WHERE org_id=? LIMIT 1').get(one.org);
+   await server.portal.conversation.receiveReferences(one.org,source,{key:'later-reference',attachments:[asset.id],text:'Uma imagem de outra campanha',reply:'Recebido'});
+   await api(one,'company','PATCH',{policy:{dailyRuns:1}});
+   await db.scope(()=>server.portal.tick());
+   let state=(await api(one,'conversations/'+source)).body;
+   const operation=state.operations[0];assert.equal(operation.state,'blocked');
+   await api(one,'company','PATCH',{policy:{dailyRuns:20}});
+   const resumed=await api(one,'operations/'+operation.id+'/action','POST',{action:'resume'});assert.equal(resumed.status,200,JSON.stringify(resumed.body));
+   await db.scope(()=>server.portal.tick());
+   const body=modelInputs.at(-1);assert.equal(body.input.at(-1).content,'Crie um plano sobre imóveis');
+   assert.doesNotMatch(JSON.stringify(body.input),/Uma imagem de outra campanha/);
+   state=(await api(one,'conversations/'+source)).body;assert.equal(state.jobs[0].state,'succeeded');
+  });
+  await t.test('reinício após criar o job não duplica o lote nem incorpora pedido posterior',async()=>{
+   const before=responseCalls;
+   await webhook('Crie o plano recuperável',undefined,{id:'recover-batch-request'});await db.scope(()=>server.portal.tick());
+   assert.equal(responseCalls,before+1);
+   const inbox=await db.prepare("SELECT * FROM records WHERE org_id=? AND kind='whatsapp_chat_inbox' AND json_extract(data,'$.text')=?").get(one.org,'Crie o plano recuperável');
+   const batch=await db.prepare('SELECT * FROM records WHERE id=?').get(JSON.parse(inbox.data).batchId);
+   // Simulate a process dying after submitMessage committed and before the
+   // inbox batch was marked complete. A newer message arrives before replay.
+   await db.prepare('UPDATE records SET data=? WHERE id=?').run(JSON.stringify({...JSON.parse(batch.data),state:'queued'}),batch.id);
+   await webhook('Agora explique o próximo passo',undefined,{id:'after-recovery'});
+   await db.scope(()=>server.portal.tick());assert.equal(responseCalls,before+1);
+   await db.scope(()=>server.portal.tick());assert.equal(responseCalls,before+2);
+   const data=(await api(one,'conversations/'+thread)).body;
+   assert.equal(data.messages.filter(m=>m.text==='Crie o plano recuperável').length,1);
+   const last=modelInputs.at(-1).input.at(-1),text=typeof last.content==='string'?last.content:last.content[0].text;
+   assert.equal(text,'Agora explique o próximo passo');
   });
   await t.test('imagem privada é enviada via mídia oficial e timeout não repete a mensagem',async()=>{
    const response=await fetch(origin+'/api/portal/'+one.org+'/files',{method:'POST',headers:{Origin:origin,Cookie:one.cookie,'Content-Type':'image/png','X-File-Name':'referencia.png'},body:Buffer.from([137,80,78,71,13,10,26,10,1,2,3])});

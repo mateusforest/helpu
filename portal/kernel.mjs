@@ -878,7 +878,8 @@ export function createKernel({db, company, record, list: records, saveRecord, sy
         conversationId: op.threadId,
         mode: 'execute',
         operationId: id,
-        resuming: true
+        resuming: true,
+        sourceJobId: op.rootJobId
       }, null, 'resume:' + id + ':' + op.version);
       return await persist(org, id, {
         currentJobId: job.id

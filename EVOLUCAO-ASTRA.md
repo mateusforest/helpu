@@ -13,7 +13,7 @@ O cliente envia seus materiais, descreve a edição e escolhe ou reutiliza um es
 - **Prévia e aprovação:** o arquivo chega à conversa interna. Com o WhatsApp do solicitante conectado, usa a conversa vinculada e o fluxo de entrega existente. Há ações para aprovar, solicitar ajuste e criar no mesmo estilo. Ajustes preservam o original e geram outra versão; passam novamente pelos limites de uso.
 - **Memória de estilo:** após aprovação, “Salvar meu estilo” guarda opções e proporções/posições das cenas por empresa. Pode ser escolhido no formulário ou por `styleId` na conversa. Fotos, textos e músicas anteriores não são reutilizados automaticamente. Ao mudar a duração, proporções incompatíveis com o limite por cena são adaptadas pelo novo plano. É persistência no banco, não treinamento do modelo.
 - **Agendamentos:** pedidos avulsos e recorrentes pela conversa/API agora conservam estilo, formato, qualidade e referências. O horário inicia a geração; o resultado ainda precisa terminar e passar pela revisão do cliente.
-- **Exportação e entrega:** original H.264/AAC em 1080×1920 ou 1920×1080. Acima de 15 MB, é criada uma prévia 720×1280 ou 1280×720 para a conversa; o original permanece na Biblioteca. Duração de 15 ou 30 segundos, até seis anexos, 25 MB por arquivo e 30 MB no conjunto; imagens somam até 20 MB. Não há opção 4K nesta etapa.
+- **Exportação e entrega:** original H.264/AAC em 1080×1920 ou 1920×1080. Acima de 15 MB, é criada uma prévia 720×1280 ou 1280×720 para a conversa; o original permanece na Biblioteca. Duração de 15 ou 30 segundos, até oito anexos no Reels (seis em imagens), 25 MB por arquivo e 30 MB no conjunto; imagens somam até 20 MB. Não há opção 4K nesta etapa.
 
 ## Verificação desta entrega
 
@@ -55,3 +55,28 @@ O renderizador agora normaliza relógios de vídeo/áudio antes das transições
 Validação: seis testes de renderização com FFmpeg real passaram, incluindo a combinação vertical sem música; 29 testes de criação passaram em execução isolada e quatro de empacotamento passaram. A rodada de integração simultânea à renderização teve uma falha; a repetição isolada concluiu sem falhas. Sintaxe de 109 arquivos verificada. O plano real renderizou após o ajuste em 15 segundos, 1080 × 1920, e foi completamente decodificado sem erro.
 
 A confirmação em produção depende do próximo deploy. A revisão visual também identificou gravação de tela incluída como filmagem e materiais Helpu junto de textos EME no plano já salvo; o render de diagnóstico não representa uma peça editorial aprovada.
+
+
+## Contexto e recebimento pelo WhatsApp (18/09/2026)
+
+Diagnóstico confirmado na conversa real e no código: anexos sem legenda viravam instruções artificiais de usuário, cada um gerando uma execução de IA. O consumidor processava um por vez, atrasava os comandos reais e esgotava a cota. Na sequência analisada, o comando para usar música acabou bloqueado pela cota; a resposta sem música era do comando anterior. A retomada também escolhia a última mensagem da conversa, mesmo quando pertencia a outro pedido.
+
+Correções:
+
+- Reúne eventos após seis segundos sem novas mensagens (HELPU_WHATSAPP_BATCH_MS, entre zero e quinze segundos). Conserva ordem de envio/recebimento, assinatura, isolamento da empresa, vínculo e deduplicação. Registros duráveis de lote permitem retomar downloads sem criar novamente o pedido. A continuação autenticada do worker também acompanha conversas e entradas pendentes.
+- Arquivos sem legenda têm confirmação determinística, sem IA ou nova ordem de produção. O comando seguinte recebe o conjunto de referências da sessão de envio; imagens/PDFs efetivamente acompanham a chamada. Recibos antigos são neutralizados no contexto, sem reescrever o histórico do cliente.
+- Execução vinculada à mensagem original por job_id; retomada usa rootJobId. O histórico termina nessa mensagem e não absorve anexos de outro pedido posterior. Um novo conjunto de uploads separado por mais de quinze minutos substitui o conjunto implícito anterior.
+- Instruções distinguem empresa ativa de marca visível nas referências, priorizam correções do cliente e evitam repetir perguntas sobre um objetivo já definido. Referências de estilo não devem virar filmagem. Essas orientações de linguagem dependem do modelo e ainda exigem avaliação em produção; não representam garantia de entendimento irrestrito.
+- A correção explícita de música prevalece sobre opções antigas na ferramenta. MP4 com áudio pode fornecer a trilha; não há separação de música/voz. musicAssetId null não volta a selecionar automaticamente um áudio anexado.
+- “Todas as imagens” gera uma lista de materiais obrigatórios, aumenta o número de cenas necessário e valida presença antes de renderizar. Até oito referências por Reels; excedentes ficam preservados e pedem seleção, sem cortes silenciosos. Imagens isoladas mantêm limite de seis referências.
+- Respostas de enfileiramento devem ser breves e baseadas no retorno real da ferramenta. Cada formato usa chave estável por execução para evitar pedidos duplicados no mesmo turno.
+
+Validações locais desta rodada: 97 testes direcionados passaram em execução sequencial, incluindo SQLite e PostgreSQL/PGlite, álbuns, debounce, replay, cotas, retomada com anexos posteriores, escolha de música e omissão de imagens. Seis testes com FFmpeg 6.1.1 real passaram, incluindo trilha extraída de MP4, efeitos sem música, duração, resolução, compactação e decodificação completa. Verificação de sintaxe: 111 arquivos. A execução inicial dos testes de banco em paralelo teve falha transitória de conexão local; a execução sequencial passou.
+
+Produção observada estava no commit 1e66a68. Os dois renders recentes falharam no FFmpeg com código 234, sem detalhes suficientes no log para atribuir causa exata. Os decodificadores das transições agora limitam threads em cada entrada; o diagnóstico registra etapa e categoria sem vazar conteúdo ou caminhos. Isso é uma mitigação e melhoria de diagnóstico, não confirmação da correção daquele erro na hospedagem. A cota da EME continua em 20 execuções/dia; não foi aumentada ou zerada nesta rodada.
+
+Após deploy: enviar um álbum e um pedido com mudança de instrução; confirmar um único pedido, os materiais escolhidos, a resposta da marca correta e a prévia real no WhatsApp. Repetir a requisição não deve duplicar produção nem entrega. Testes locais usam respostas simuladas da IA e Meta; não foi gerado conteúdo pago nem enviada mensagem a clientes. Base técnica para contexto: [documentação oficial de estado de conversa da OpenAI](https://developers.openai.com/api/docs/guides/conversation-state).
+
+Suíte geral desta rodada: 368 testes, 365 aprovados, zero falhas e três testes de renderização pulados por configuração. Os seis testes do renderizador atual foram executados separadamente com FFmpeg real; o teste de render do serviço legado continua fora desta validação.
+
+Após a revisão final: mais 64 testes direcionados de WhatsApp, retomada de lote após interrupção, contexto, interface e empacotamento passaram; a última rodada de 42 testes de criação/contexto/worker também passou. Build público no Windows e sintaxe de 111 arquivos aprovados. O pacote Linux e o comportamento real após deploy permanecem sujeitos à validação na hospedagem.
