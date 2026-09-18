@@ -15,9 +15,9 @@ test('limites explícitos: sem teto artificial e sem coerção de entradas vazia
  for(const v of ['',null,true,-1,1.1,Infinity,'NaN','abc'])assert.throws(()=>parseUsageLimit(v));
 });
 test('429: cota externa não é repetida, diagnóstico sanitizado e limite temporário tem retentativas finitas',async()=>{
- for(const code of ['insufficient_quota','billing_hard_limit_reached','project_usage_limit_exceeded','organization_usage_limit_exceeded','insufficient_credits']){
+ for(const code of ['credit_balance_exhausted','organization_spend_limit_exceeded','project_spend_limit_exceeded','insufficient_quota','billing_hard_limit_reached','project_usage_limit_exceeded','organization_usage_limit_exceeded','insufficient_credits']){
   let calls=0;
-  await assert.rejects(requestOpenAIResponse({apiKey:'test-only'},{input:'probe'},{fetcher:async()=>{calls++;return Response.json({error:{code,type:'insufficient_quota',message:'private secret'}},{status:429,headers:{'x-request-id':'req-test'}});}}),e=>e.state==='blocked'&&e.providerRejected&&e.providerDiagnostic.code===code&&/OpenAI/.test(e.message)&&!e.message.includes('private secret'));
+  await assert.rejects(requestOpenAIResponse({apiKey:'test-only'},{input:'probe'},{fetcher:async()=>{calls++;return Response.json({error:{code,message:'private secret'}},{status:429,headers:{'x-request-id':'req-test'}});}}),e=>e.state==='blocked'&&e.providerRejected&&e.providerDiagnostic.code===code&&/OpenAI/.test(e.message)&&!e.message.includes('private secret'));
   assert.equal(calls,1);
  }
  const waits=[];let calls=0;

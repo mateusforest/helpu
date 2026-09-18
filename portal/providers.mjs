@@ -5,11 +5,13 @@ export class ProviderError extends Error{constructor(message,state='failed'){sup
 // Only known provider codes are reflected to customers; never echo raw API bodies.
 export function openAIError(response,data) {
  const code=typeof data?.error?.code==='string'?data.error.code:'',type=data?.error?.type;
- const billing=['insufficient_quota','billing_hard_limit_reached','billing_not_active','billing_limit_reached','usage_limit_reached','project_usage_limit_exceeded','organization_usage_limit_exceeded','insufficient_credits','credits_exhausted'];
+ const billing=['credit_balance_exhausted','organization_spend_limit_exceeded','project_spend_limit_exceeded','insufficient_quota','billing_hard_limit_reached','billing_not_active','billing_limit_reached','usage_limit_reached','project_usage_limit_exceeded','organization_usage_limit_exceeded','insufficient_credits','credits_exhausted'];
  const quota=billing.includes(code)||type==='insufficient_quota';
  const temporary=response.status===429&&!quota&&(['rate_limit_exceeded','slow_down'].includes(code)||type==='rate_limit_error');
  let message,state='failed';
- if(quota){message='A OpenAI bloqueou o pedido por saldo ou limite de uso da API. A administração precisa conferir a cobrança e os limites do projeto OpenAI. Alterar ou zerar o uso na Helpu não libera a cota do provedor.';state='blocked';}
+ if(code==='credit_balance_exhausted'){message='O saldo de créditos da OpenAI acabou. A administração precisa adicionar créditos na conta da API. O uso interno da Helpu é separado desse saldo.';state='blocked';}
+ else if(code==='project_spend_limit_exceeded'||code==='organization_spend_limit_exceeded'){message='O limite de gastos '+(code==='project_spend_limit_exceeded'?'do projeto':'da organização')+' na OpenAI foi atingido. A administração precisa ajustar esse limite na conta da API; zerar o uso na Helpu não altera o limite da OpenAI.';state='blocked';}
+ else if(quota){message='A OpenAI bloqueou o pedido por saldo ou limite de uso da API. A administração precisa conferir a cobrança e os limites do projeto OpenAI. Alterar ou zerar o uso na Helpu não libera a cota do provedor.';state='blocked';}
  else if(temporary)message='A OpenAI está limitando temporariamente as solicitações. Aguarde um pouco e tente novamente. O pedido foi preservado; este bloqueio não é o limite diário da Helpu.';
  else if(response.status===429)message='A OpenAI recusou o pedido por um limite da API (429). Confira a cobrança e os limites do projeto OpenAI. Este bloqueio é externo à Helpu.';
  else if(response.status===401||response.status===403){message='A OpenAI recusou o acesso. A administração precisa conferir a chave e as permissões do projeto em Conexões.';state='blocked';}

@@ -99,3 +99,5 @@ Produção: HELPU_USAGE_TEST_ORGS foi configurada exclusivamente com o ID da EME
 A revisão automática bloqueou o download amplo de variáveis secretas; o diagnóstico restrito não gravou segredos e confirmou que a Vercel não permite recuperar o valor da conexão sensível. A alteração foi limitada a dados de configuração não secretos e a código local. Push/publicação dependem da orientação do AGENTS.md ou de autorização explícita do usuário.
 
 Referência oficial: https://developers.openai.com/api/docs/guides/error-codes
+
+Após autorização explícita do usuário, a versão foi enviada para main e a Vercel confirmou READY/PROMOTED no deploy dpl_3wSiuCCcpSFT5XrTokbmEgeNzgYt (c4838ac). O navegador autenticado deixou de estar disponível antes da aplicação dos controles na EME; o reset e a ativação sem limite ainda não foram realizados na produção. Complementados os diagnósticos oficiais credit_balance_exhausted, organization_spend_limit_exceeded e project_spend_limit_exceeded; mais 28 testes direcionados passaram. A configuração HELPU_USAGE_TEST_ORGS já está publicada apenas para a EME.
