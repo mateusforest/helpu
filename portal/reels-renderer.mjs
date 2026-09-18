@@ -12,7 +12,6 @@ const MAX_OUTPUT = 64 * 1024 * 1024;
 const error = message => Object.assign(new Error(message), { state: 'blocked' });
 const packageFile = (name, file) => { try { return path.join(path.dirname(require.resolve(name + '/package.json')), file); } catch { return ''; } };
 const cleanColor = (value, fallback) => { if (value === undefined) return fallback; if (!/^#[a-f0-9]{6}$/i.test(value)) throw error('Use uma cor hexadecimal válida.'); return value; };
-const filterPath = file => file.replaceAll('\\', '/').replaceAll(':', '\\:').replaceAll("'", "'\\''");
 const round = value => Number(Number(value).toFixed(4));
 
 export function normalizeReelScenes(input) {
@@ -46,14 +45,42 @@ function wrap(text) {
   }).join('\n');
 }
 
+export function reelCaptions(scene, hasMedia = false) {
+  const end = `0:00:${scene.duration.toFixed(2).padStart(5, '0')}`;
+  const color = scene.textColor.slice(1).match(/../g).reverse().join('');
+  // User text must not become ASS override tags or line-control sequences.
+  const text = wrap(scene.text).replaceAll('\\', '＼').replaceAll('{', '｛').replaceAll('}', '｝').replaceAll('\n', '\\N');
+  const alignment = { top: 8, center: 5, bottom: 2 }[scene.position];
+  const fade = scene.fade ? `{\\fad(${Math.round(Math.min(0.3, scene.duration / 4) * 1000)},${Math.round(Math.min(0.3, scene.duration / 4) * 1000)})}` : '';
+  return `[Script Info]
+ScriptType: v4.00+
+PlayResX: 1080
+PlayResY: 1920
+WrapStyle: 2
+[V4+ Styles]
+Format: Name, Fontname, Fontsize, PrimaryColour, SecondaryColour, OutlineColour, BackColour, Bold, Italic, Underline, StrikeOut, ScaleX, ScaleY, Spacing, Angle, BorderStyle, Outline, Shadow, Alignment, MarginL, MarginR, MarginV, Encoding
+Style: Default,DejaVu Sans,60,&H00${color},&H00${color},&H94000000,&H94000000,0,0,0,0,100,100,0,0,${hasMedia ? 3 : 1},${hasMedia ? 12 : 0},0,${alignment},70,70,${scene.position === 'bottom' ? 320 : 240},1
+[Events]
+Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
+Dialogue: 0,0:00:00.00,${end},Default,,0,0,0,,${fade}${text}
+`;
+}
+
 async function run(binary, args, { signal, cwd }) {
   return new Promise((resolve, reject) => {
     const child = spawn(binary, args, { windowsHide: true, shell: false, cwd, signal, stdio: ['ignore', 'pipe', 'pipe'] });
     let output = '';
     child.stdout.on('data', data => { output = (output + data).slice(-1024 * 1024); });
-    child.stderr.resume();
+    let diagnostic = '';
+    child.stderr.on('data', data => { diagnostic = (diagnostic + data).slice(-8192); });
     child.on('error', () => reject(error(signal.aborted ? 'O vídeo excedeu o tempo de processamento disponível.' : 'Não foi possível iniciar o processamento do vídeo.')));
-    child.on('close', code => code === 0 ? resolve(output) : reject(error(signal.aborted ? 'O vídeo excedeu o tempo de processamento disponível.' : 'Não foi possível concluir o processamento do vídeo.')));
+    child.on('close', code => {
+      if (code === 0) return resolve(output);
+      // Log categories only: FFmpeg output may contain private paths or user text.
+      const category = /No such filter/.test(diagnostic) ? 'missing_filter' : /Error loading.*font|fontselect.*failed/i.test(diagnostic) ? 'font_error' : /Invalid data found/.test(diagnostic) ? 'invalid_media' : 'process_failed';
+      console.error('helpu_reels_process_failed', { binary: path.basename(binary), code, category, aborted: signal.aborted });
+      reject(error(signal.aborted ? 'O vídeo excedeu o tempo de processamento disponível.' : 'Não foi possível concluir o processamento do vídeo.'));
+    });
   });
 }
 
@@ -119,8 +146,7 @@ export function createReelsRenderer({ env = process.env, ffmpegPath, ffprobePath
         const parts = [], loopedSourceIds = new Set();
         for (const [index, scene] of scenes.entries()) {
           signal.throwIfAborted();
-          const textFile = path.join(work, `text-${index}.txt`), output = path.join(work, `scene-${index}.mp4`);
-          await fs.writeFile(textFile, wrap(scene.text), { mode: 0o600 });
+          const output = path.join(work, `scene-${index}.mp4`);
           const args = ['-hide_banner', '-loglevel', 'error', '-nostdin', '-y', '-threads', '2', '-filter_threads', '1'];
           const filters = [];
           const asset = scene.sourceAssetId && imported.get(scene.sourceAssetId);
@@ -140,10 +166,10 @@ export function createReelsRenderer({ env = process.env, ffmpegPath, ffprobePath
             args.push('-f', 'lavfi', '-i', `color=c=${scene.background.replace('#', '0x')}:s=1080x1920:r=30:d=${scene.duration}`, '-f', 'lavfi', '-i', 'anullsrc=r=48000:cl=stereo');
           }
           if (scene.text) {
-            const y = scene.position === 'top' ? '240' : scene.position === 'bottom' ? 'h-th-320' : '(h-th)/2';
-            const fade = Math.min(0.3, scene.duration / 4);
-            const alpha = scene.fade ? `:alpha='min(1,min(t/${round(fade)},(${scene.duration}-t)/${round(fade)}))'` : '';
-            filters.push(`drawtext=fontfile='${filterPath(font)}':textfile='${filterPath(textFile)}':expansion=none:fontcolor=${scene.textColor.replace('#', '0x')}:fontsize=60:line_spacing=18:x=(w-tw)/2:y=${y}${asset ? ':box=1:boxcolor=black@0.42:boxborderw=24' : ''}${alpha}`);
+            await fs.writeFile(path.join(work, `captions-${index}.ass`), reelCaptions(scene, !!asset), { mode: 0o600 });
+            await fs.mkdir(path.join(work, 'fonts'), { recursive: true });
+            await fs.copyFile(font, path.join(work, 'fonts', 'DejaVuSans.ttf'));
+            filters.push(`ass=filename=captions-${index}.ass:fontsdir=fonts`);
           }
           filters.push('format=yuv420p');
           args.push('-vf', filters.join(','), '-map', '0:v:0', '-map', audio, '-af', 'aresample=48000,apad', '-t', String(scene.duration), '-c:v', 'libx264', '-preset', 'ultrafast', '-crf', '22', '-threads', '2', '-pix_fmt', 'yuv420p', '-c:a', 'aac', '-b:a', '128k', '-ac', '2', '-ar', '48000', '-map_metadata', '-1', '-movflags', '+faststart', output);

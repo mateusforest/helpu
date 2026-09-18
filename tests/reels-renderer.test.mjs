@@ -6,8 +6,18 @@ import os from 'node:os';
 import { createHash } from 'node:crypto';
 import { promisify } from 'node:util';
 import { execFile } from 'node:child_process';
-import { createReelsRenderer, normalizeReelScenes } from '../portal/reels-renderer.mjs';
+import { createReelsRenderer, normalizeReelScenes, reelCaptions } from '../portal/reels-renderer.mjs';
 const command = promisify(execFile);
+
+test('Reels subtitles preserve accents and neutralize ASS control injection', () => {
+  const [scene] = normalizeReelScenes([{duration:4,text:'Olá {\\p1} imóvel\\N seguro',position:'bottom',textColor:'#123456'}]);
+  const ass = reelCaptions(scene,true);
+  assert.ok(ass.includes('&H00563412'));
+  assert.ok(ass.includes('0:00:04.00'));
+  assert.ok(ass.includes('Olá ｛＼p1｝'));
+  assert.ok(!ass.includes('{\\p1}'));
+  assert.ok(ass.includes('\\fad(300,300)'));
+});
 
 test('Reels validates bounded scene plans before accessing media or rendering', () => {
   assert.throws(() => normalizeReelScenes([]), /oito cenas/);
@@ -58,6 +68,13 @@ test('real Reels renders text, image motion, MP4 cuts and source audio into veri
   const output = path.join(directory, 'result.mp4'); await fs.writeFile(output, result.bytes);
   const decoded = await command(ffmpeg, ['-v', 'error', '-i', output, '-f', 'null', '-'], { windowsHide: true });
   assert.equal(decoded.stderr, '');
+  const webpFile = path.join(directory, 'reference.webp');
+  await command(ffmpeg, ['-v','error','-y','-i',imageFile,'-frames:v','1',webpFile], {windowsHide:true});
+  const short = await renderer.render({scenes:[{duration:4,sourceAssetId:'photo',text:'Conheça este imóvel',fade:false}],assets:[{id:'photo',mime:'image/webp',bytes:await fs.readFile(webpFile)}]});
+  assert.ok(Math.abs(short.duration-4)<0.1);
+  // Decode the output; a successful encoder exit alone is insufficient.
+  await fs.writeFile(output,short.bytes);
+  assert.equal((await command(ffmpeg,['-v','error','-i',output,'-f','null','-'],{windowsHide:true})).stderr,'');
   await assert.rejects(renderer.render({ scenes: [{ duration: 5, sourceAssetId: 'video' }], assets: [{ id: 'video', mime: 'video/mp4', bytes: await fs.readFile(videoFile) }] }), /ultrapassa/);
   await assert.rejects(renderer.render({ scenes: [{ duration: 1, sourceAssetId: 'missing' }] }), /referência/);
   await assert.rejects(renderer.render({ scenes: [{ duration: 1 }], assets: [{ id: 'bad', mime: 'image/png', bytes: Buffer.from('not an image') }] }), /processamento|mídia válida/);
