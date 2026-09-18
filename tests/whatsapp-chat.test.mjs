@@ -12,7 +12,7 @@ import {PGlite} from '@electric-sql/pglite';
 for(const postgres of [false,true])test('WhatsApp oficial: telefone, conversa e isolamento em '+(postgres?'PostgreSQL':'SQLite'),async t=>{
  const dataDir=fs.mkdtempSync(path.join(os.tmpdir(),'helpu-wa-chat-')),sent=[];
  const env={HELPU_WHATSAPP_NUMBER:'15551234567',HELPU_WHATSAPP_PHONE_NUMBER_ID:'official-phone',HELPU_WHATSAPP_ACCESS_TOKEN:'fake-token',HELPU_WHATSAPP_APP_SECRET:'fake-secret',HELPU_WHATSAPP_VERIFY_TOKEN:'fake-verify'};
- let database,pg,failSend=false;
+ let database,pg,failSend=false,failResponse=false,responseCalls=0;
  if(postgres){
   pg=await PGlite.create({parsers:{20:Number}});
   await pg.exec('CREATE ROLE anon; CREATE ROLE authenticated; CREATE ROLE service_role; CREATE SCHEMA storage; CREATE TABLE storage.buckets(id text PRIMARY KEY,name text,public boolean,file_size_limit bigint);');
@@ -22,7 +22,7 @@ for(const postgres of [false,true])test('WhatsApp oficial: telefone, conversa e 
   database=createDatabase({pool:{async connect(){const prior=queued;let release;queued=new Promise(r=>release=r);await prior;return {async query(sql,args){const result=await pg.query(sql,args);return {...result,rowCount:result.affectedRows};},release};},async end(){}}});
  }
  const inboundBytes=Buffer.from([137,80,78,71,13,10,26,10,1,2,3]);let downloads=0;
- const server=await createHelpuServer({dataDir,database,portalOptions:{startScheduler:false,whatsappChatEnv:env,openaiEnv:{OPENAI_API_KEY:'fake-openai'},whatsappChatFetch:async(url,request)=>{if(url.includes('/123456?'))return Response.json({url:'https://lookaside.fbsbx.com/media-fixture',mime_type:'image/png',file_size:inboundBytes.length});if(url==='https://lookaside.fbsbx.com/media-fixture'){downloads++;return new Response(inboundBytes);}if(url.endsWith('/media'))return {ok:true,json:async()=>({id:'uploaded-media'})};sent.push({url,body:JSON.parse(request.body)});if(failSend)throw new Error('Timeout');return {ok:true,json:async()=>({messages:[{id:'sent-'+sent.length}]})};},conversationRespond:async()=>({status:'completed',output:[{type:'message',content:[{type:'output_text',text:'Seu plano foi preparado.'}]}]})}});
+ const server=await createHelpuServer({dataDir,database,portalOptions:{startScheduler:false,whatsappChatEnv:env,openaiEnv:{OPENAI_API_KEY:'fake-openai'},whatsappChatFetch:async(url,request)=>{if(url.includes('/123456?'))return Response.json({url:'https://lookaside.fbsbx.com/media-fixture',mime_type:'image/png',file_size:inboundBytes.length});if(url==='https://lookaside.fbsbx.com/media-fixture'){downloads++;return new Response(inboundBytes);}if(url.endsWith('/media'))return {ok:true,json:async()=>({id:'uploaded-media'})};sent.push({url,body:JSON.parse(request.body)});if(failSend)throw new Error('Timeout');return {ok:true,json:async()=>({messages:[{id:'sent-'+sent.length}]})};},conversationRespond:async()=>{responseCalls++;if(failResponse)throw new Error('Falha simulada na resposta.');return {status:'completed',output:[{type:'message',content:[{type:'output_text',text:'Seu plano foi preparado.'}]}]};}}});
  await new Promise(resolve=>server.listen(0,'127.0.0.1',resolve));
  const origin='http://127.0.0.1:'+server.address().port,db=server.database;
  const request=async(url,method='GET',data,cookie='')=>{const r=await fetch(origin+url,{method,headers:{Origin:origin,'Content-Type':'application/json',Cookie:cookie},body:data===undefined?undefined:JSON.stringify(data)});return {status:r.status,body:await r.json(),cookie:r.headers.get('set-cookie')?.split(';')[0]};};
@@ -65,6 +65,34 @@ for(const postgres of [false,true])test('WhatsApp oficial: telefone, conversa e 
    assert.equal(sent.filter(x=>x.body.text?.body==='Seu plano foi preparado.').length,1);
    const n=sent.length;await db.scope(()=>server.portal.tick());assert.equal(sent.length,n);
    assert.ok(sent.every(x=>x.body.to==='5511988887777'));
+  });
+  await t.test('limite diário responde no WhatsApp sem consumir IA nem repetir o aviso',async()=>{
+   await api(one,'company','PATCH',{policy:{dailyRuns:1}});
+   const calls=responseCalls;
+   try{
+    await webhook('Prepare outro plano',undefined,{id:'daily-limit'});
+    await db.scope(()=>server.portal.tick());await db.scope(()=>server.portal.tick());
+    const data=(await api(one,'conversations/'+thread)).body;
+    const input=data.messages.find(m=>m.text==='Prepare outro plano');
+    const replies=data.messages.filter(m=>m.role==='assistant'&&m.jobId===input.jobId);
+    assert.equal(replies.length,1);assert.match(replies[0].text,/limite diário/);
+    assert.equal(data.jobs.find(j=>j.id===input.jobId).state,'blocked');
+    assert.equal(responseCalls,calls);
+    assert.equal(sent.filter(x=>x.body.text?.body===replies[0].text).length,1);
+    await webhook('Prepare outro plano',undefined,{id:'daily-limit'});
+    await db.scope(()=>server.portal.tick());
+    assert.equal(sent.filter(x=>x.body.text?.body===replies[0].text).length,1);
+    assert.equal(JSON.parse((await db.prepare('SELECT policy FROM companies WHERE id=?').get(one.org)).policy).dailyRuns,1);
+   }finally{await api(one,'company','PATCH',{policy:{dailyRuns:8}});}
+  });
+  await t.test('falha já explicada na conversa não duplica o aviso no WhatsApp',async()=>{
+   failResponse=true;await webhook('Converse sobre o plano',undefined,{id:'response-failure'});
+   try{await db.scope(()=>server.portal.tick());}finally{failResponse=false;}
+   await db.scope(()=>server.portal.tick());
+   const data=(await api(one,'conversations/'+thread)).body;
+   const input=data.messages.find(m=>m.text==='Converse sobre o plano');
+   assert.equal(data.messages.filter(m=>m.role==='assistant'&&m.jobId===input.jobId).length,1);
+   assert.equal(sent.filter(x=>x.body.text?.body==='Falha simulada na resposta.').length,1);
   });
   await t.test('janela expirada aguarda nova mensagem e limite de envios é respeitado',async()=>{
    const link=await db.prepare("SELECT * FROM records WHERE kind='whatsapp_chat_link'").get();

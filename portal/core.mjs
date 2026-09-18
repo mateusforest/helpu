@@ -1365,6 +1365,14 @@ export async function createPortal({db, dataDir, userFrom, json, safeOrigin, pro
       try {
         await execute(job);
       } catch (e) {
+        if (job.kind === 'conversation') {
+          const threadId = parse(job.payload).conversationId;
+          // Preflight failures (including daily limits) happen before run() can
+          // explain them. Persist a reply so the WhatsApp bridge can deliver it.
+          const thread = await db.prepare('SELECT id FROM conversations WHERE org_id=? AND id=?').get(job.org_id, threadId);
+          const replied = await db.prepare("SELECT 1 FROM conversation_messages WHERE org_id=? AND conversation_id=? AND job_id=? AND role='assistant'").get(job.org_id, threadId, job.id);
+          if (thread && !replied) await conversation.appendMessage(job.org_id, threadId, 'assistant', e instanceof ProviderError ? e.message : 'Não consegui processar esse pedido. Os arquivos foram preservados; confira o andamento no painel.', job.id);
+        }
         if (e.state === 'blocked' && e.code !== 'conversation_step_limit') await db.prepare('DELETE FROM usage_reservations WHERE job_id=?').run(job.id);
         if (!stopped) await setJob(job.id, e.state || 'failed', {
           error: str(e.message, 500)
