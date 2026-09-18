@@ -21,7 +21,7 @@ if(process.platform==='linux'){
   console.log('Linux Reels smoke render verified: text, H.264, AAC and MP4.');
 }
 const root=path.resolve('dist');
-const pages=['index','cadastro','entrar','conta','portal','retorno'];
+const pages=['index','cadastro','entrar','conta','portal','retorno','privacidade','termos','exclusao-de-dados'];
 for(const name of pages){
   const source=fs.readFileSync(path.join(root,name+'.html'),'utf8');
   for(const [,file]of source.matchAll(/(?:src|href|poster)="(assets\/[^"?#]+)"/g))assert.ok(fs.existsSync(path.join(root,file)),'Missing asset: '+file);
