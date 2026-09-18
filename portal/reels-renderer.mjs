@@ -165,6 +165,7 @@ export function createReelsRenderer({ env = process.env, ffmpegPath, ffprobePath
     async render({ scenes: input, assets = [], name = 'Reels', options } = {}) {
       const opts=normalizeVideoOptions(options||{transition:'cut'}),{width,height}=dimensions(opts);
       const scenes = normalizeReelScenes(input);
+      const expected = round(scenes.reduce((sum, scene) => sum + scene.duration, 0));
       const overlap=opts.transition==='cut'?0:Math.min(0.35,...scenes.map(s=>s.duration/2));
       if (!configured()) throw error('O processamento de vídeo não foi incluído nesta versão do servidor. Atualize a implantação da Helpu.');
       const byId = validateAssets(assets);
@@ -226,11 +227,18 @@ export function createReelsRenderer({ env = process.env, ffmpegPath, ffprobePath
         let output = path.join(work, 'reels.mp4');
         if(overlap&&scenes.length>1){
           const args=['-v','error','-y','-threads','2','-filter_complex_threads','1'];for(let i=0;i<scenes.length;i++)args.push('-i',`scene-${i}.mp4`);
-          const filters=[];let video='0:v',audio='0:a',offset=0;
-          for(let i=1;i<scenes.length;i++){offset+=scenes[i-1].duration;filters.push(`[${video}][${i}:v]xfade=transition=${opts.transition}:duration=${overlap}:offset=${offset}[v${i}]`,`[${audio}][${i}:a]acrossfade=d=${overlap}[a${i}]`);video=`v${i}`;audio=`a${i}`;}
-          args.push('-filter_complex',filters.join(';'),'-map',`[${video}]`,'-map',`[${audio}]`,'-c:v','libx264','-preset','ultrafast','-crf',opts.quality==='high'?'18':'23','-threads','2','-pix_fmt','yuv420p','-c:a','aac','-b:a','192k','-movflags','+faststart',output);
+          // MP4 edit lists, AAC priming and source frame rates can leave different
+          // clocks on the segments. Normalize both tracks before combining them.
+          const filters=[];
+          for(let i=0;i<scenes.length;i++){
+            const duration=round(scenes[i].duration+(i<scenes.length-1?overlap:0));
+            filters.push(`[${i}:v]fps=30,settb=AVTB,setpts=PTS-STARTPTS[clipv${i}]`,`[${i}:a]aresample=48000,apad,atrim=duration=${duration},asetpts=PTS-STARTPTS[clipa${i}]`);
+          }
+          let video='clipv0',audio='clipa0',offset=0;
+          for(let i=1;i<scenes.length;i++){offset=round(offset+scenes[i-1].duration);filters.push(`[${video}][clipv${i}]xfade=transition=${opts.transition}:duration=${overlap}:offset=${offset}[v${i}]`,`[${audio}][clipa${i}]acrossfade=d=${overlap}[a${i}]`);video=`v${i}`;audio=`a${i}`;}
+          args.push('-filter_complex',filters.join(';'),'-map',`[${video}]`,'-map',`[${audio}]`,'-r','30','-fps_mode','cfr','-t',String(expected),'-c:v','libx264','-preset','ultrafast','-crf',opts.quality==='high'?'18':'23','-threads','2','-pix_fmt','yuv420p','-c:a','aac','-b:a','192k','-movflags','+faststart',output);
           await run(ffmpeg,args,{signal,cwd:work});
-        }else await run(ffmpeg, ['-hide_banner', '-loglevel', 'error', '-nostdin', '-y', '-f', 'concat', '-safe', '1', '-i', 'concat.txt', '-c', 'copy', '-map_metadata', '-1', '-movflags', '+faststart', output], { signal, cwd: work });
+        }else await run(ffmpeg, ['-hide_banner', '-loglevel', 'error', '-nostdin', '-y', '-f', 'concat', '-safe', '1', '-i', 'concat.txt', '-c', 'copy', '-t', String(expected), '-map_metadata', '-1', '-movflags', '+faststart', output], { signal, cwd: work });
         if(opts.soundEffects==='subtle'&&scenes.length>1){
           const filters=[],labels=[];let at=0;
           for(let i=0;i<scenes.length-1;i++){
@@ -239,15 +247,18 @@ export function createReelsRenderer({ env = process.env, ffmpegPath, ffprobePath
           }
           filters.push(`[0:a]${labels.join('')}amix=inputs=${labels.length+1}:duration=first:normalize=0,alimiter=limit=0.95[a]`);
           const withEffects=path.join(work,'effects.mp4');
-          await run(ffmpeg,['-v','error','-y','-i',output,'-filter_complex',filters.join(';'),'-map','0:v','-map','[a]','-c:v','copy','-c:a','aac','-b:a','192k','-movflags','+faststart',withEffects],{signal,cwd:work});output=withEffects;
+          await run(ffmpeg,['-v','error','-y','-i',output,'-filter_complex',filters.join(';'),'-map','0:v','-map','[a]','-t',String(expected),'-c:v','copy','-c:a','aac','-b:a','192k','-movflags','+faststart',withEffects],{signal,cwd:work});output=withEffects;
         }
         if(opts.musicAssetId){
           const music=imported.get(opts.musicAssetId);if(!music?.mime.startsWith('audio/'))throw error('Escolha um arquivo de áudio da empresa para a trilha.');
           const mixed=path.join(work,'mixed.mp4'),duration=scenes.reduce((n,s)=>n+s.duration,0);
           await run(ffmpeg,['-v','error','-y','-i',output,'-stream_loop','-1','-protocol_whitelist','file,pipe','-i',music.file,'-filter_complex',`[1:a]volume=${opts.musicVolume},afade=t=in:d=0.5,afade=t=out:st=${Math.max(0,duration-1)}:d=1[m];[0:a][m]amix=inputs=2:duration=first:normalize=0,alimiter=limit=0.95[a]`,'-map','0:v','-map','[a]','-c:v','copy','-c:a','aac','-b:a','192k','-t',String(duration),'-movflags','+faststart',mixed],{signal,cwd:work});output=mixed;
         }
-        const metadata = await probe(output, signal, work), expected = scenes.reduce((sum, scene) => sum + scene.duration, 0);
-        if (metadata.codec_name !== 'h264' || metadata.width !== width || metadata.height !== height || !Number.isFinite(metadata.duration) || Math.abs(metadata.duration - expected) > 0.3) throw error('O MP4 gerado não corresponde ao Reels solicitado.');
+        const metadata = await probe(output, signal, work);
+        if (metadata.codec_name !== 'h264' || metadata.width !== width || metadata.height !== height || !Number.isFinite(metadata.duration) || Math.abs(metadata.duration - expected) > 0.3) {
+          console.error('helpu_reels_validation_failed', {expected:{width,height,duration:expected},actual:{codec:metadata.codec_name,width:metadata.width,height:metadata.height,duration:metadata.duration}});
+          throw error('O MP4 gerado não corresponde ao Reels solicitado.');
+        }
         const stat = await fs.stat(output);
         if (stat.size < 24 || stat.size > MAX_OUTPUT) throw error('O arquivo gerado ultrapassou o tamanho permitido.');
         const bytes = await fs.readFile(output);

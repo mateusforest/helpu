@@ -45,3 +45,13 @@ Próximas etapas, nesta ordem:
 ## Publicação
 
 As instruções do repositório pedem commit local e proíbem push automático. Produção permanece na versão anterior até o usuário enviar o commit e o deploy concluir. Não considerar testes locais prova do estado publicado.
+
+## Ajuste de duração e diagnóstico de render (18/09/2026)
+
+Uma geração de 15 segundos com MP4, imagens, dissoluções e apenas efeitos sonoros foi rejeitada em produção na validação final. O mesmo plano e os mesmos três arquivos usados nas cenas passaram localmente com FFmpeg 6.1.1, inicialmente em 15,04 segundos; portanto a divergência exata da hospedagem ainda não foi reproduzida.
+
+O renderizador agora normaliza relógios de vídeo/áudio antes das transições, recorta o áudio de cada trecho à duração planejada e limita a concatenação, as transições e a mixagem de efeitos à duração total solicitada. A validação de codec, resolução e duração foi preservada. Falhas registram somente medidas esperadas/obtidas, sem caminhos ou conteúdo privado.
+
+Validação: seis testes de renderização com FFmpeg real passaram, incluindo a combinação vertical sem música; 29 testes de criação passaram em execução isolada e quatro de empacotamento passaram. A rodada de integração simultânea à renderização teve uma falha; a repetição isolada concluiu sem falhas. Sintaxe de 109 arquivos verificada. O plano real renderizou após o ajuste em 15 segundos, 1080 × 1920, e foi completamente decodificado sem erro.
+
+A confirmação em produção depende do próximo deploy. A revisão visual também identificou gravação de tela incluída como filmagem e materiais Helpu junto de textos EME no plano já salvo; o render de diagnóstico não representa uma peça editorial aprovada.
