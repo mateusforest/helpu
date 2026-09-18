@@ -1,4 +1,5 @@
 import {createCreations,inlineVideoHash} from './creations.mjs';
+import {createCreationSchedules} from './creation-schedules.mjs';
 import {createReelsRenderer} from './reels-renderer.mjs';
 import {createWhatsAppChat} from './whatsapp-chat.mjs';
 import {resolveOpenAIConfig} from './openai-config.mjs';
@@ -742,6 +743,7 @@ export async function createPortal({db, dataDir, userFrom, json, safeOrigin, pro
   const imageWorkflow=createImageWorkflow({record,company,metadata,saveMetadata,studio,integration,providers,storeAsset,assetPath,systemUpdate,setJob,beforeMutation});
   const reels=reelsRenderer||createReelsRenderer();
   const creations=createCreations({db,company,integration,queue,saveRecord,record,assetPath,storeAsset,systemUpdate,setJob,beforeMutation,renderer:reels,respond:creationRespond});
+  const creationSchedules=createCreationSchedules({db,creations,company});
   const runtimeTools=createRuntimeTools({runtime:cloudRuntime,db,assetPath,storeAsset,saveRecord,record,metadata,saveMetadata,queue,systemUpdate,setJob,beforeMutation});
   publication = await createPublicationWorkflow({
     db,
@@ -775,7 +777,7 @@ export async function createPortal({db, dataDir, userFrom, json, safeOrigin, pro
     }
   });
   const conversation = await createConversation({
-    deliveryOnly,creations,
+    deliveryOnly,creations,creationSchedules,
     db,
     dataDir,
     kernel,
@@ -795,7 +797,7 @@ export async function createPortal({db, dataDir, userFrom, json, safeOrigin, pro
     reviewPublication: publication.review,cloud,runtimeTools,
     browserOverride:cloudRuntime.configured?runtimeTools.browser:undefined
   });
-  const whatsappChat=createWhatsAppChat({db,metadata,saveMetadata,conversation,assetPath,env:whatsappChatEnv,fetcher:whatsappChatFetch});
+  const whatsappChat=createWhatsAppChat({db,metadata,saveMetadata,conversation,assetPath,storeAsset,env:whatsappChatEnv,fetcher:whatsappChatFetch});
   async function verifyPublication(job, content, external) {
     const org = job.org_id, providerId = external.publishedId;
     let evidence;
@@ -1313,6 +1315,7 @@ export async function createPortal({db, dataDir, userFrom, json, safeOrigin, pro
     busy = true;
     lastTick = Date.now();
     try {
+      await creationSchedules.tick();
       for (const expired of await db.prepare("SELECT * FROM jobs WHERE state='working' AND (lease_until IS NULL OR lease_until<?)").all(Date.now())) {
         if (expired.kind === 'conversation') await conversation.recover(expired);
         const recovery = await kernel.recover(expired);
@@ -1588,6 +1591,7 @@ export async function createPortal({db, dataDir, userFrom, json, safeOrigin, pro
     }
     const parts = pathname.split('/').filter(Boolean), org = parts[2], section = parts[3], kind = parts[4], id = parts[5];
     await access(org, user);
+    if(section==='creation-schedules'){if(req.method==='GET')json(res,200,{schedules:await creationSchedules.list(org,user.id)});else if(req.method==='POST'){const input=await body(req);json(res,200,kind?await creationSchedules.update(org,user.id,kind,input.action):await creationSchedules.create(org,user.id,input,input.conversationId));}else fail('Método não permitido.',405);return true;}
     if(section==='creations'){if(req.method==='GET')json(res,200,kind?{creation:await creations.get(org,kind)}:await creations.list(org));else if(req.method==='POST'&&!kind)json(res,201,{creation:await creations.submit(org,user.id,await body(req))});else fail('Método não permitido.',405);return true;}
     if(section==='whatsapp-chat'){
       if(req.method==='GET')json(res,200,await whatsappChat.status(org,user));

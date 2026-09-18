@@ -58,7 +58,8 @@ const TOOLS = [tool('create_media','Cria arquivos finais para Feed, Story, Carro
   },
   assetId: string
 }, ['channel', 'op']), tool('video_projects','Consulta projetos reais do Astra Vídeo online.',{}), tool('video_project','Lê, cria ou edita um projeto de vídeo online. action get usa projectId; create usa dataJson {name,scenes:[{duration,text,background,textColor,position,fade,sourceAssetId?,in?,out?}]}; update usa projectId e dataJson {expectedRevision,scenes}. Fonte opcional é um MP4 da Biblioteca. Gera cenas com texto/fundo ou corta gravações; não gera filmagens, voz, música ou avatar. Não invente logo. O projeto é editável no painel.',{action:{type:'string',enum:['get','create','update']},projectId:string,dataJson:string},['action']), tool('video_export','Exporta a versão salva do projeto para MP4 na nuvem. O vídeo aparecerá na Biblioteca e na conversa quando verificado. Não publica.',{projectId:string,revision:{type:'integer'}},['projectId','revision'])];
-export async function createConversation({db, dataDir, company, integration, list, saveRecord, queue, audit, json, assetPath, browserLaunch, respond, kernel, updateProfile, reviewPublication,integrationState,workerState,cloud=false,runtimeTools,browserOverride,deliveryOnly=true,creations}) {
+TOOLS.push(tool('creation_schedule','Agenda geração avulsa ou semanal, consulta, pausa, retoma ou cancela. Horário é início da geração, não garantia de entrega imediata. Só crie com pedido explícito de agendamento. Use o fuso da empresa; informe dias e horário ao usuário. Arquivos seguem para a conversa; WhatsApp depende de vínculo e janela de atendimento.',{action:{type:'string',enum:['create','list','pause','resume','cancel']},id:string,prompt:string,format:{type:'string',enum:['feed','story','carousel','reels']},repeat:{type:'string',enum:['once','weekly']},scheduledAt:string,time:string,timeZone:string,weekdays:{type:'array',items:{type:'integer'}},duration:{type:'integer'},slideCount:{type:'integer'},attachments:{type:'array',items:string}},['action']));
+export async function createConversation({db, dataDir, company, integration, list, saveRecord, queue, audit, json, assetPath, browserLaunch, respond, kernel, updateProfile, reviewPublication,integrationState,workerState,cloud=false,runtimeTools,browserOverride,deliveryOnly=true,creations,creationSchedules}) {
   const browser = browserOverride || await createBrowserManager({
     db,
     dataDir,
@@ -133,7 +134,7 @@ export async function createConversation({db, dataDir, company, integration, lis
       ? await db.prepare('SELECT id,kind,state,error,scheduled_at,updated_at FROM jobs WHERE org_id=? AND id=?').all(org, jobId)
       : await db.prepare('SELECT id,kind,state,error,scheduled_at,updated_at FROM jobs WHERE org_id=? ORDER BY created_at DESC LIMIT 12').all(org);
     if (jobId && !rows.length) throw new ProviderError('Execução não encontrada nesta empresa.', 'blocked');
-    return {...context, jobs: rows};
+    return {...context,capabilities:{...context.capabilities,scheduling:!!creationSchedules,schedulingScope:creationSchedules?'Geração avulsa e semanal via creation_schedule. Horário inicia a geração; não publica. Execução em nuvem exige worker periódico ativo.':null}, jobs: rows};
   }
   async function ask(config, body) {
     if (respond) return respond(config, body);
@@ -309,7 +310,7 @@ export async function createConversation({db, dataDir, company, integration, lis
             effort: 'medium'
           },
           max_output_tokens: 6000,
-          instructions,
+          instructions:instructions+'\nAgendamentos de geração: use creation_schedule para pedidos explícitos com data/hora ou recorrência semanal, e para consultar, pausar ou cancelar. Nunca diga que agendou sem sucesso da ferramenta. O horário inicia a produção; entrega depende do término e da janela do WhatsApp. Não há publicação automática. Anexo sem pedido de criação deve apenas ser recebido; use referências das mensagens anteriores quando o usuário se referir a elas. PDFs são briefing, não imagens-base. Vídeos podem ser usados como material no Reels, mas não alegue ter analisado seus quadros.',
           input,
           tools: TOOLS.filter(t=>(t.name!=='create_media'||!!creations)&&(!t.name.startsWith('browser_')||(!deliveryOnly&&(!cloud||!!browserOverride)))&&(!t.name.startsWith('video_')||(!creations&&runtimeTools?.configured))).map(t=>t.name==='queue_action'?{...t,description:creations?'Agenda tarefas de agentes ou imagens de rascunhos. Para criar Reels, use exclusivamente create_media com format reels; esta ferramenta não gera vídeos.':t.description,parameters:{...t.parameters,properties:{...t.parameters.properties,kind:{type:'string',enum:(deliveryOnly?['agent','image','video']:t.parameters.properties.kind.enum).filter(kind=>!creations||kind!=='video')}}}}:t),
           parallel_tool_calls: false
@@ -348,7 +349,7 @@ export async function createConversation({db, dataDir, company, integration, lis
           try {
             const args = JSON.parse(call.arguments || '{}');
             if(deliveryOnly&&(call.name.startsWith('browser_')||(call.name==='queue_action'&&!['agent','image','video'].includes(args.kind)))) throw new ProviderError('A Helpu prepara e entrega o material; o cliente publica manualmente. Esta ação não está disponível neste fluxo.', 'blocked');
-            const mutation=['create_media','save_draft','update_brand','queue_action','browser_action','video_export'].includes(call.name)||(call.name==='video_project'&&args.action!=='get');
+            const mutation=['create_media','save_draft','update_brand','queue_action','browser_action','video_export'].includes(call.name)||(call.name==='video_project'&&args.action!=='get')||(call.name==='creation_schedule'&&args.action!=='list');
             if (payload.mode !== 'execute' && mutation) throw new ProviderError('Este pedido está em modo Planejar. Entregue a proposta pela conversa.', 'blocked');
             if (payload.mode === 'execute' && kernel && !operation && mutation) {
               operation = await kernel.register(org, job.user_id, id, job.id, latestUser?.text || 'Pedido operacional', {
@@ -362,7 +363,16 @@ export async function createConversation({db, dataDir, company, integration, lis
             }
             if (mutation) await markEffect(job, call.name === 'browser_action' ? args.channel : null);
             if (cloud && !browserOverride && call.name.startsWith('browser_')) throw new ProviderError('Configure o serviço de navegador online ou use as conexões por API.', 'blocked');
-            if(call.name==='create_media'){if(!creations)throw new ProviderError('Criação direta indisponível.','blocked');result=await creations.submit(org,job.user_id,{...args,attachments:args.attachments||latestUser?.attachments||[],requestId:job.id+'_'+String(call.call_id).replace(/[^a-zA-Z0-9_-]/g,'').slice(0,50)},{conversationId:id,parentJobId:job.id});}
+            if(call.name==='create_media'){
+              if(!creations)throw new ProviderError('Criação direta indisponível.','blocked');
+              const attachments=[];
+              for(const aid of args.attachments||latestUser?.attachments||[]){const file=await db.prepare('SELECT mime FROM assets WHERE org_id=? AND id=?').get(org,aid);if(file?.mime!=='application/pdf')attachments.push(aid);}
+              result=await creations.submit(org,job.user_id,{...args,attachments,requestId:job.id+'_'+String(call.call_id).replace(/[^a-zA-Z0-9_-]/g,'').slice(0,50)},{conversationId:id,parentJobId:job.id});
+            }
+            else if(call.name==='creation_schedule'){
+              if(!creationSchedules)throw new ProviderError('Agendamento indisponível.','blocked');
+              result=args.action==='list'?await creationSchedules.list(org,job.user_id):args.action==='create'?await creationSchedules.create(org,job.user_id,args,id,job.id+':'+call.call_id):await creationSchedules.update(org,job.user_id,args.id,args.action);
+            }
             else if (call.name === 'operation_status') {
               result = await operationalContext(org, args.jobId);
             } else if (call.name === 'read_records') {

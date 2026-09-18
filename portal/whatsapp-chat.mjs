@@ -1,5 +1,6 @@
 import {createHash, createHmac, randomBytes, randomUUID, timingSafeEqual} from 'node:crypto';
 import fs from 'node:fs';
+import {receiveWhatsAppMedia} from './whatsapp-media.mjs';
 
 const hash = value => createHash('sha256').update(value).digest('hex');
 const parse = row => row ? {...JSON.parse(row.data), org: row.org_id, recordId: row.id} : null;
@@ -13,7 +14,7 @@ export function whatsappPhone(value, {international = false} = {}) {
 // Meta can report Brazilian mobile numbers without the ninth digit.
 const phoneKey = n => /^55\d{2}9\d{8}$/.test(n) ? n.slice(0,4) + n.slice(5) : n;
 
-export function createWhatsAppChat({db, metadata, saveMetadata, conversation, assetPath, env = process.env, fetcher = fetch, now = Date.now}) {
+export function createWhatsAppChat({db, metadata, saveMetadata, conversation, assetPath, storeAsset, env = process.env, fetcher = fetch, now = Date.now}) {
   const officialPhone = env.HELPU_WHATSAPP_NUMBER ? whatsappPhone(env.HELPU_WHATSAPP_NUMBER, {international:true}) : '';
   const config = () => ({token: env.HELPU_WHATSAPP_ACCESS_TOKEN, phoneId: env.HELPU_WHATSAPP_PHONE_NUMBER_ID, secret: env.HELPU_WHATSAPP_APP_SECRET, verify: env.HELPU_WHATSAPP_VERIFY_TOKEN});
   const configured = () => !!officialPhone && Object.values(config()).every(Boolean);
@@ -96,7 +97,9 @@ export function createWhatsAppChat({db, metadata, saveMetadata, conversation, as
         continue;
       }
       const eventId = 'wa-in:' + hash(msg.id);
-      await db.prepare('INSERT INTO records(id,org_id,kind,data,external_id,created_at,updated_at) VALUES(?,?,?,?,?,?,?) ON CONFLICT(id) DO NOTHING').run(eventId,link.org,'whatsapp_chat_inbox',JSON.stringify({phone,threadId:link.threadId,generation:link.generation,mode:link.mode,text:msg.type==='text'?text:'',unsupported:msg.type!=='text',state:'queued'}),eventId,now(),now());
+      const media=['image','video','document'].includes(msg.type)&&msg[msg.type]?.id?{id:String(msg[msg.type].id),filename:msg[msg.type].filename,sha256:msg[msg.type].sha256}:null;
+      const caption=String(msg[msg.type]?.caption||'').slice(0,16000);
+      await db.prepare('INSERT INTO records(id,org_id,kind,data,external_id,created_at,updated_at) VALUES(?,?,?,?,?,?,?) ON CONFLICT(id) DO NOTHING').run(eventId,link.org,'whatsapp_chat_inbox',JSON.stringify({phone,threadId:link.threadId,generation:link.generation,mode:link.mode,text:msg.type==='text'?text:caption,media,unsupported:msg.type!=='text'&&!media,state:'queued'}),eventId,now(),now());
     }
   }
   async function webhook(req, res, url, readRaw) {
@@ -150,8 +153,17 @@ export function createWhatsAppChat({db, metadata, saveMetadata, conversation, as
       const event=parse(row),link=await getClaim(event.phone);
       if(!link?.enabled||link.org!==event.org||link.threadId!==event.threadId||link.generation!==event.generation||!await member(link)){await put(row.kind,row.id,row.org_id,{...event,state:'canceled'});continue;}
       try {
-        if(event.unsupported) await conversation.appendMessage(link.org,link.threadId,'assistant','Por enquanto, envie os arquivos pelo painel da Helpu. Aqui no WhatsApp você já pode pedir criações e alterações por texto.');
-        else await conversation.submitMessage(link.org,link.threadId,{id:link.userId},{text:event.text,mode:event.mode==='plan'||link.mode==='plan'?'plan':'execute',idempotencyKey:row.id,attachments:[]});
+        const attachments=[];
+        if(event.media){
+          if(!storeAsset)throw new Error('Recebimento de arquivos indisponível.');
+          const fixedHash=hash(row.id),fixedId=fixedHash.slice(0,8)+'-'+fixedHash.slice(8,12)+'-'+fixedHash.slice(12,16)+'-'+fixedHash.slice(16,20)+'-'+fixedHash.slice(20,32);
+          let asset=await db.prepare('SELECT id FROM assets WHERE id=? AND org_id=?').get(fixedId,link.org);
+          if(!asset){const file=await receiveWhatsAppMedia({media:event.media,token:config().token,phoneId:config().phoneId,version:/^v\d+\.\d+$/.test(env.HELPU_WHATSAPP_API_VERSION||'')?env.HELPU_WHATSAPP_API_VERSION:'v24.0',fetcher});asset=await storeAsset(link.org,file.name,file.bytes,null,fixedId);}
+          const current=await getClaim(event.phone);if(!current?.enabled||current.generation!==link.generation||!await member(current)){await put(row.kind,row.id,row.org_id,{...event,state:'canceled'});continue;}
+          attachments.push(asset.id);
+        }
+        if(event.unsupported) await conversation.appendMessage(link.org,link.threadId,'assistant','Envie texto, imagem PNG/JPG/WebP, vídeo MP4 ou PDF. Áudio e outros formatos ainda não são aceitos.');
+        else await conversation.submitMessage(link.org,link.threadId,{id:link.userId},{text:event.text||'Recebi este arquivo como referência. Confirme o recebimento e pergunte o que desejo criar, sem iniciar uma geração ainda.',mode:event.mode==='plan'||link.mode==='plan'||!event.text?'plan':'execute',idempotencyKey:row.id,attachments});
         await put(row.kind,row.id,row.org_id,{...event,state:'processed'});
       }catch(error){if(error.status===409)continue;await put(row.kind,row.id,row.org_id,{...event,state:'failed'});await conversation.appendMessage(link.org,link.threadId,'assistant','Não consegui iniciar esse pedido. Confira o andamento e os limites da empresa no painel.');}
     }
@@ -159,6 +171,20 @@ export function createWhatsAppChat({db, metadata, saveMetadata, conversation, as
       const link=parse(row);if(!await member(link))continue;
       const donePrefix='wa-done:'+link.generation+':';
       const messages=await db.prepare("SELECT * FROM conversation_messages WHERE org_id=? AND conversation_id=? AND role='assistant' AND created_at>=? AND NOT EXISTS (SELECT 1 FROM records WHERE kind='whatsapp_chat_delivery' AND external_id=? || conversation_messages.id) ORDER BY created_at,rowid LIMIT 40").all(link.org,link.threadId,link.since,donePrefix);
+      // Outside the service window only an explicitly configured, Meta-approved
+      // template can notify the user. Files remain queued until the user replies.
+      const template=env.HELPU_WHATSAPP_READY_TEMPLATE;
+      if(Number(link.lastInboundAt)<now()-86400000&&messages.some(m=>JSON.parse(m.attachments||'[]').length)&&/^[a-z0-9_]{1,100}$/.test(template||'')){
+        const id='wa-notify:'+hash(link.generation+':'+link.lastInboundAt);
+        const claimed=await db.prepare("INSERT INTO records(id,org_id,kind,data,external_id,created_at,updated_at) VALUES(?,?,'whatsapp_chat_notification',?,?,?,?) ON CONFLICT(id) DO NOTHING RETURNING id").get(id,link.org,JSON.stringify({state:'sending',generation:link.generation}),id,now(),now());
+        if(claimed){
+          const current=await getClaim(link.phone);
+          if(!current?.enabled||current.generation!==link.generation||!await member(current)){await put('whatsapp_chat_notification',id,link.org,{state:'canceled'});continue;}
+          try{const result=await graph(config().phoneId+'/messages',{messaging_product:'whatsapp',to:link.phone,type:'template',template:{name:template,language:{code:env.HELPU_WHATSAPP_TEMPLATE_LANGUAGE||'pt_BR'}}});if(!result.messages?.[0]?.id)throw new Error('Envio não confirmado');await put('whatsapp_chat_notification',id,link.org,{state:'sent',generation:link.generation});}
+          catch{await put('whatsapp_chat_notification',id,link.org,{state:'uncertain',generation:link.generation});}
+          return;
+        }
+      }
       const dailyLimit=Math.max(1,Math.min(500,Number(env.HELPU_WHATSAPP_DAILY_MESSAGES)||60));
       let dailyCount=Number((await db.prepare("SELECT count(*) AS n FROM records WHERE org_id=? AND kind='whatsapp_chat_outbox' AND created_at>=?").get(link.org,now()-86400000)).n);
       let sent=0;

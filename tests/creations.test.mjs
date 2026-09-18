@@ -152,6 +152,20 @@ for(const postgres of [false,true])test('Criações: Feed, Story, Carrossel e Re
    assert.equal(ready.assets[0].mime,'video/mp4');
    assert.equal(videos.length,before+1);
   });
+  await t.test('API agenda para a conversa e worker dispara apenas uma criação na data',async()=>{
+   await api(one,'company','PATCH',{policy:{enabled:true}});
+   const thread=(await api(one,'conversations','POST',{title:'Geração programada'})).body;
+   const scheduled=await api(one,'creation-schedules','POST',{conversationId:thread.id,format:'reels',prompt:'Reels agendado',duration:15,scheduledAt:new Date(Date.now()+86400000).toISOString()});
+   assert.equal(scheduled.status,200,JSON.stringify(scheduled.body));
+   assert.equal((await api(two,'creation-schedules')).body.schedules.length,0);
+   assert.equal((await api(two,'creation-schedules/'+scheduled.body.id,'POST',{action:'cancel'})).status,422);
+   const prior=videos.length;await server.portal.tick();assert.equal(videos.length,prior);
+   await server.database.prepare("UPDATE records SET data=json_set(data,'$.nextAt',?) WHERE id=?").run(Date.now()-1000,scheduled.body.id);
+   await server.portal.tick();const state=(await api(one,'creation-schedules')).body.schedules.find(s=>s.id===scheduled.body.id);
+   assert.equal(state.enabled,false);assert.ok(state.lastCreationId);
+   await finish(one,state.lastCreationId);assert.equal(videos.length,prior+1);
+   await server.portal.tick();assert.equal(videos.length,prior+1);
+  });
   await t.test('indisponibilidade do renderizador aparece antes de cobrar pela preparação',async()=>{
    rendererAvailable=false;const before=plans.length;
    const denied=await api(one,'creations','POST',{...payload,format:'reels',requestId:'creation-reels-unavailable'});assert.equal(denied.status,409);assert.equal((await api(one,'creations')).body.capabilities.reels,false);assert.equal(plans.length,before);
