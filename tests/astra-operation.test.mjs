@@ -14,6 +14,21 @@ test('contexto do Astra não transmite credenciais nem promete editor ou navegad
  assert.equal(context.connections[0].model,'gpt-6-astra');
 });
 
+test('criação direta informa Reels disponível sem depender do editor antigo',()=>{
+ const input={company:{},cloud:true,runtime:{available:false,video:false},creations:{images:true,reels:true,reelsReason:''}};
+ const cap=astraContext(input).capabilities;
+ assert.equal(cap.videoEditing,true);
+ assert.match(cap.videoEditingReason,/create_media/);
+ assert.doesNotMatch(cap.videoGeneration,/indisponível/);
+ assert.equal(cap.imageGeneration.tool,'create_media');
+ const blocked=astraContext({...input,runtime:{available:true,video:true},creations:{images:true,reels:false,reelsReason:'Processador ausente.'}}).capabilities;
+ assert.equal(blocked.videoEditing,false);
+ assert.equal(blocked.videoGeneration,'Processador ausente.');
+ const noKey=astraContext({...input,creations:{images:false,reels:false,reelsReason:''}}).capabilities;
+ assert.equal(noKey.imageGeneration.configured,false);
+ assert.match(noKey.videoGeneration,/chave/);
+});
+
 test('Astra consulta andamento da empresa e agenda com fuso, respeitando Planejar',async()=>{
  const dataDir=fs.mkdtempSync(path.join(os.tmpdir(),'helpu-astra-'));
  let responses=[],bodies=[];

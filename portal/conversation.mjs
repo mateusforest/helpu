@@ -127,7 +127,8 @@ export async function createConversation({db, dataDir, company, integration, lis
     return !!value.conversationEffectsStarted;
   }
   async function operationalContext(org, jobId) {
-    const context = astraContext({company: await company(org), integrations: await integrationState?.(org) || [], worker: await workerState?.() || {}, cloud,runtime:await runtimeTools?.status(org)});
+    const creationCapabilities = await creations?.capabilities(org);
+    const context = astraContext({company: await company(org), integrations: await integrationState?.(org) || [], worker: await workerState?.() || {}, cloud,creations:creationCapabilities,runtime:creationCapabilities ? {} : await runtimeTools?.status(org)});
     const rows = jobId
       ? await db.prepare('SELECT id,kind,state,error,scheduled_at,updated_at FROM jobs WHERE org_id=? AND id=?').all(org, jobId)
       : await db.prepare('SELECT id,kind,state,error,scheduled_at,updated_at FROM jobs WHERE org_id=? ORDER BY created_at DESC LIMIT 12').all(org);
