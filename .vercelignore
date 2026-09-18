@@ -9,6 +9,7 @@
 !portal/**
 !scripts
 !scripts/build-production.mjs
+!scripts/prepare-reels-binaries.mjs
 !scripts/runtime.mjs
 !dist
 !dist/**
