@@ -26,6 +26,8 @@ export function astraContext({company, integrations = [], worker = {}, cloud = f
       browser: false,
       imageGeneration: {provider:'openai',model:'gpt-image-2.5-sunburst',configured:direct?!!creations.images:!!integrations.find(c=>c.id==='openai')?.configured,tool:direct?'create_media':'queue_action',kind:'image',requires:direct?'Use prompt e format feed, story ou carousel. Não crie um rascunho separado. Os arquivos voltam à conversa e à Biblioteca.':'contentId de um rascunho com visualPrompt. Gera o arquivo, salva na Biblioteca e devolve na conversa.'},
       videoEditing: videoReady,
+      videoOptions: direct?{presets:creations.videoPresets,formats:creations.formats,qualities:creations.qualities,techniques:creations.techniques}:undefined,
+      creativeReview: direct?'Use creation_library para consultar prévias e estilos. creation_review aprova, pede ajuste versionado ou salva estilo quando o cliente solicitar. Arquivos chegam como prévia; aprovação editorial nunca publica. Reutilize styleId e materiais novos quando o cliente pedir o mesmo estilo.':undefined,
       videoEditingReason: videoReason,
       videoGeneration: videoReady?'Cenas com texto, imagens e edição de MP4 disponíveis; sem geração de filmagens, avatar, locução ou música por IA.':videoReason,
       publishing: false

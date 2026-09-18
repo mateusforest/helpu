@@ -15,3 +15,13 @@ test('rejeita destinos arbitrários, formatos, tamanho e hash inválidos',async(
  if(!change.sha256)assert.equal(n,1);
  }
 });
+
+test('aceita música e nota OGG com parâmetro de codec, mantendo o limite de áudio',async()=>{
+ for(const mime of ['audio/mpeg','audio/wav','audio/ogg; codecs=opus']){
+  let n=0;const file=await receiveWhatsAppMedia({media:{id:'123'},token:'test-token',phoneId:'456',fetcher:async()=>++n===1?Response.json({...info,mime_type:mime}):new Response(bytes)});
+  assert.equal(file.mime,mime.split(';')[0]);assert.deepEqual(file.bytes,bytes);
+ }
+ let requests=0;
+ await assert.rejects(receiveWhatsAppMedia({media:{id:'123'},token:'test-token',phoneId:'456',fetcher:async()=>{requests++;return Response.json({...info,mime_type:'audio/mpeg',file_size:17*1024*1024});}}),/tamanho permitido/);
+ assert.equal(requests,1);
+});

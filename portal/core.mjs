@@ -606,13 +606,16 @@ export async function createPortal({db, dataDir, userFrom, json, safeOrigin, pro
     if (buffer.length > 8 && buffer.subarray(0, 8).equals(Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]))) return ['image/png', '.png'];
     if (buffer[0] === 255 && buffer[1] === 216 && buffer[2] === 255) return ['image/jpeg', '.jpg'];
     if (buffer.subarray(0, 4).toString() === 'RIFF' && buffer.subarray(8, 12).toString() === 'WEBP') return ['image/webp', '.webp'];
+    if(buffer.subarray(0,4).toString()==='RIFF'&&buffer.subarray(8,12).toString()==='WAVE')return ['audio/wav','.wav'];
+    if(buffer.subarray(0,4).toString()==='OggS')return ['audio/ogg','.ogg'];
+    if(buffer.subarray(0,3).toString()==='ID3'||(buffer[0]===255&&(buffer[1]&0xe0)===0xe0))return ['audio/mpeg','.mp3'];
     if (buffer.subarray(4, 8).toString() === 'ftyp') return ['video/mp4', '.mp4'];
     if (buffer.subarray(0, 5).toString() === '%PDF-') return ['application/pdf', '.pdf'];
     return null;
   }
   async function storeAsset(org, name, buffer, sourceUrl = null, fixedId = null) {
     const type = assetType(buffer);
-    if (!type) fail('Envie PNG, JPEG, WebP, MP4, PDF ou uma fonte WOFF2, TTF ou OTF.');
+    if (!type) fail('Envie PNG, JPEG, WebP, MP4, MP3, WAV, OGG, PDF ou uma fonte WOFF2, TTF ou OTF.');
     if(fixedId&&!/^[a-f\d-]{36}$/i.test(fixedId))fail('Identificador de arquivo inválido.');
     const id = fixedId||randomUUID(), file = id + type[1];
     if(fixedId){const previous=await db.prepare('SELECT id,mime,size FROM assets WHERE id=? AND org_id=?').get(id,org);if(previous){if(previous.mime!==type[0]||previous.size!==buffer.length||hashFile(fs.readFileSync(await assetPath(org,id)))!==hashFile(buffer))fail('O arquivo existente não corresponde à exportação.',409);return {...previous,name,url:'/api/portal/files/'+id};}}
@@ -742,7 +745,7 @@ export async function createPortal({db, dataDir, userFrom, json, safeOrigin, pro
   });
   const imageWorkflow=createImageWorkflow({record,company,metadata,saveMetadata,studio,integration,providers,storeAsset,assetPath,systemUpdate,setJob,beforeMutation});
   const reels=reelsRenderer||createReelsRenderer();
-  const creations=createCreations({db,company,integration,queue,saveRecord,record,assetPath,storeAsset,systemUpdate,setJob,beforeMutation,renderer:reels,respond:creationRespond});
+  const creations=createCreations({db,company,integration,queue,saveRecord,record,assetPath,storeAsset,systemUpdate,setJob,beforeMutation,renderer:reels,respond:creationRespond,metadata,saveMetadata});
   const creationSchedules=createCreationSchedules({db,creations,company});
   const runtimeTools=createRuntimeTools({runtime:cloudRuntime,db,assetPath,storeAsset,saveRecord,record,metadata,saveMetadata,queue,systemUpdate,setJob,beforeMutation});
   publication = await createPublicationWorkflow({
@@ -1592,7 +1595,7 @@ export async function createPortal({db, dataDir, userFrom, json, safeOrigin, pro
     const parts = pathname.split('/').filter(Boolean), org = parts[2], section = parts[3], kind = parts[4], id = parts[5];
     await access(org, user);
     if(section==='creation-schedules'){if(req.method==='GET')json(res,200,{schedules:await creationSchedules.list(org,user.id)});else if(req.method==='POST'){const input=await body(req);json(res,200,kind?await creationSchedules.update(org,user.id,kind,input.action):await creationSchedules.create(org,user.id,input,input.conversationId));}else fail('Método não permitido.',405);return true;}
-    if(section==='creations'){if(req.method==='GET')json(res,200,kind?{creation:await creations.get(org,kind)}:await creations.list(org));else if(req.method==='POST'&&!kind)json(res,201,{creation:await creations.submit(org,user.id,await body(req))});else fail('Método não permitido.',405);return true;}
+    if(section==='creations'){if(req.method==='GET')json(res,200,kind?{creation:await creations.get(org,kind)}:await creations.list(org));else if(req.method==='POST'&&!kind)json(res,201,{creation:await creations.submit(org,user.id,await body(req))});else if(req.method==='POST'&&kind)json(res,200,{creation:await creations.review(org,user.id,kind,await body(req))});else fail('Método não permitido.',405);return true;}
     if(section==='whatsapp-chat'){
       if(req.method==='GET')json(res,200,await whatsappChat.status(org,user));
       else if(req.method==='POST')json(res,200,await whatsappChat.save(org,user,await body(req)));
@@ -1608,7 +1611,7 @@ export async function createPortal({db, dataDir, userFrom, json, safeOrigin, pro
     if(section==='files'&&kind==='prepare'&&req.method==='POST'){
       if(!privateStorage){json(res,200,{mode:'local'});return true;}
       const input=await body(req),name=str(input.name,150),extension=path.extname(name).toLowerCase();
-      if(!/^[a-f\d-]{36}$/.test(input.uploadId||'')||!['.png','.jpg','.jpeg','.webp','.mp4','.pdf','.woff2','.ttf','.otf'].includes(extension)||!Number.isInteger(input.size)||input.size<1||input.size>25*1024*1024)fail('Envie um arquivo válido de até 25 MB.');
+      if(!/^[a-f\d-]{36}$/.test(input.uploadId||'')||!['.png','.jpg','.jpeg','.webp','.mp4','.mp3','.wav','.ogg','.pdf','.woff2','.ttf','.otf'].includes(extension)||!Number.isInteger(input.size)||input.size<1||input.size>25*1024*1024)fail('Envie um arquivo válido de até 25 MB.');
       const key='upload:'+input.uploadId,previous=await metadata(org,key);
       if(previous.id&&(previous.name!==name||previous.size!==input.size||previous.actor!==user.id))fail('A autorização não corresponde a este arquivo.',409);
       const ticket={id:input.uploadId,name,size:input.size,file:input.uploadId+(extension==='.jpeg'?'.jpg':extension),actor:user.id,expiresAt:Date.now()+30*60*1000};

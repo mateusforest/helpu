@@ -41,3 +41,7 @@ import './reels-renderer.test.mjs';
 import './creation-worker.test.mjs';
 
 import './reels-packaging.test.mjs';
+
+import './video-evolution.test.mjs';
+import './whatsapp-media.test.mjs';
+import './creation-schedules.test.mjs';

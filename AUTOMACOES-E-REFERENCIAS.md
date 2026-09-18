@@ -21,9 +21,11 @@ API autenticada: GET/POST `/api/portal/:org/creation-schedules`; POST `/api/port
 
 ## Arquivos recebidos pelo WhatsApp
 
-São aceitos PNG, JPEG, WebP, PDF (até 20 MB) e MP4 (até 25 MB). O download usa o identificador de mídia recebido em webhook assinado, autenticação da Meta, domínios permitidos, limite de bytes e conferência de integridade. O arquivo fica no armazenamento privado da empresa e como anexo da conversa. Eventos repetidos reutilizam o arquivo e o pedido.
+São aceitos PNG, JPEG, WebP, PDF (até 20 MB), MP4 (até 25 MB) e MP3/WAV/OGG (até 16 MB). O download usa o identificador de mídia recebido em webhook assinado, autenticação da Meta, domínios permitidos, limite de bytes e conferência de integridade. O arquivo fica no armazenamento privado da empresa e como anexo da conversa. Eventos repetidos reutilizam o arquivo e o pedido.
 
-Envie o arquivo com o pedido na legenda. Sem legenda, o Astra apenas recebe e pergunta o objetivo, em modo Planejar. PDFs fornecem briefing; não são fundo de imagem ou vídeo. Áudio e outros formatos ainda não são suportados. Vídeo usado como gravação-base não significa análise automática de seu estilo, áudio ou movimento.
+Envie o arquivo com o pedido na legenda ou envie os materiais primeiro e descreva depois o que fazer com eles. Sem pedido, o Astra apenas recebe e pergunta o objetivo, em modo Planejar. Os IDs dos anexos permanecem no histórico recente da conversa para seleção no próximo pedido. PDFs fornecem briefing; não são fundo de imagem ou vídeo. Áudio é aceito como trilha, sem transcrição automática nesta etapa. Na geração de vídeo, o planejador recebe duas amostras visuais por MP4; não analisa todo o movimento nem o som. Peça explicitamente para usar um anexo somente como referência de estilo quando ele não deve aparecer no resultado.
+
+As opções de estilo, qualidade, proporção e referências também são guardadas nos agendamentos. A prévia pode ser aprovada ou ajustada pela conversa; `creation_library` resolve os IDs e `creation_review` registra a ação. Aprovação editorial não publica nas redes. Veja [EVOLUCAO-ASTRA.md](EVOLUCAO-ASTRA.md) para recursos e limites da etapa atual.
 
 ## Entrega fora da janela de 24 horas
 

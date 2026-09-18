@@ -1,3 +1,4 @@
+import {normalizeVideoOptions} from './video-styles.mjs';
 import {randomUUID} from 'node:crypto';
 const fail=text=>{throw Object.assign(new Error(text),{status:422});};
 export function nextWeekly({weekdays,time,timeZone},after){
@@ -29,11 +30,12 @@ export function createCreationSchedules({db,creations,company,now=Date.now}){
   else {if(!/T.*(?:Z|[+-]\d{2}:\d{2})$/.test(input.scheduledAt||''))fail('Informe data e hora com fuso explícito.');nextAt=Date.parse(input.scheduledAt);if(!Number.isFinite(nextAt)||nextAt<=now())fail('Escolha uma data futura.');}
   const attachments=input.attachments||[];if(!Array.isArray(attachments)||attachments.length>6)fail('Use até seis referências.');
   for(const id of attachments)if(!await db.prepare('SELECT 1 FROM assets WHERE org_id=? AND id=?').get(org,id))fail('Referência não encontrada nesta empresa.');
+  if(input.format==='reels'){normalizeVideoOptions(input.videoOptions||{});if(input.styleId)await creations.styles.get(org,input.styleId);if(input.referenceOnlyIds&&(!Array.isArray(input.referenceOnlyIds)||input.referenceOnlyIds.some(id=>!attachments.includes(id))))fail('Referência de estilo inválida.');}
   const duration=input.duration||15,slideCount=input.slideCount||3;
   if(input.format==='reels'&&![15,30].includes(duration))fail('Escolha 15 ou 30 segundos.');
   if(input.format==='carousel'&&(!Number.isInteger(slideCount)||slideCount<3||slideCount>10))fail('Escolha de três a dez páginas.');
   if(idempotencyKey){const prior=(await list(org,user)).find(s=>s.idempotencyKey===idempotencyKey);if(prior)return prior;}
-  return write(org,randomUUID(),{userId:user,conversationId,enabled:true,repeat:weekly?'weekly':'once',rule,timeZone,nextAt,request:{prompt:input.prompt.trim(),format:input.format,duration,slideCount,attachments},idempotencyKey,lastError:null});
+  return write(org,randomUUID(),{userId:user,conversationId,enabled:true,repeat:weekly?'weekly':'once',rule,timeZone,nextAt,request:{prompt:input.prompt.trim(),format:input.format,duration,slideCount,attachments,...input.videoOptions?{videoOptions:input.videoOptions}:{},...input.styleId?{styleId:input.styleId}:{},...input.referenceOnlyIds?{referenceOnlyIds:input.referenceOnlyIds}:{}},idempotencyKey,lastError:null});
  }
  async function update(org,user,id,action){const row=await db.prepare("SELECT * FROM records WHERE id=? AND org_id=? AND kind='creation_schedule'").get(id,org),s=decode(row);if(!s||s.userId!==user)fail('Agendamento não encontrado.');if(!['pause','resume','cancel'].includes(action))fail('Ação inválida.');if(s.canceled)fail('Agendamento cancelado.');s.enabled=action==='resume';if(action==='cancel')s.canceled=true;if(s.enabled){if(s.repeat==='weekly')s.nextAt=nextWeekly(s.rule,now());else if(s.nextAt<=now())fail('A data já passou. Crie um novo agendamento.');s.lastError=null;}delete s.id;return write(org,id,s);}
  async function tick(){

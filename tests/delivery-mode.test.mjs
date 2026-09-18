@@ -25,7 +25,8 @@ test('fluxo padrão cria rascunhos sem acesso social e bloqueia publicação nov
   await server.portal.tick();
   assert.ok(bodies.length);
   assert.ok(bodies[0].tools.every(t=>!t.name.startsWith('browser_')));
-  assert.deepEqual(bodies[0].tools.find(t=>t.name==='queue_action').parameters.properties.kind.enum,['agent','image','video']);
+  assert.deepEqual(bodies[0].tools.find(t=>t.name==='queue_action').parameters.properties.kind.enum,['agent','image']);
+  assert.ok(bodies[0].tools.some(t=>t.name==='create_media'));
   const state=(await api('state')).body;
   const content=state.records.content.find(c=>c.title==='Post manual');assert.ok(content);
   const scheduledAt=new Date(Date.now()+86400000).toISOString();

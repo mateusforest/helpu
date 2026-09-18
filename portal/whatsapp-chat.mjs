@@ -97,7 +97,7 @@ export function createWhatsAppChat({db, metadata, saveMetadata, conversation, as
         continue;
       }
       const eventId = 'wa-in:' + hash(msg.id);
-      const media=['image','video','document'].includes(msg.type)&&msg[msg.type]?.id?{id:String(msg[msg.type].id),filename:msg[msg.type].filename,sha256:msg[msg.type].sha256}:null;
+      const media=['image','video','document','audio'].includes(msg.type)&&msg[msg.type]?.id?{id:String(msg[msg.type].id),filename:msg[msg.type].filename,sha256:msg[msg.type].sha256}:null;
       const caption=String(msg[msg.type]?.caption||'').slice(0,16000);
       await db.prepare('INSERT INTO records(id,org_id,kind,data,external_id,created_at,updated_at) VALUES(?,?,?,?,?,?,?) ON CONFLICT(id) DO NOTHING').run(eventId,link.org,'whatsapp_chat_inbox',JSON.stringify({phone,threadId:link.threadId,generation:link.generation,mode:link.mode,text:msg.type==='text'?text:caption,media,unsupported:msg.type!=='text'&&!media,state:'queued'}),eventId,now(),now());
     }
