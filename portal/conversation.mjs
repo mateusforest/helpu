@@ -311,7 +311,7 @@ export async function createConversation({db, dataDir, company, integration, lis
           max_output_tokens: 6000,
           instructions,
           input,
-          tools: TOOLS.filter(t=>(t.name!=='create_media'||!!creations)&&(!t.name.startsWith('browser_')||(!deliveryOnly&&(!cloud||!!browserOverride)))&&(!t.name.startsWith('video_')||runtimeTools?.configured)).map(t=>deliveryOnly&&t.name==='queue_action'?{...t,parameters:{...t.parameters,properties:{...t.parameters.properties,kind:{type:'string',enum:['agent','image','video']}}}}:t),
+          tools: TOOLS.filter(t=>(t.name!=='create_media'||!!creations)&&(!t.name.startsWith('browser_')||(!deliveryOnly&&(!cloud||!!browserOverride)))&&(!t.name.startsWith('video_')||(!creations&&runtimeTools?.configured))).map(t=>t.name==='queue_action'?{...t,description:creations?'Agenda tarefas de agentes ou imagens de rascunhos. Para criar Reels, use exclusivamente create_media com format reels; esta ferramenta não gera vídeos.':t.description,parameters:{...t.parameters,properties:{...t.parameters.properties,kind:{type:'string',enum:(deliveryOnly?['agent','image','video']:t.parameters.properties.kind.enum).filter(kind=>!creations||kind!=='video')}}}}:t),
           parallel_tool_calls: false
         });
         if (await stopped()) throw new ProviderError('Execução pausada. Confira os passos já realizados no histórico.', 'canceled');
@@ -400,6 +400,7 @@ export async function createConversation({db, dataDir, company, integration, lis
               if(!runtimeTools?.configured)throw new ProviderError('Configure o serviço online do Astra Vídeo.','blocked');
               result=await runtimeTools.enqueue(org,job.user_id,args.projectId,{revision:args.revision,idempotencyKey:job.id+':'+call.call_id,parentJobId:job.id});
             } else if (call.name === 'queue_action') {
+              if(creations&&args.kind==='video')throw new ProviderError('Para gerar e entregar o MP4, use create_media com format reels, prompt e duration 15 ou 30. Não use queue_action para vídeo; não é necessário pedir nova aprovação ao usuário.','blocked');
               if (!['agent', 'image', 'video', 'publish', 'send', 'insights', 'metaCampaign'].includes(args.kind)) throw new Error('Ação não disponível.');
               if (args.scheduledAt && (!/^\d{4}-\d{2}-\d{2}T.*(?:Z|[+-]\d{2}:\d{2})$/.test(args.scheduledAt) || !Number.isFinite(Date.parse(args.scheduledAt)) || Date.parse(args.scheduledAt) <= Date.now())) throw new ProviderError('Para agendar, informe uma data futura com fuso explícito.', 'blocked');
               result = await queue(org, job.user_id, args.kind, {

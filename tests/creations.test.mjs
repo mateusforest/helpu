@@ -9,12 +9,24 @@ import {testPng} from './image-fixture.mjs';
 import {createDatabase} from '../portal/database.mjs';
 import {ProviderError} from '../portal/providers.mjs';
 import {PGlite} from '@electric-sql/pglite';
+import {inlineVideoHash} from '../portal/creations.mjs';
+
+test('autorização de Reels ignora ordem das chaves, mas detecta mudanças reais',()=>{
+ const content={id:'content-a',title:'EME',caption:'Legenda'};
+ const payload={scenes:[{text:'Cena um',duration:5},{text:'Cena dois',duration:10}],referenceAssetIds:['asset-a','asset-b']};
+ const expected=inlineVideoHash(content,payload);
+ assert.equal(expected,inlineVideoHash({caption:'Legenda',title:'EME',id:'content-a'},{scenes:[{duration:5,text:'Cena um'},{duration:10,text:'Cena dois'}],referenceAssetIds:['asset-a','asset-b']}));
+ assert.notEqual(expected,inlineVideoHash({...content,caption:'Outra legenda'},payload));
+ assert.notEqual(expected,inlineVideoHash(content,{...payload,scenes:[...payload.scenes].reverse()}));
+ assert.notEqual(expected,inlineVideoHash(content,{...payload,referenceAssetIds:['asset-b','asset-a']}));
+});
 
 const fakeMP4=()=>{const bytes=Buffer.alloc(64);bytes.writeUInt32BE(24);bytes.write('ftypisom',4);bytes.write('synthetic-creation-test-fixture',24);return bytes;};
 
 for(const postgres of [false,true])test('Criações: Feed, Story, Carrossel e Reels em '+(postgres?'PostgreSQL':'SQLite'),async t=>{
  const dataDir=fs.mkdtempSync(path.join(os.tmpdir(),'helpu-creations-')),plans=[],images=[],videos=[];
  let rendererAvailable=true,failImage=false,database,pg,conversationReplies=[];
+ const conversationBodies=[];
  if(postgres){
   pg=await PGlite.create({parsers:{20:Number}});
   await pg.exec('CREATE ROLE anon; CREATE ROLE authenticated; CREATE ROLE service_role; CREATE SCHEMA storage; CREATE TABLE storage.buckets(id text PRIMARY KEY,name text,public boolean,file_size_limit bigint);');
@@ -24,7 +36,7 @@ for(const postgres of [false,true])test('Criações: Feed, Story, Carrossel e Re
   database=createDatabase({pool:{async connect(){const prior=queued;let release;queued=new Promise(r=>release=r);await prior;return {async query(sql,args){const result=await pg.query(sql,args);return {...result,rowCount:result.affectedRows};},release};},async end(){}}});
  }
 
- const server=await createHelpuServer({dataDir,database,portalOptions:{startScheduler:false,conversationRespond:async()=>conversationReplies.shift()||({status:'completed',output:[{type:'message',content:[{type:'output_text',text:'Pedido registrado.'}]}]}),openaiEnv:{OPENAI_API_KEY:'fake-creation-key'},creationRespond:async(config,body)=>{
+ const server=await createHelpuServer({dataDir,database,portalOptions:{startScheduler:false,conversationRespond:async(config,body)=>{conversationBodies.push(body);return conversationReplies.shift()||({status:'completed',output:[{type:'message',content:[{type:'output_text',text:'Pedido registrado.'}]}]});},openaiEnv:{OPENAI_API_KEY:'fake-creation-key'},creationRespond:async(config,body)=>{
   assert.equal(config.apiKey,'fake-creation-key');const input=JSON.parse(body.input);plans.push(input);
   const count=input.request.format==='reels'?(input.request.duration===30?6:3):input.request.slideCount;
   const value={caption:'Legenda da campanha, pronta para copiar.',slides:Array.from({length:count},(_,i)=>({title:'Página '+(i+1),text:'Mensagem '+(i+1),visualPrompt:'Fundo branco e verde. Texto na arte: Mensagem '+(i+1),background:'#ffffff',textColor:'#002200'}))};
@@ -73,10 +85,11 @@ for(const postgres of [false,true])test('Criações: Feed, Story, Carrossel e Re
    for(let i=1;i<=3;i++)assert.ok(images[i+1].prompt.includes('página '+i+' de 3'));
   });
   await t.test('Reels chama o renderizador e entrega MP4 com os arquivos enviados',async()=>{
+   await api(one,'company','PATCH',{policy:{operationRules:[{action:'video',channel:'other',risk:'medium',policy:'approval_required'}]}});
    const source=await upload(one,'gravacao.mp4',fakeMP4());
    const deniedImage=await api(one,'creations','POST',{...payload,requestId:'creation-image-video-ref',attachments:[source.id]});assert.equal(deniedImage.status,400);
    const posted=await api(one,'creations','POST',{...payload,format:'reels',duration:15,requestId:'creation-reels-001',attachments:[source.id,owned.id]});assert.equal(posted.status,201,JSON.stringify(posted.body));
-   const ready=await finish(one,posted.body.creation.id);assert.equal(ready.assets.length,1);assert.equal(ready.assets[0].mime,'video/mp4');assert.equal(ready.assets[0].width,1080);assert.equal(ready.assets[0].height,1920);assert.equal(videos.length,1);assert.equal(videos[0].scenes.length,3);
+   const ready=await finish(one,posted.body.creation.id);assert.equal(ready.assets.length,1,JSON.stringify(ready));assert.equal(ready.assets[0].mime,'video/mp4');assert.equal(ready.assets[0].width,1080);assert.equal(ready.assets[0].height,1920);assert.equal(videos.length,1);assert.equal(videos[0].scenes.length,3);
    assert.equal(videos[0].scenes.reduce((n,s)=>n+s.duration,0),15);assert.deepEqual(videos[0].assets.map(a=>a.id),[source.id,owned.id]);assert.deepEqual(videos[0].assets[0].bytes,fakeMP4());
    assert.equal(images.length,5);assert.equal(plans.length,4);
    const downloaded=await fetch(origin+ready.assets[0].url,{headers:{Cookie:one.cookie}});assert.deepEqual(Buffer.from(await downloaded.arrayBuffer()),fakeMP4());
@@ -116,6 +129,28 @@ for(const postgres of [false,true])test('Criações: Feed, Story, Carrossel e Re
    assert.equal((await api(one,'conversations/'+next.id+'/stop','POST',{})).status,200);for(let i=0;i<3;i++)await server.portal.tick();assert.equal(images.length,beforeChildren,'A pausa precisa alcançar os arquivos derivados do plano');
    const states=(await api(one,'state')).body.jobs.filter(j=>children.some(c=>c.id===j.id));assert.ok(states.every(j=>j.state==='canceled'));
 
+  });
+  await t.test('conversa redireciona vídeo legado e gera Reels autorizado sem aprovação adicional',async()=>{
+   const thread=(await api(one,'conversations','POST',{title:'Reels pela conversa'})).body;
+   const before=videos.length;
+   conversationBodies.length=0;
+   conversationReplies=[
+    {status:'completed',output:[{type:'function_call',name:'queue_action',call_id:'legacy-video',arguments:JSON.stringify({kind:'video',payloadJson:'{}'})}]},
+    {status:'completed',output:[{type:'function_call',name:'create_media',call_id:'direct-reel',arguments:JSON.stringify({prompt:'Reels verde de 15 segundos.',format:'reels',duration:15})}]}
+   ];
+   await api(one,'conversations/'+thread.id+'/messages','POST',{text:'Crie o Reels com 15 segundos e entregue o MP4.',mode:'execute'});
+   await server.portal.tick();
+   const tools=conversationBodies[0].tools;
+   assert.ok(tools.some(t=>t.name==='create_media'));
+   assert.ok(!tools.some(t=>t.name.startsWith('video_')));
+   assert.ok(!tools.find(t=>t.name==='queue_action').parameters.properties.kind.enum.includes('video'));
+   assert.match(JSON.stringify(conversationBodies[1].input),/use create_media/);
+   const linked=await server.database.prepare("SELECT id FROM jobs WHERE org_id=? AND kind='creation' AND json_extract(payload,'$.conversationId')=?").all(one.org,thread.id);
+   assert.equal(linked.length,1);
+   const ready=await finish(one,linked[0].id);
+   assert.equal(ready.status,'complete',JSON.stringify(ready));
+   assert.equal(ready.assets[0].mime,'video/mp4');
+   assert.equal(videos.length,before+1);
   });
   await t.test('indisponibilidade do renderizador aparece antes de cobrar pela preparação',async()=>{
    rendererAvailable=false;const before=plans.length;

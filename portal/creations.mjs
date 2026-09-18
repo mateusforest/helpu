@@ -6,7 +6,10 @@ const parse=v=>v?JSON.parse(v):{};
 const hash=v=>createHash('sha256').update(JSON.stringify(v)).digest('hex');
 const fail=(message,status=400)=>{throw Object.assign(new ProviderError(message,'blocked'),{status});};
 const formats=['feed','story','carousel','reels'];
-export const inlineVideoHash=(content,payload)=>hash({content,scenes:payload.scenes,references:payload.referenceAssetIds});
+// PostgreSQL JSON objects may return keys in a different order after persistence.
+// Authorization fingerprints must describe values, not their serialization order.
+const canonical=value=>Array.isArray(value)?value.map(canonical):value&&typeof value==='object'?Object.fromEntries(Object.keys(value).sort().map(key=>[key,canonical(value[key])])):value;
+export const inlineVideoHash=(content,payload)=>hash(canonical({content,scenes:payload.scenes,references:payload.referenceAssetIds}));
 
 export function createCreations({db,company,integration,queue,saveRecord,record,assetPath,storeAsset,systemUpdate,setJob,beforeMutation,renderer,respond,fetcher=fetch}){
  async function references(org,ids,format){
