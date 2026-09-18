@@ -32,3 +32,24 @@ test('Reels packaging skips desktop platforms and refuses unsupported Linux arch
   assert.equal((await prepareReelsBinaries({ platform: 'win32', fetcher })).skipped, true);
   await assert.rejects(prepareReelsBinaries({ platform: 'linux', arch: 'arm64', fetcher }), /Linux x64/);
 });
+
+
+test('Vercel Reels glob fits the schema and retains binaries, licenses and all fonts', async () => {
+  const config=JSON.parse(await fs.readFile(new URL('../vercel.json',import.meta.url),'utf8'));
+  const pattern=config.functions['api/**/*.mjs'].includeFiles;
+  assert.ok(pattern.length<=256,'Vercel rejects includeFiles before the build when it exceeds 256 characters');
+  for(const file of [
+    'portal/migrations/001_core.sql',
+    'node_modules/ffmpeg-static/ffmpeg',
+    'node_modules/ffmpeg-static/ffmpeg.LICENSE',
+    'node_modules/ffmpeg-static/ffmpeg.README',
+    'node_modules/ffmpeg-static/package.json',
+    'node_modules/@ffprobe-installer/linux-x64/ffprobe',
+    'node_modules/@ffprobe-installer/linux-x64/package.json',
+    'node_modules/@ffprobe-installer/linux-x64/README.md',
+    'node_modules/dejavu-fonts-ttf/package.json',
+    'node_modules/dejavu-fonts-ttf/LICENSE',
+    ...['DejaVuSans','DejaVuSans-Bold','DejaVuSerif'].map(font=>'node_modules/dejavu-fonts-ttf/ttf/'+font+'.ttf')
+  ])assert.ok(path.matchesGlob(file,pattern),'Missing packaged asset: '+file);
+  for(const file of ['.env','runtime-data/integration.key','node_modules/another-package/index.js'])assert.equal(path.matchesGlob(file,pattern),false);
+});

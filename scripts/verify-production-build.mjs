@@ -10,7 +10,7 @@ const configs=files.filter(name=>name.endsWith('.vc-config.json')).map(name=>JSO
 assert.equal(configs.length,1,'Expected one API function');
 assert.equal(configs[0].runtime,'nodejs22.x');
 assert.equal(configs[0].handler,'api/runtime.mjs');
-for(const native of ['node_modules/ffmpeg-static/ffmpeg','node_modules/@ffprobe-installer/linux-x64/ffprobe','node_modules/dejavu-fonts-ttf/ttf/DejaVuSans.ttf','node_modules/dejavu-fonts-ttf/ttf/DejaVuSerif.ttf']){
+for(const native of ['node_modules/ffmpeg-static/ffmpeg','node_modules/@ffprobe-installer/linux-x64/ffprobe','node_modules/dejavu-fonts-ttf/ttf/DejaVuSans.ttf','node_modules/dejavu-fonts-ttf/ttf/DejaVuSans-Bold.ttf','node_modules/dejavu-fonts-ttf/ttf/DejaVuSerif.ttf']){
   assert.ok(files.some(file=>file.replaceAll('\\','/').endsWith('/'+native)),'Reels dependency missing from API package: '+native);
 }
 const apiFiles=files.filter(file=>file.replaceAll('\\','/').startsWith('functions/'));

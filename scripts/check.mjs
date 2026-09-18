@@ -3,6 +3,12 @@ import path from 'node:path';
 import {spawnSync} from 'node:child_process';
 import {project} from './runtime.mjs';
 
+// Vercel rejects oversized patterns before it executes the build command.
+const deployment=JSON.parse(fs.readFileSync(path.join(project,'vercel.json'),'utf8'));
+for(const [name,config] of Object.entries(deployment.functions||{})){
+  if(typeof config.includeFiles==='string'&&config.includeFiles.length>256)throw new Error('Vercel includeFiles exceeds 256 characters: '+name);
+}
+
 function scripts(directory) {
   return fs.readdirSync(directory, {withFileTypes: true}).flatMap(entry => {
     const target = path.join(directory, entry.name);
