@@ -47,3 +47,5 @@ import './whatsapp-media.test.mjs';
 import './creation-schedules.test.mjs';
 
 import './conversation-context.test.mjs';
+
+import './usage.test.mjs';

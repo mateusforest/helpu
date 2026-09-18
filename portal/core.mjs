@@ -1,3 +1,4 @@
+import {unlimited,parseUsageLimit,usageCount,usageSnapshot} from './usage.mjs';
 import {createCreations,inlineVideoHash} from './creations.mjs';
 import {createCreationSchedules} from './creation-schedules.mjs';
 import {createReelsRenderer} from './reels-renderer.mjs';
@@ -235,7 +236,8 @@ export async function createPortal({db, dataDir, userFrom, json, safeOrigin, pro
       profileEvidence,
       policy: {
         ...DEFAULT_POLICY,
-        ...parse(row.policy)
+        ...parse(row.policy),
+        usageTestingEnabled:parse(row.policy).usageTestingEnabled===true||(process.env.HELPU_USAGE_TEST_ORGS||'').split(',').map(v=>v.trim()).includes(org)
       },
       createdAt: row.created_at,
       updatedAt: row.updated_at
@@ -678,6 +680,7 @@ export async function createPortal({db, dataDir, userFrom, json, safeOrigin, pro
     const all = Object.fromEntries(await mapAsync(KINDS, async k => [k, await list(org, k)]));
     return {
       company: await company(org),
+      usage: await usageSnapshot(db,org,(await company(org)).policy),
       routine: await routinePriority(org),
       brandMaterials: await metadata(org, 'brand:production'),
       production: await mapAsync(await filterAsync(all.content, async c => (await metadata(org, 'studio:' + c.id)).version), async c => await studio.inspect(org, c.id)),
@@ -702,8 +705,8 @@ export async function createPortal({db, dataDir, userFrom, json, safeOrigin, pro
     await db.exec('BEGIN IMMEDIATE');
     try {
       if (!await db.prepare('SELECT 1 FROM usage_reservations WHERE job_id=?').get(id)) {
-        const count = (await db.prepare('SELECT count(*) AS n FROM usage_reservations WHERE org_id=? AND category=? AND day=?').get(org, category, day)).n;
-        if (count >= cap) throw new ProviderError('O limite diário desta operação foi atingido. Ajuste em Autonomia ou aguarde o próximo dia.', 'blocked');
+        const count = await usageCount(db,org,category,day,policy);
+        if (!unlimited(cap) && count >= cap) throw new ProviderError('O limite diário desta operação foi atingido. Ajuste em Autonomia ou aguarde o próximo dia.', 'blocked');
         await db.prepare('INSERT INTO usage_reservations VALUES(?,?,?,?,?)').run(id, org, category, day, Date.now());
       }
       await db.exec('COMMIT');
@@ -1373,7 +1376,8 @@ export async function createPortal({db, dataDir, userFrom, json, safeOrigin, pro
           const replied = await db.prepare("SELECT 1 FROM conversation_messages WHERE org_id=? AND conversation_id=? AND job_id=? AND role='assistant'").get(job.org_id, threadId, job.id);
           if (thread && !replied) await conversation.appendMessage(job.org_id, threadId, 'assistant', e instanceof ProviderError ? e.message : 'Não consegui processar esse pedido. Os arquivos foram preservados; confira o andamento no painel.', job.id);
         }
-        if (e.state === 'blocked' && e.code !== 'conversation_step_limit') await db.prepare('DELETE FROM usage_reservations WHERE job_id=?').run(job.id);
+        if ((e.state === 'blocked' && e.code !== 'conversation_step_limit') || e.providerRejected === true) await db.prepare('DELETE FROM usage_reservations WHERE job_id=?').run(job.id);
+        if(e.providerDiagnostic)await audit(job.org_id,'agente','Solicitação recusada pela OpenAI',job.id,JSON.stringify(e.providerDiagnostic));
         if (!stopped) await setJob(job.id, e.state || 'failed', {
           error: str(e.message, 500)
         });
@@ -1829,6 +1833,23 @@ export async function createPortal({db, dataDir, userFrom, json, safeOrigin, pro
       });
       return true;
     }
+    if (section === 'usage' && req.method === 'POST' && kind === 'reset') {
+      await body(req);
+      if((await company(org)).policy.usageTestingEnabled!==true)fail('O reset está disponível apenas para empresas habilitadas para testes.',403);
+      const membership=await db.prepare('SELECT role FROM memberships WHERE org_id=? AND user_id=?').get(org,user.id);
+      if(!['owner','admin'].includes(membership?.role))fail('Somente a administração pode zerar o uso interno.',403);
+      await db.exec('BEGIN IMMEDIATE');
+      try {
+        if(db.dialect==='postgres')await db.prepare('SELECT id FROM companies WHERE id=? FOR UPDATE').get(org);
+        const c=await company(org),before=await usageSnapshot(db,org,c.policy),at=Date.now();
+        const policy={...c.policy,usageResetAt:at};
+        await db.prepare('UPDATE companies SET policy=?,updated_at=? WHERE id=?').run(JSON.stringify(policy),Math.max(at,c.updatedAt+1),org);
+        await audit(org,user.id,'Uso interno zerado',org,JSON.stringify({before,resetAt:at}));
+        await db.exec('COMMIT');
+        json(res,200,await usageSnapshot(db,org,policy));
+      }catch(e){await db.exec('ROLLBACK');throw e;}
+      return true;
+    }
     if (section === 'company' && req.method === 'PATCH') {
       const d = await body(req);
       if (d.expectedUpdatedAt !== undefined && d.expectedUpdatedAt !== (await company(org)).updatedAt) fail('O contexto mudou. Atualize antes de salvar.', 409);
@@ -1840,7 +1861,15 @@ export async function createPortal({db, dataDir, userFrom, json, safeOrigin, pro
         ...c.policy
       };
       for (const k of ['enabled', 'autoMedia', 'allowPublishing', 'autoReply']) if ((k in (d.policy || ({})))) policy[k] = d.policy[k] === true;
-      for (const [k, max] of [['dailyRuns', 100], ['dailyMedia', 50], ['dailyMessages', 500], ['monthlyAdBudget', 1000000]]) if ((k in (d.policy || ({})))) policy[k] = finite(d.policy[k], k === 'monthlyAdBudget' ? 0 : 1, max);
+      if(['dailyRuns','dailyMedia','dailyMessages'].some(k=>k in (d.policy||{}))){
+        const membership=await db.prepare('SELECT role FROM memberships WHERE org_id=? AND user_id=?').get(org,user.id);
+        if(!['owner','admin'].includes(membership?.role))fail('Somente a administração pode alterar os limites.',403);
+        for(const k of ['dailyRuns','dailyMedia','dailyMessages'])if(k in (d.policy||{})){
+          if(unlimited(d.policy[k])&&policy.usageTestingEnabled!==true)fail('Uso sem limite está disponível apenas para empresas habilitadas para testes.',403);
+          policy[k]=parseUsageLimit(d.policy[k]);
+        }
+      }
+      if('monthlyAdBudget' in (d.policy||{}))policy.monthlyAdBudget=finite(d.policy.monthlyAdBudget,0,1000000);
       if (d.policy?.operationRules !== undefined) policy.operationRules = await kernel.validateRules(d.policy.operationRules);
       if (d.policy?.publicBaseUrl !== undefined) {
         if (d.policy.publicBaseUrl && !publicUrl(d.policy.publicBaseUrl)) fail('O endereço público precisa usar HTTPS.');

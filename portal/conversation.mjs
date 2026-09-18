@@ -1,3 +1,4 @@
+import {requestOpenAIResponse} from './providers.mjs';
 import {conversationRequestContext,applyMediaContext,CONVERSATION_CONTEXT_RULES} from './conversation-context.mjs';
 import {astraContext} from './astra-context.mjs';
 import fs from 'node:fs';
@@ -144,25 +145,7 @@ export async function createConversation({db, dataDir, company, integration, lis
   }
   async function ask(config, body) {
     if (respond) return respond(config, body);
-    requireFields(config, ['apiKey'], 'a inteligência da Helpu');
-    let response;
-    try {
-      response = await fetch('https://api.openai.com/v1/responses', {
-        method: 'POST',
-        headers: {
-          Authorization: 'Bearer ' + config.apiKey,
-          'Content-Type': 'application/json'
-        },
-        body: JSON.stringify(body),
-        signal: AbortSignal.timeout(120000),
-        redirect: 'error'
-      });
-    } catch {
-      throw new ProviderError('A inteligência não respondeu. A conversa e os passos realizados foram preservados.');
-    }
-    const result = await response.json();
-    if (!response.ok) throw new ProviderError('Não foi possível acessar o modelo configurado (' + response.status + '). Confira a conexão da inteligência.', response.status === 401 || response.status === 403 ? 'blocked' : 'failed');
-    return result;
+    return requestOpenAIResponse(config,body);
   }
   async function runPost(job, input) {
     const org = job.org_id, operation = await kernel.jobOperation(job), threadId = operation.threadId;

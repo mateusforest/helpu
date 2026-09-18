@@ -2,14 +2,50 @@ import {googlePresence} from './google-presence.mjs';
 import {AGENTS} from './catalog.mjs';
 import {randomUUID} from 'node:crypto';
 export class ProviderError extends Error{constructor(message,state='failed'){super(message);this.state=state;}}
+// Only known provider codes are reflected to customers; never echo raw API bodies.
+export function openAIError(response,data) {
+ const code=typeof data?.error?.code==='string'?data.error.code:'',type=data?.error?.type;
+ const billing=['insufficient_quota','billing_hard_limit_reached','billing_not_active','billing_limit_reached','usage_limit_reached','project_usage_limit_exceeded','organization_usage_limit_exceeded','insufficient_credits','credits_exhausted'];
+ const quota=billing.includes(code)||type==='insufficient_quota';
+ const temporary=response.status===429&&!quota&&(['rate_limit_exceeded','slow_down'].includes(code)||type==='rate_limit_error');
+ let message,state='failed';
+ if(quota){message='A OpenAI bloqueou o pedido por saldo ou limite de uso da API. A administração precisa conferir a cobrança e os limites do projeto OpenAI. Alterar ou zerar o uso na Helpu não libera a cota do provedor.';state='blocked';}
+ else if(temporary)message='A OpenAI está limitando temporariamente as solicitações. Aguarde um pouco e tente novamente. O pedido foi preservado; este bloqueio não é o limite diário da Helpu.';
+ else if(response.status===429)message='A OpenAI recusou o pedido por um limite da API (429). Confira a cobrança e os limites do projeto OpenAI. Este bloqueio é externo à Helpu.';
+ else if(response.status===401||response.status===403){message='A OpenAI recusou o acesso. A administração precisa conferir a chave e as permissões do projeto em Conexões.';state='blocked';}
+ else if(code==='model_not_found'){message='O modelo configurado não está disponível para esta chave. Confira o modelo e o acesso do projeto OpenAI.';state='blocked';}
+ else message='A OpenAI não concluiu a solicitação ('+response.status+'). O pedido e os passos realizados foram preservados.';
+ const e=new ProviderError(message,state);
+ e.code=quota?'openai_quota':temporary?'openai_rate_limit':'openai_error';
+ e.providerRejected=response.status>=400&&response.status<500;
+ e.providerDiagnostic={provider:'openai',status:response.status,code:/^[a-z0-9_]{1,80}$/.test(code)?code:null,type:typeof type==='string'&&/^[a-z0-9_]{1,80}$/.test(type)?type:null,requestId:response.headers?.get('x-request-id')?.slice(0,150)||null};
+ e.retryable=temporary;
+ return e;
+}
+export async function requestOpenAIResponse(config,body,{fetcher=fetch,sleep=ms=>new Promise(r=>setTimeout(r,ms))}={}) {
+ requireFields(config,['apiKey'],'a inteligência da Helpu');
+ for(let attempt=0;attempt<3;attempt++){
+  let response;
+  try{response=await fetcher('https://api.openai.com/v1/responses',{method:'POST',headers:{Authorization:'Bearer '+config.apiKey,'Content-Type':'application/json'},body:JSON.stringify(body),signal:AbortSignal.timeout(120000),redirect:'error'});}
+  catch{throw new ProviderError('A inteligência não respondeu. A conversa e os passos realizados foram preservados.');}
+  let data;try{data=await response.json();}catch{if(!response.ok)throw openAIError(response,{});throw new ProviderError('A inteligência não retornou uma confirmação válida.');}
+  if(response.ok)return data;
+  const error=openAIError(response,data);
+  const retryHeader=response.headers.get('retry-after'),seconds=retryHeader===null?NaN:Number(retryHeader);
+  const date=retryHeader===null?NaN:Date.parse(retryHeader);
+  const delay=Number.isFinite(seconds)?Math.max(0,seconds*1000):Number.isFinite(date)?Math.max(0,date-Date.now()):1000*2**attempt;
+  if(!error.retryable||attempt===2||delay>5000)throw error;
+  await sleep(delay);
+ }
+}
 export function requireFields(config,fields,name){if(fields.some(key=>!config[key]))throw new ProviderError(`Conecte ${name} em Integrações para executar esta ação.`,'blocked');}
 export function publicUrl(value){try{const u=new URL(value);if(u.protocol!=='https:'||u.username||u.password||/^(localhost|127\.|10\.|192\.168\.|169\.254\.|\[|0\.)/i.test(u.hostname)||/^172\.(1[6-9]|2\d|3[01])\./.test(u.hostname))return false;return value;}catch{return false;}}
 export function createProviders(fetcher=fetch){
  async function request(url,{method='GET',headers={},body,uncertain=false,withResponse=false,preserveInstagramId=false}={}){let response;try{response=await fetcher(url,{method,headers,body:body===undefined?undefined:body instanceof FormData?body:JSON.stringify(body),signal:AbortSignal.timeout(120000),redirect:'error'});}catch{throw new ProviderError('Não houve confirmação do serviço. Confira o resultado antes de repetir.',uncertain?'uncertain':'failed');}let data;try{data=preserveInstagramId?JSON.parse((await response.text()).replace(/("user_id"\s*:\s*)(\d+)/g,'$1"$2"')):await response.json();}catch{throw new ProviderError('O serviço não retornou uma confirmação válida.',uncertain?'uncertain':'failed');}if(!response.ok){
-  const hints={invalid_api_key:'A chave da API foi recusada. Atualize a conexão em Integrações.',insufficient_quota:'A conta da API está sem cota disponível. Confira saldo e limites no provedor.',model_not_found:'O modelo configurado não está disponível para esta chave. Confira o modelo e o acesso do projeto.',rate_limit_exceeded:'O limite temporário de solicitações foi atingido. Aguarde antes de tentar novamente.'};
-  const code=data?.error?.code||data?.error?.type,hint=new URL(url).hostname==='api.openai.com'?hints[code]:null;
-  const failure=new ProviderError(`O serviço recusou a solicitação (${response.status}). ${hint||'Verifique permissões, limites e configuração.'}`,response.status===401||response.status===403||hint&&code!=='rate_limit_exceeded'?'blocked':uncertain&&response.status>=500?'uncertain':'failed');
-  if(hint)failure.code=code;throw failure;
+  if(new URL(url).hostname==='api.openai.com'){
+   const error=openAIError(response,data);if(uncertain&&response.status>=500)error.state='uncertain';throw error;
+  }
+  throw new ProviderError(`O serviço recusou a solicitação (${response.status}). Verifique permissões, limites e configuração.`,response.status===401||response.status===403?'blocked':uncertain&&response.status>=500?'uncertain':'failed');
  }return withResponse?{data,requestId:response.headers.get('x-request-id')}:data;}
  const metaVersion=c=>/^v\d+\.\d+$/.test(c.version||'')?c.version:'v24.0';
  const bearer=token=>({Authorization:`Bearer ${token}`,'Content-Type':'application/json'});
@@ -63,7 +99,7 @@ export function createProviders(fetcher=fetch){
     data=await request('https://api.openai.com/v1/responses',{method:'POST',headers:bearer(config.apiKey),body:{model,store:false,max_output_tokens:1600,instructions:'Confirme o resultado da ferramenta de teste: ok true, o mesmo nonce e capability structured_tools. Nenhuma ação externa foi realizada.',input:[{role:'user',content:prompt},...(data.output||[]),{type:'function_call_output',call_id:calls[0].call_id,output:JSON.stringify({ok:true,nonce})}],tools:[probe],tool_choice:'none',text:{format:{type:'json_schema',name:'helpu_operational_validation',strict:true,schema}}}});
     const result=structured(data);if(result.ok!==true||result.nonce!==nonce||result.capability!=='structured_tools')throw new ProviderError('O modelo não confirmou o resultado estruturado do teste.');
     return {...responseMetadata(data,model,startedAt),status:'validated',structuredOutput:true,toolCalling:true,tools:[{name:toolName,status:'validated'},...available.map(name=>({name,status:'available_unvalidated'}))],message:'Responses, saída estruturada e chamada de ferramenta de teste validadas. Ferramentas de negócio não foram executadas.'};
-   }catch(e){return {...responseMetadata(data,model,startedAt),status:e.state==='blocked'?'blocked':'failed',structuredOutput:false,toolCalling,tools:available.map(name=>({name,status:'available_unvalidated'})),error:e instanceof ProviderError?e.message:'Não foi possível concluir o teste operacional da inteligência.'};}
+   }catch(e){return {...responseMetadata(data,model,startedAt),status:e.state==='blocked'?'blocked':'failed',structuredOutput:false,toolCalling,tools:available.map(name=>({name,status:'available_unvalidated'})),error:e instanceof ProviderError?e.message:'Não foi possível concluir o teste operacional da inteligência.',providerDiagnostic:e.providerDiagnostic||null};}
   },
   async contextualReview(config,{company,objective,content,knowledge=[],imageDataUrl=null}){
    const startedAt=Date.now(),model=modelFor(config);requireFields(config,['apiKey'],'OpenAI');

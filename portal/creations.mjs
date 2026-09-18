@@ -1,3 +1,5 @@
+import {requestOpenAIResponse} from './providers.mjs';
+import {unlimited,usageCount} from './usage.mjs';
 import {requestsAllImages} from './conversation-context.mjs';
 import {createVideoStyles,normalizeVideoOptions,VIDEO_PRESETS,VIDEO_TECHNIQUES} from './video-styles.mjs';
 import fs from 'node:fs/promises';
@@ -71,8 +73,8 @@ export function createCreations({db,company,integration,queue,saveRecord,record,
  }
  async function checkQuota(org,count){
   const policy=(await company(org)).policy,day=new Intl.DateTimeFormat('en-CA',{timeZone:policy.timeZone||'America/Sao_Paulo'}).format(new Date());
-  const used=(await db.prepare('SELECT count(*) AS n FROM usage_reservations WHERE org_id=? AND category=? AND day=?').get(org,'media',day)).n;
-  if(used+count>policy.dailyMedia)fail('Este pedido precisa de '+count+' gerações. O limite disponível hoje é '+Math.max(0,policy.dailyMedia-used)+'. Ajuste a quantidade ou o limite em Autonomia.',409);
+  const used=await usageCount(db,org,'media',day,policy);
+  if(!unlimited(policy.dailyMedia)&&used+count>policy.dailyMedia)fail('Este pedido precisa de '+count+' gerações. O limite disponível hoje é '+Math.max(0,policy.dailyMedia-used)+'. Ajuste a quantidade ou o limite em Autonomia.',409);
  }
  async function plan(job,request){
   const config=await integration(job.org_id,'openai'),brand=await company(job.org_id),refs=await references(job.org_id,request.attachments,request.format);
@@ -91,7 +93,7 @@ export function createCreations({db,company,integration,queue,saveRecord,record,
     body.text.format.schema.properties.videoStyle={type:'object',additionalProperties:false,properties:{font:{type:'string',enum:['sans','serif','condensed']},fontSize:{type:'number'},accent:{type:'string'},motion:{type:'string',enum:['none','zoom-in','zoom-out','pan']},textAnimation:{type:'string',enum:['fade','rise','pop','words']},transition:{type:'string',enum:['cut','fade','smoothleft']},fit:{type:'string',enum:['cover','contain']}},required:['font','fontSize','accent','motion','textAnimation','transition','fit']};body.text.format.schema.required.push('videoStyle');
     body.instructions+=' Em videoStyle adapte tipografia, cor, movimento e ritmo ao briefing e referências usando somente as opções disponíveis. Parâmetros explicitamente escolhidos pelo cliente prevalecem. Estilo reutilizado deve conservar a estrutura, sem copiar o assunto ou texto anteriores.';
   }
-  let data;if(respond)data=await respond(config,body);else{const res=await fetcher('https://api.openai.com/v1/responses',{method:'POST',headers:{Authorization:'Bearer '+config.apiKey,'Content-Type':'application/json'},body:JSON.stringify(body),signal:AbortSignal.timeout(90000)});if(!res.ok)throw new ProviderError(res.status===401||res.status===403?'A chave de criação não foi aceita. Confira a configuração da OpenAI.':res.status===429?'O serviço de criação atingiu seu limite de uso.':'O serviço não concluiu a criação.','blocked');data=await res.json();}
+  const data=respond?await respond(config,body):await requestOpenAIResponse(config,body,{fetcher});
   let result;try{result=JSON.parse((data.output||[]).flatMap(o=>o.content||[]).filter(c=>c.type==='output_text').map(c=>c.text).join(''));}catch{throw new ProviderError('O Astra não devolveu um plano válido.','failed');}
   if(data.status&&data.status!=='completed'||typeof result.caption!=='string'||result.caption.length>12000||!Array.isArray(result.slides)||result.slides.length!==count)throw new ProviderError('O plano não corresponde ao formato solicitado.','failed');
   for(const p of result.slides)if(typeof p.title!=='string'||p.title.length>150||typeof p.text!=='string'||p.text.length>(isVideo?110:500)||typeof p.visualPrompt!=='string'||p.visualPrompt.length>6000||!/^#[0-9a-f]{6}$/i.test(p.background)||!/^#[0-9a-f]{6}$/i.test(p.textColor))throw new ProviderError('O conteúdo precisa de um ajuste antes de gerar os arquivos.','failed');
@@ -119,7 +121,7 @@ export function createCreations({db,company,integration,queue,saveRecord,record,
     const reuseTiming=recipe?.every(s=>s.share*req.duration>=0.2&&s.share*req.duration<=15);
     const scenes=isVideo?prepared.slides.map((s,i)=>({duration:reuseTiming?Math.round(req.duration*recipe[i].share*1000)/1000:s.duration??req.duration/prepared.slides.length,text:s.text,background:s.background,textColor:s.textColor,position:recipe?.[i]?.position||s.position||VIDEO_PRESETS.find(p=>p.id===req.videoOptions?.preset)?.position||'center',fade:true,loopSource:!s.in,in:s.in||0,sourceAssetId:s.sourceAssetId===null?null:s.sourceAssetId||visual[i%visual.length]?.id||null})):undefined;
     const child=await queue(job.org_id,job.user_id,isVideo?'video':'image',{contentId:c.id,creationId:job.id,parentJobId:job.id,slideIndex:index+1,...isVideo?{provider:'astra-inline',scenes,referenceAssetIds:req.attachments,videoOptions:prepared.videoOptions||req.videoOptions}:{}},null,'creation-media:'+job.id+':'+index,{explicitImage:!isVideo,explicitVideo:isVideo});
-    if(!await db.prepare('SELECT 1 FROM usage_reservations WHERE job_id=?').get(child.id)){const used=(await db.prepare('SELECT count(*) AS n FROM usage_reservations WHERE org_id=? AND category=? AND day=?').get(job.org_id,'media',day)).n;if(used>=policy.dailyMedia)throw new ProviderError('O limite de mídia mudou durante o planejamento. Nenhuma página nova foi iniciada.','blocked');await db.prepare('INSERT INTO usage_reservations VALUES(?,?,?,?,?)').run(child.id,job.org_id,'media',day,Date.now());}
+    if(!await db.prepare('SELECT 1 FROM usage_reservations WHERE job_id=?').get(child.id)){const used=await usageCount(db,job.org_id,'media',day,policy);if(!unlimited(policy.dailyMedia)&&used>=policy.dailyMedia)throw new ProviderError('O limite de mídia mudou durante o planejamento. Nenhuma página nova foi iniciada.','blocked');await db.prepare('INSERT INTO usage_reservations VALUES(?,?,?,?,?)').run(child.id,job.org_id,'media',day,Date.now());}
     contentIds.push(c.id);jobIds.push(child.id);
    }
    await db.exec('COMMIT');

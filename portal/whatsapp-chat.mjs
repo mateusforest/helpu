@@ -1,3 +1,4 @@
+import {unlimited,usageResetAt} from './usage.mjs';
 import {createHash, createHmac, randomBytes, randomUUID, timingSafeEqual} from 'node:crypto';
 import fs from 'node:fs';
 import {receiveWhatsAppMedia} from './whatsapp-media.mjs';
@@ -244,8 +245,9 @@ export function createWhatsAppChat({db, metadata, saveMetadata, conversation, as
           return;
         }
       }
-      const dailyLimit=Math.max(1,Math.min(500,Number(env.HELPU_WHATSAPP_DAILY_MESSAGES)||60));
-      let dailyCount=Number((await db.prepare("SELECT count(*) AS n FROM records WHERE org_id=? AND kind='whatsapp_chat_outbox' AND created_at>=?").get(link.org,now()-86400000)).n);
+      const policy=JSON.parse((await db.prepare('SELECT policy FROM companies WHERE id=?').get(link.org))?.policy||'{}');
+      const dailyLimit=unlimited(policy.dailyMessages)?Infinity:Number.isFinite(Number(policy.dailyMessages))?Number(policy.dailyMessages):Math.max(1,Number(env.HELPU_WHATSAPP_DAILY_MESSAGES)||60);
+      let dailyCount=Number((await db.prepare("SELECT count(*) AS n FROM records WHERE org_id=? AND kind='whatsapp_chat_outbox' AND created_at>=? AND created_at>?").get(link.org,now()-86400000,usageResetAt(policy))).n);
       let sent=0;
       for(const message of messages) {
         const pieces=[];for(let i=0;i<message.text.length;i+=3500)pieces.push({text:message.text.slice(i,i+3500)});

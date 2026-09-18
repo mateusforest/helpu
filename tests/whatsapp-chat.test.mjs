@@ -100,8 +100,8 @@ for(const postgres of [false,true])test('WhatsApp oficial: telefone, conversa e 
    await server.portal.conversation.appendMessage(one.org,thread,'assistant','Entrega aguardando janela');
    const n=sent.length;await db.scope(()=>server.portal.tick());assert.equal(sent.length,n);
    assert.equal((await api(one,'whatsapp-chat')).body.deliveryState,'waiting_window');
-   await webhook('Pode continuar');env.HELPU_WHATSAPP_DAILY_MESSAGES='1';await db.scope(()=>server.portal.tick());assert.equal(sent.length,n);
-   env.HELPU_WHATSAPP_DAILY_MESSAGES='60';await db.scope(()=>server.portal.tick());assert.ok(sent.some(x=>x.body.text?.body==='Entrega aguardando janela'));
+   await webhook('Pode continuar');env.HELPU_WHATSAPP_DAILY_MESSAGES='60';await api(one,'company','PATCH',{policy:{dailyMessages:1}});await db.scope(()=>server.portal.tick());assert.equal(sent.length,n);
+   env.HELPU_WHATSAPP_DAILY_MESSAGES='1';await api(one,'company','PATCH',{policy:{dailyMessages:60}});await db.scope(()=>server.portal.tick());assert.ok(sent.some(x=>x.body.text?.body==='Entrega aguardando janela'));
   });
   await t.test('anexo recebido fica privado, vinculado à conversa e não duplica no replay',async()=>{
    await webhook('Use esta imagem como referência',undefined,{id:'inbound-image',media:'123456'});
