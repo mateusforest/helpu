@@ -18,7 +18,16 @@ if(process.platform==='linux'){
   const renderer=createReelsRenderer({env:{}});
   const sample=await renderer.render({scenes:[{duration:0.5,text:'Helpu · verificação de vídeo',fade:false}]});
   assert.ok(sample.bytes.length>24,'Reels production smoke render failed');
-  console.log('Linux Reels smoke render verified: text, H.264, AAC and MP4.');
+  // The one-scene smoke check cannot detect failures in transition assembly.
+  for(const transition of ['fade','smoothleft']){
+    const joined=await renderer.render({options:{transition,textAnimation:'rise',sourceAudio:false,soundEffects:'subtle'},scenes:[
+      {duration:0.6,text:'Cena 1',background:'#ffffff'},
+      {duration:0.6,text:'Cena 2',background:'#16804a'},
+      {duration:0.6,text:'Cena 3',background:'#202020'},
+    ]});
+    assert.ok(Math.abs(joined.duration-1.8)<0.15,'Reels transition duration mismatch: '+transition);
+  }
+  console.log('Linux Reels smoke render verified: text, H.264, AAC, chained transitions and sound effects.');
 }
 const root=path.resolve('dist');
 const pages=['index','cadastro','entrar','conta','portal','retorno','privacidade','termos','exclusao-de-dados'];

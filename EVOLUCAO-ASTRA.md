@@ -101,3 +101,14 @@ A revisão automática bloqueou o download amplo de variáveis secretas; o diagn
 Referência oficial: https://developers.openai.com/api/docs/guides/error-codes
 
 Após autorização explícita do usuário, a versão foi enviada para main e a Vercel confirmou READY/PROMOTED no deploy dpl_3wSiuCCcpSFT5XrTokbmEgeNzgYt (c4838ac). O navegador autenticado deixou de estar disponível antes da aplicação dos controles na EME; o reset e a ativação sem limite ainda não foram realizados na produção. Complementados os diagnósticos oficiais credit_balance_exhausted, organization_spend_limit_exceeded e project_spend_limit_exceeded; mais 28 testes direcionados passaram. A configuração HELPU_USAGE_TEST_ORGS já está publicada apenas para a EME.
+
+
+## 2026-09-18 — investigação da falha de montagem do Reels às 17:55
+
+- Log de produção confirmou FFmpeg code 234, categoria invalid_filter_configuration, etapa reels.mp4 e aborted=false. A recarga da OpenAI resolveu a conversa, mas não esta falha de montagem.
+- Não foi possível recuperar o plano privado do pedido: navegador autenticado indisponível. A causa específica ainda não está confirmada; não declarar o incidente resolvido.
+- Reprodução sintética local: Reels vertical de 15s com zoom, texto animado, três cenas e efeitos sonoros concluiu no FFmpeg 6.1.1.
+- Diagnóstico agora distingue divergência de frame rate, relógio, dimensões, formato de pixel e recursos. Registra somente categorias, filtros conhecidos, código e etapa; não armazena stderr, caminhos, textos ou mídias privadas. Falhas passam a constar na auditoria do pedido.
+- Build Linux agora verifica duas transições em três cenas e efeitos sonoros. O teste anterior verificava apenas uma cena.
+- Validação: sete testes passaram sem skips, incluindo MP4s reais de 15/30s, trilha, efeitos, transições, prévias e decodificação. Ambas as novas montagens curtas passaram localmente; sintaxe de 113 arquivos e git diff --check aprovados.
+- Atualização de diagnóstico preparada localmente; publicação e nova reprodução em produção pendentes.

@@ -6,7 +6,7 @@ import os from 'node:os';
 import { createHash } from 'node:crypto';
 import { promisify } from 'node:util';
 import { execFile } from 'node:child_process';
-import { createReelsRenderer, normalizeReelScenes, reelCaptions } from '../portal/reels-renderer.mjs';
+import { createReelsRenderer, normalizeReelScenes, reelCaptions, reelProcessDiagnostic } from '../portal/reels-renderer.mjs';
 const command = promisify(execFile);
 
 test('Reels subtitles preserve accents and neutralize ASS control injection', () => {
@@ -79,4 +79,22 @@ test('real Reels renders text, image motion, MP4 cuts and source audio into veri
   await assert.rejects(renderer.render({ scenes: [{ duration: 1, sourceAssetId: 'missing' }] }), /referência/);
   await assert.rejects(renderer.render({ scenes: [{ duration: 1 }], assets: [{ id: 'bad', mime: 'image/png', bytes: Buffer.from('not an image') }] }), /processamento|mídia válida/);
   t.diagnostic(`Render real de 30s + verificação concluído em ${Date.now() - started}ms.`);
+});
+
+test('Reels process diagnostics distinguish assembly failures without retaining private stderr', () => {
+  for(const [detail,category] of [
+    ['[Parsed_xfade_4] The inputs needs to be a constant frame rate; current rate of 1/0 is invalid','frame_rate_mismatch'],
+    ['[Parsed_xfade_4] First input link main timebase does not match second input link','timeline_mismatch'],
+    ['[Parsed_xfade_4] First input link main parameters do not match second input parameters','dimensions_mismatch'],
+    ['[auto_scale_0] Failed to configure output pad; Cannot allocate memory','resource_limit'],
+    ['[auto_scale_0] Failed to configure output pad','invalid_filter_configuration'],
+  ]){
+    const diagnostic=reelProcessDiagnostic(detail+' private-caption SECRET https://private.example/photo.jpg',{code:234,stage:'reels.mp4'});
+    assert.equal(diagnostic.category,category);
+    assert.ok(diagnostic.filters.includes(detail.includes('xfade')?'xfade':'auto_scale'));
+    assert.doesNotMatch(JSON.stringify(diagnostic),/SECRET|private|photo/);
+  }
+  const unknown=reelProcessDiagnostic('private path and caption',{stage:'secret-customer.jpg',signal:'private-value',code:'secret'});
+  assert.deepEqual(unknown,{code:null,category:'process_failed',stage:'media-check',aborted:false,signal:null,filters:[]});
+  assert.equal(reelProcessDiagnostic('',{signal:'SIGKILL'}).signal,'SIGKILL');
 });

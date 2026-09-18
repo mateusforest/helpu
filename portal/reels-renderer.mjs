@@ -85,6 +85,27 @@ ${events}
 `;
 }
 
+// Only fixed labels and bounded numeric values leave the renderer. Never retain
+// stderr: it may contain user captions, file names, or private media paths.
+export function reelProcessDiagnostic(stderr, { code = null, stage = '', aborted = false, signal = null } = {}) {
+  const text=String(stderr||'');
+  const categories=[
+    ['missing_filter', /No such filter/i],
+    ['font_error', /Error loading.*font|fontselect.*failed/i],
+    ['invalid_media', /Invalid data found/i],
+    ['resource_limit', /pthread_create|Resource temporarily unavailable|Cannot allocate memory|out of memory/i],
+    ['frame_rate_mismatch', /frame rate|frame_rate|framerate|constant frame rate/i],
+    ['timeline_mismatch', /timebase|time base/i],
+    ['dimensions_mismatch', /do not match.*(width|height|size)|parameters.*do not match|size.*does not match/i],
+    ['pixel_format_mismatch', /pixel format|pix_fmt/i],
+    ['invalid_filter_configuration', /Invalid argument|Error initializing|Failed to configure/i],
+  ];
+  const category=categories.find(([,pattern])=>pattern.test(text))?.[0]||'process_failed';
+  const filters=['xfade','acrossfade','auto_scale','scale','fps','settb','setpts','format','ass','aresample','apad','atrim','amix','alimiter'].filter(name=>new RegExp('(?:Parsed_|\\b)'+name+'(?:_\\d+|\\b)').test(text));
+  const safeStage=/^(?:scene-\d+|reels|effects|mixed|preview)\.mp4$/.test(stage)?stage:'media-check';
+  return {code:Number.isInteger(code)?code:null,category,stage:safeStage,aborted:aborted===true,signal:['SIGKILL','SIGTERM','SIGABRT','SIGSEGV'].includes(signal)?signal:null,filters};
+}
+
 async function run(binary, args, { signal, cwd }) {
   return new Promise((resolve, reject) => {
     const child = spawn(binary, args, { windowsHide: true, shell: false, cwd, signal, stdio: ['ignore', 'pipe', 'pipe'] });
@@ -93,13 +114,11 @@ async function run(binary, args, { signal, cwd }) {
     let diagnostic = '';
     child.stderr.on('data', data => { diagnostic = (diagnostic + data).slice(-8192); });
     child.on('error', () => reject(error(signal.aborted ? 'O vídeo excedeu o tempo de processamento disponível.' : 'Não foi possível iniciar o processamento do vídeo.')));
-    child.on('close', code => {
+    child.on('close', (code, terminationSignal) => {
       if (code === 0) return resolve(output);
-      // Log categories only: FFmpeg output may contain private paths or user text.
-      const category = /No such filter/.test(diagnostic) ? 'missing_filter' : /Error loading.*font|fontselect.*failed/i.test(diagnostic) ? 'font_error' : /Invalid data found/.test(diagnostic) ? 'invalid_media' : /pthread_create|Resource temporarily unavailable|Cannot allocate memory/i.test(diagnostic) ? 'resource_limit' : /timebase|time base/i.test(diagnostic) ? 'timeline_mismatch' : /Invalid argument|Error initializing|Failed to configure/i.test(diagnostic) ? 'invalid_filter_configuration' : 'process_failed';
-      const stage=path.basename(String(args.at(-1))).replace(/[^a-z0-9_.-]/gi,'').slice(0,40);
-      console.error('helpu_reels_process_failed', { binary: path.basename(binary), code, category, stage, aborted: signal.aborted });
-      reject(error(signal.aborted ? 'O vídeo excedeu o tempo de processamento disponível.' : 'Não foi possível concluir o processamento do vídeo.'));
+      const processDiagnostic=reelProcessDiagnostic(diagnostic,{code,stage:path.basename(String(args.at(-1))),aborted:signal.aborted,signal:terminationSignal});
+      console.error('helpu_reels_process_failed',processDiagnostic);
+      reject(Object.assign(error(signal.aborted ? 'O vídeo excedeu o tempo de processamento disponível.' : 'Não foi possível concluir o processamento do vídeo.'),{processDiagnostic}));
     });
   });
 }

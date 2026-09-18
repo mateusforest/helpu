@@ -1378,6 +1378,7 @@ export async function createPortal({db, dataDir, userFrom, json, safeOrigin, pro
         }
         if ((e.state === 'blocked' && e.code !== 'conversation_step_limit') || e.providerRejected === true) await db.prepare('DELETE FROM usage_reservations WHERE job_id=?').run(job.id);
         if(e.providerDiagnostic)await audit(job.org_id,'agente','Solicitação recusada pela OpenAI',job.id,JSON.stringify(e.providerDiagnostic));
+        if(e.processDiagnostic)await audit(job.org_id,'agente','Falha no processamento do vídeo',job.id,JSON.stringify(e.processDiagnostic));
         if (!stopped) await setJob(job.id, e.state || 'failed', {
           error: str(e.message, 500)
         });
