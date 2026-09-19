@@ -49,3 +49,7 @@ import './creation-schedules.test.mjs';
 import './conversation-context.test.mjs';
 
 import './usage.test.mjs';
+import './provider-usage.test.mjs';
+import './provider-usage-summary.test.mjs';
+
+import './company-diagnosis.test.mjs';

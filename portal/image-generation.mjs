@@ -2,6 +2,7 @@ import fs from 'node:fs';
 import {createHash} from 'node:crypto';
 import {inflateSync} from 'node:zlib';
 import {ProviderError} from './providers.mjs';
+import {recordProviderUsage} from './provider-usage.mjs';
 
 export const IMAGE_MODEL='gpt-image-2.5-sunburst';
 const hash=value=>createHash('sha256').update(typeof value==='string'||Buffer.isBuffer(value)?value:JSON.stringify(value)).digest('hex');
@@ -56,7 +57,7 @@ export function decodeGeneratedPng(encoded){
  return {bytes,width,height,mime:'image/png',hash:hash(bytes)};
 }
 
-export function createImageWorkflow({record,company,metadata,saveMetadata,studio,integration,providers,storeAsset,assetPath,systemUpdate,setJob,beforeMutation}){
+export function createImageWorkflow({db,record,company,metadata,saveMetadata,studio,integration,providers,storeAsset,assetPath,systemUpdate,setJob,beforeMutation}){
  async function prepare(org,id){
   const content=await record(org,'content',id),brand=await company(org),decision=await metadata(org,'studio:decision:'+id),materials=await metadata(org,'brand:production');
   if(content.status==='published')throw new ProviderError('Crie uma nova versão do conteúdo publicado antes de gerar outra imagem.','blocked');
@@ -101,13 +102,15 @@ export function createImageWorkflow({record,company,metadata,saveMetadata,studio
    if(prior.imageStartedAt)throw new ProviderError('A geração anterior foi iniciada e ainda precisa ser conferida. Ela não será repetida automaticamente.','uncertain');
    await beforeMutation(job);
    await setJob(job.id,'working',{external:{...prior,imageStartedAt:Date.now(),provider:'openai'}});
-   let result;
-   try{result=await providers.generateImage(input.config,{prompt:input.prompt,size:input.layout.size,images:input.images});}
+   let result,usageRecorded=false;
+   const onUsage=async response=>{if(db)await recordProviderUsage(db,job,response,{operation:'image',model:IMAGE_MODEL});usageRecorded=true;};
+   try{result=await providers.generateImage(input.config,{prompt:input.prompt,size:input.layout.size,images:input.images,onUsage});}
    catch(error){
     // A definite refusal can be retried after fixing access; an ambiguous call stays fenced.
     if(['blocked','failed'].includes(error.state))await setJob(job.id,'working',{external:{...prior,provider:'openai'}});
     throw error;
    }
+   if(!usageRecorded)await onUsage(result);
    const file=decodeGeneratedPng(result.base64);
    if(input.layout.key!=='legacy'&&(file.width!==input.layout.width||file.height!==input.layout.height))throw new ProviderError('A imagem retornou em um tamanho diferente do formato solicitado. Confira a tentativa antes de gerar novamente.','uncertain');
    try{

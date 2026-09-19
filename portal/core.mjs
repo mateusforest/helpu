@@ -1,4 +1,5 @@
 import {unlimited,parseUsageLimit,usageCount,usageSnapshot} from './usage.mjs';
+import {recordProviderUsage} from './provider-usage.mjs';
 import {createCreations,inlineVideoHash} from './creations.mjs';
 import {createCreationSchedules} from './creation-schedules.mjs';
 import {createReelsRenderer} from './reels-renderer.mjs';
@@ -415,6 +416,11 @@ export async function createPortal({db, dataDir, userFrom, json, safeOrigin, pro
     if(deliveryOnly && ['publish','insights','metaCampaign','googlePresence','send'].includes(kind)) fail('A Helpu entrega o conteúdo pelo WhatsApp vinculado; a publicação é manual. Esta ação não está disponível.',409);
     await checkParent(org, payload);
     payload={...payload};delete payload.mediaAuthorization;
+    if(payload.purpose==='company_diagnosis'){
+      if(kind!=='agent')fail('O diagnóstico precisa ser uma análise da empresa.');
+      const brief=str(payload.brief,12000);if(!brief)fail('Informe a direção do diagnóstico.');
+      payload={agent:'strategy',purpose:'company_diagnosis',brief};
+    }
     if(kind==='image')payload.provider='openai';
     if (!['agent', 'image', 'video', 'publish', 'send', 'insights', 'metaCampaign', 'googlePresence', 'conversation','creation'].includes(kind)) fail('Ação inválida.');
     if (['image', 'video', 'publish'].includes(kind)) await record(org, 'content', payload.contentId);
@@ -690,6 +696,7 @@ export async function createPortal({db, dataDir, userFrom, json, safeOrigin, pro
       integrations: await integrationState(org),
       connectionLogin: {instagram:instagramLogin.status()},
       runtime: await cloudRuntime.status(org),
+      creationCapabilities: await creations.capabilities(org),
       agents: AGENTS,
       jobs: (await db.prepare('SELECT * FROM jobs WHERE org_id=? ORDER BY created_at DESC LIMIT 150').all(org)).map(decodeJob),
       audit: await db.prepare('SELECT * FROM audit WHERE org_id=? ORDER BY created_at DESC LIMIT 60').all(org),
@@ -746,7 +753,7 @@ export async function createPortal({db, dataDir, userFrom, json, safeOrigin, pro
     providers,
     integration
   });
-  const imageWorkflow=createImageWorkflow({record,company,metadata,saveMetadata,studio,integration,providers,storeAsset,assetPath,systemUpdate,setJob,beforeMutation});
+  const imageWorkflow=createImageWorkflow({db,record,company,metadata,saveMetadata,studio,integration,providers,storeAsset,assetPath,systemUpdate,setJob,beforeMutation});
   const reels=reelsRenderer||createReelsRenderer();
   const creations=createCreations({db,company,integration,queue,saveRecord,record,assetPath,storeAsset,systemUpdate,setJob,beforeMutation,renderer:reels,respond:creationRespond,metadata,saveMetadata});
   const creationSchedules=createCreationSchedules({db,creations,company});
@@ -912,6 +919,7 @@ export async function createPortal({db, dataDir, userFrom, json, safeOrigin, pro
         }));
       }
       const result = await providers.text(await integration(org, 'openai'), {
+        onUsage: response=>recordProviderUsage(db,job,response,{operation:'agent',model:response.configuredModel}),
         agent: payload.agent,
         brief: str(payload.brief, 12000),
         company: {
@@ -921,6 +929,8 @@ export async function createPortal({db, dataDir, userFrom, json, safeOrigin, pro
         records: context
       });
       await beforeMutation(job);
+      // A company diagnosis is a report, even if the model returns unsolicited pieces.
+      if(payload.agent==='strategy'&&payload.purpose==='company_diagnosis')result.pieces=[];
       const ids = [];
       for (const piece of result.pieces.slice(0, 3)) {
         const created = await saveRecord(org, 'content', {
@@ -1617,7 +1627,7 @@ export async function createPortal({db, dataDir, userFrom, json, safeOrigin, pro
     }
     if(section==='billing'){
       if(req.method==='GET'&&!kind)json(res,200,await billing.state(org,user));
-      else if(req.method==='POST'&&kind){await body(req);json(res,200,await billing.action(org,user,kind));}
+      else if(req.method==='POST'&&kind){const input=await body(req);json(res,200,await billing.action(org,user,kind,input));}
       else fail('Método não permitido.',405);
       return true;
     }
@@ -1772,7 +1782,8 @@ export async function createPortal({db, dataDir, userFrom, json, safeOrigin, pro
       });
       try {
         if (kind === 'openai') result = await providers.operationalValidation(config, {
-          tools: ['deliver_post']
+          tools: ['deliver_post'],
+          onUsage: response=>recordProviderUsage(db,{org_id:org,operationId:validationId},response,{operation:'operational_validation',model:response.configuredModel})
         }); else {
           const identity = await providers.instagramIdentity(config);
           result = {

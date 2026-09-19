@@ -26,7 +26,7 @@ export function createAccountUI({api,esc,getState,onUser,toast}){
   try{
    if(action==='refresh')await load();
    if(action==='revoke'){await api('/api/account/sessions/revoke','POST',{});toast('As outras sessões foram encerradas.');await load();}
-   if(['checkout','portal'].includes(action)){const result=await api('/api/portal/'+org+'/billing/'+action,'POST',{});if(org===getState()?.company.id&&active)location.assign(result.url);}
+   if(['checkout','portal'].includes(action)){const result=await api('/api/portal/'+org+'/billing/'+action,'POST',b.dataset.offerId?{offerId:b.dataset.offerId}:{});if(org===getState()?.company.id&&active)location.assign(result.url);}
   }catch(e){toast(e.message,true);}finally{b.disabled=false;}
  });
  return {page,mount(view){active=view==='account';if(!active){sequence++;return;}bind();load();}};

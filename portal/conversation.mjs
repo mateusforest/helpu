@@ -1,4 +1,5 @@
 import {requestOpenAIResponse} from './providers.mjs';
+import {recordProviderUsage} from './provider-usage.mjs';
 import {conversationRequestContext,applyMediaContext,CONVERSATION_CONTEXT_RULES} from './conversation-context.mjs';
 import {astraContext} from './astra-context.mjs';
 import fs from 'node:fs';
@@ -143,9 +144,10 @@ export async function createConversation({db, dataDir, company, integration, lis
     if (jobId && !rows.length) throw new ProviderError('Execução não encontrada nesta empresa.', 'blocked');
     return {...context,capabilities:{...context.capabilities,scheduling:!!creationSchedules,schedulingScope:creationSchedules?'Geração avulsa e semanal via creation_schedule. Horário inicia a geração; não publica. Execução em nuvem exige worker periódico ativo.':null}, jobs: rows};
   }
-  async function ask(config, body) {
-    if (respond) return respond(config, body);
-    return requestOpenAIResponse(config,body);
+  async function ask(job,config,body,operation='conversation') {
+    const response=respond?await respond(config,body):await requestOpenAIResponse(config,body);
+    await recordProviderUsage(db,job,response,{operation,model:body.model});
+    return response;
   }
   async function runPost(job, input) {
     const org = job.org_id, operation = await kernel.jobOperation(job), threadId = operation.threadId;
@@ -191,7 +193,7 @@ export async function createConversation({db, dataDir, company, integration, lis
         operationId: operation.id
       });
       await db.prepare('UPDATE jobs SET lease_until=? WHERE id=?').run(Date.now() + 180000, job.id);
-      const response = await ask(config, {
+      const response = await ask(job,config, {
         model: config.agentModel || 'gpt-6-astra',
         store: false,
         reasoning: {
@@ -206,7 +208,7 @@ export async function createConversation({db, dataDir, company, integration, lis
           name: 'deliver_post'
         },
         parallel_tool_calls: false
-      });
+      },'post');
       if (await paused() || (await kernel.get(org, operation.id)).paused) throw new ProviderError('A operação foi pausada antes de registrar a entrega.', 'canceled');
       if (response.status && response.status !== 'completed') throw new ProviderError('A inteligência não concluiu a proposta.');
       const calls = (response.output || []).filter(x => x.type === 'function_call' && x.name === 'deliver_post');
@@ -296,7 +298,7 @@ export async function createConversation({db, dataDir, company, integration, lis
       while (iterations++ < 10) {
         if (await stopped()) throw new ProviderError('Execução pausada. Os passos já realizados estão no histórico.', 'canceled');
         await db.prepare('UPDATE jobs SET lease_until=? WHERE id=?').run(Date.now() + 180000, job.id);
-        const response = await ask(config, {
+        const response = await ask(job,config, {
           model: config.agentModel || 'gpt-6-astra',
           store: false,
           include: ['reasoning.encrypted_content'],

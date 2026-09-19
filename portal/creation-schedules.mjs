@@ -28,7 +28,7 @@ export function createCreationSchedules({db,creations,company,now=Date.now}){
   const weekly=input.repeat==='weekly';let rule=null,nextAt;
   if(weekly){if(!Array.isArray(input.weekdays)||!input.weekdays.length||input.weekdays.length>7||input.weekdays.some(d=>!Number.isInteger(d)||d<0||d>6)||!/^([01]\d|2[0-3]):[0-5]\d$/.test(input.time||''))fail('Informe os dias da semana (0 domingo a 6 sábado) e horário HH:mm.');rule={weekdays:[...new Set(input.weekdays)],time:input.time,timeZone};nextAt=nextWeekly(rule,now());}
   else {if(!/T.*(?:Z|[+-]\d{2}:\d{2})$/.test(input.scheduledAt||''))fail('Informe data e hora com fuso explícito.');nextAt=Date.parse(input.scheduledAt);if(!Number.isFinite(nextAt)||nextAt<=now())fail('Escolha uma data futura.');}
-  const attachments=input.attachments||[];if(!Array.isArray(attachments)||attachments.length>6)fail('Use até seis referências.');
+  const attachments=input.attachments||[],maximum=input.format==='reels'?8:6;if(!Array.isArray(attachments)||attachments.length>maximum||new Set(attachments).size!==attachments.length)fail(input.format==='reels'?'Use até oito referências diferentes.':'Use até seis referências diferentes.');
   for(const id of attachments)if(!await db.prepare('SELECT 1 FROM assets WHERE org_id=? AND id=?').get(org,id))fail('Referência não encontrada nesta empresa.');
   if(input.format==='reels'){normalizeVideoOptions(input.videoOptions||{});if(input.styleId)await creations.styles.get(org,input.styleId);if(input.referenceOnlyIds&&(!Array.isArray(input.referenceOnlyIds)||input.referenceOnlyIds.some(id=>!attachments.includes(id))))fail('Referência de estilo inválida.');}
   const duration=input.duration||15,slideCount=input.slideCount||3;

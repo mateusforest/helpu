@@ -1,4 +1,5 @@
 import {mapAsync} from "./async-collections.mjs";
+import {recordProviderUsage} from './provider-usage.mjs';
 import fs from 'node:fs';
 import {createHash, randomUUID} from 'node:crypto';
 import {lookup} from 'node:dns/promises';
@@ -309,6 +310,7 @@ export function createPublicationWorkflow({db, kernel, company, record, inspectA
     try {
       const source = await verifySource(org, op);
       const contextual = await providers.contextualReview(await integration(org, 'openai'), {
+        onUsage: response=>recordProviderUsage(db,{org_id:org,operationId:id},response,{operation:'contextual_review',model:response.configuredModel}),
         company: await company(org),
         objective: op.objective,
         content: item,

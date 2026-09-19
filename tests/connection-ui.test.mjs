@@ -20,3 +20,10 @@ test('autonomia distingue autorização da criação, rotina, publicação e fer
  assert.match(panelToolsStatus(true,{available:true,video:true}),/serviço de vídeo está acessível/);
  assert.match(panelToolsStatus(true,{available:true}),/href="#\/video"/);
 });
+
+test('autonomia mostra o renderizador de Reels sem depender do editor legado e explica agendamentos',()=>{
+ const state={company:{policy:{enabled:true,autoMedia:false}},integrations:[{id:'openai',configured:true}],worker:{running:true},runtime:{available:false,video:false},creationCapabilities:{reels:true}};
+ let html=autonomySummary(state,esc);assert.match(html,/Reels de 15 ou 30 segundos/);assert.match(html,/9:16 ou 16:9/);assert.doesNotMatch(html,/Falta ativar o serviço de vídeo/);assert.match(html,/horário inicia a geração/);assert.match(html,/janela de atendimento/);
+ state.creationCapabilities={reels:false,reelsReason:'Renderizador temporariamente <indisponível>'};html=autonomySummary(state,esc);assert.match(html,/temporariamente &lt;indisponível&gt;/);assert.doesNotMatch(html,/Reels de 15 ou 30/);
+ state.company.policy.enabled=false;html=autonomySummary(state,esc);assert.match(html,/Ative a rotina para agendar/);
+});

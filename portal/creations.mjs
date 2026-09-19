@@ -1,4 +1,5 @@
 import {requestOpenAIResponse} from './providers.mjs';
+import {recordProviderUsage} from './provider-usage.mjs';
 import {unlimited,usageCount} from './usage.mjs';
 import {requestsAllImages} from './conversation-context.mjs';
 import {createVideoStyles,normalizeVideoOptions,VIDEO_PRESETS,VIDEO_TECHNIQUES} from './video-styles.mjs';
@@ -94,6 +95,7 @@ export function createCreations({db,company,integration,queue,saveRecord,record,
     body.instructions+=' Em videoStyle adapte tipografia, cor, movimento e ritmo ao briefing e referências usando somente as opções disponíveis. Parâmetros explicitamente escolhidos pelo cliente prevalecem. Estilo reutilizado deve conservar a estrutura, sem copiar o assunto ou texto anteriores.';
   }
   const data=respond?await respond(config,body):await requestOpenAIResponse(config,body,{fetcher});
+  await recordProviderUsage(db,job,data,{operation:'creation_plan',model:body.model});
   let result;try{result=JSON.parse((data.output||[]).flatMap(o=>o.content||[]).filter(c=>c.type==='output_text').map(c=>c.text).join(''));}catch{throw new ProviderError('O Astra não devolveu um plano válido.','failed');}
   if(data.status&&data.status!=='completed'||typeof result.caption!=='string'||result.caption.length>12000||!Array.isArray(result.slides)||result.slides.length!==count)throw new ProviderError('O plano não corresponde ao formato solicitado.','failed');
   for(const p of result.slides)if(typeof p.title!=='string'||p.title.length>150||typeof p.text!=='string'||p.text.length>(isVideo?110:500)||typeof p.visualPrompt!=='string'||p.visualPrompt.length>6000||!/^#[0-9a-f]{6}$/i.test(p.background)||!/^#[0-9a-f]{6}$/i.test(p.textColor))throw new ProviderError('O conteúdo precisa de um ajuste antes de gerar os arquivos.','failed');
