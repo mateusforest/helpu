@@ -49,8 +49,11 @@ test('real exports preserve duration with mixed sources, transitions, music and 
  ]});
  assert.ok(Math.abs(effectsOnly.duration-15)<0.15,`duration without music ${effectsOnly.duration}`);
  const effectsFile=path.join(dir,'effects-only.mp4');await fs.writeFile(effectsFile,effectsOnly.bytes);
- const checked=JSON.parse((await command(ffprobe,['-v','error','-show_entries','format=duration:stream=codec_type,width,height,duration','-of','json',effectsFile],{windowsHide:true})).stdout);
- assert.equal(checked.streams.find(s=>s.codec_type==='video').width,1080);
+ const checked=JSON.parse((await command(ffprobe,['-v','error','-show_entries','format=duration:stream=codec_type,width,height,duration,r_frame_rate,avg_frame_rate','-of','json',effectsFile],{windowsHide:true})).stdout);
+ const videoStream=checked.streams.find(s=>s.codec_type==='video');
+ assert.equal(videoStream.width,1080);
+ assert.equal(videoStream.r_frame_rate,'30/1');
+ assert.equal(videoStream.avg_frame_rate,'30/1');
  for(const stream of checked.streams)assert.ok(Math.abs(Number(stream.duration)-15)<0.15,`${stream.codec_type} duration ${stream.duration}`);
  assert.equal((await command(ffmpeg,['-v','error','-i',effectsFile,'-f','null','-'],{windowsHide:true})).stderr,'');
  await assert.rejects(renderer.render({options:{musicAssetId:'photo'},assets,scenes:[{duration:1,text:'teste'}]}),/áudio/);

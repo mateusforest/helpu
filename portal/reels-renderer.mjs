@@ -249,13 +249,16 @@ export function createReelsRenderer({ env = process.env, ffmpegPath, ffprobePath
           const args=['-v','error','-y','-threads','2','-filter_complex_threads','1'];for(let i=0;i<scenes.length;i++)args.push('-threads','2','-i',`scene-${i}.mp4`);
           // MP4 edit lists, AAC priming and source frame rates can leave different
           // clocks on the segments. Normalize both tracks before combining them.
+          // fps must run after timestamp filters and after every xfade: Linux
+          // builds can otherwise expose an unknown frame rate to the next xfade.
+          // Keeping fps last also gives every transition the same 1/30 time base.
           const filters=[];
           for(let i=0;i<scenes.length;i++){
             const duration=round(scenes[i].duration+(i<scenes.length-1?overlap:0));
-            filters.push(`[${i}:v]fps=30,settb=AVTB,setpts=PTS-STARTPTS[clipv${i}]`,`[${i}:a]aresample=48000,apad,atrim=duration=${duration},asetpts=PTS-STARTPTS[clipa${i}]`);
+            filters.push(`[${i}:v]settb=AVTB,setpts=PTS-STARTPTS,fps=30[clipv${i}]`,`[${i}:a]aresample=48000,apad,atrim=duration=${duration},asetpts=PTS-STARTPTS[clipa${i}]`);
           }
           let video='clipv0',audio='clipa0',offset=0;
-          for(let i=1;i<scenes.length;i++){offset=round(offset+scenes[i-1].duration);filters.push(`[${video}][clipv${i}]xfade=transition=${opts.transition}:duration=${overlap}:offset=${offset}[v${i}]`,`[${audio}][clipa${i}]acrossfade=d=${overlap}[a${i}]`);video=`v${i}`;audio=`a${i}`;}
+          for(let i=1;i<scenes.length;i++){offset=round(offset+scenes[i-1].duration);filters.push(`[${video}][clipv${i}]xfade=transition=${opts.transition}:duration=${overlap}:offset=${offset},settb=AVTB,setpts=PTS-STARTPTS,fps=30[v${i}]`,`[${audio}][clipa${i}]acrossfade=d=${overlap}[a${i}]`);video=`v${i}`;audio=`a${i}`;}
           args.push('-filter_complex',filters.join(';'),'-map',`[${video}]`,'-map',`[${audio}]`,'-r','30','-fps_mode','cfr','-t',String(expected),'-c:v','libx264','-preset','ultrafast','-crf',opts.quality==='high'?'18':'23','-threads','2','-pix_fmt','yuv420p','-c:a','aac','-b:a','192k','-movflags','+faststart',output);
           await run(ffmpeg,args,{signal,cwd:work});
         }else await run(ffmpeg, ['-hide_banner', '-loglevel', 'error', '-nostdin', '-y', '-f', 'concat', '-safe', '1', '-i', 'concat.txt', '-c', 'copy', '-t', String(expected), '-map_metadata', '-1', '-movflags', '+faststart', output], { signal, cwd: work });
