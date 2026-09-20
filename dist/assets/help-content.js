@@ -1,5 +1,10 @@
 const topic = (title, intro, steps, example, result, recovery, links = []) => ({title, intro, steps, example, result, recovery, links});
 export const HELP_TOPICS = {
+  finance: topic('Consultar cobranças e comprovantes', 'O Financeiro reúne os documentos privados da sua empresa.',
+    ['Abra a cobrança e confira valor, vencimento e condições acordadas.', 'Baixe o boleto atual ou copie a linha digitável. Confira os dados no banco antes de pagar.', 'Envie o comprovante PDF e aguarde a conferência da equipe. Autorize avisos financeiros se desejar receber lembretes no WhatsApp conectado.'],
+    'Consultar o boleto do mês e enviar o comprovante de pagamento.',
+    'Comprovante enviado fica aguardando confirmação. Consultas e lembretes não iniciam uma geração de IA.',
+    ['Se o boleto foi substituído, use somente a versão atual nesta área.', 'Se o pagamento ainda não aparece, peça à equipe a conferência bancária. Ativar avisos não conecta o WhatsApp automaticamente.'], [['Abrir Financeiro','finance'],['Abrir conversa','conversation']]),
   commercial: topic('Preparar uma apresentação comercial', 'A equipe cria páginas públicas por setor e propostas privadas para cada conta.',
     ['Crie a apresentação, personalize a mensagem e anexe apenas exemplos autorizados. Confira a prévia restrita.', 'Libere o link após revisar o conteúdo público. Copie o endereço e compartilhe quando houver autorização para esse contato.', 'Acompanhe os interesses na fila e prepare a proposta para o e-mail de login do destinatário.'],
     'Criar uma apresentação para uma imobiliária com exemplos ilustrativos identificados e receber um pedido de conversa.',

@@ -3,7 +3,7 @@ import {recordProviderUsage} from './provider-usage.mjs';
 import {conversationRequestContext,applyMediaContext,CONVERSATION_CONTEXT_RULES} from './conversation-context.mjs';
 import {astraContext} from './astra-context.mjs';
 import fs from 'node:fs';
-import {randomUUID} from 'node:crypto';
+import {randomUUID,createHash} from 'node:crypto';
 import {ProviderError, requireFields} from './providers.mjs';
 import {createBrowserManager} from './browser.mjs';
 const tool = (name, description, properties, required = []) => ({
@@ -67,7 +67,7 @@ Object.assign(TOOLS.find(t=>t.name==='create_media').parameters.properties,{vide
 TOOLS.push(tool('creation_library','Consulta prévias, IDs, estados de aprovação e estilos salvos da empresa. Use para encontrar o vídeo a ajustar ou o estilo solicitado.',{}));
 TOOLS.push(tool('creation_review','Aprova uma prévia, solicita ajuste versionado ou salva o estilo de um vídeo aprovado. Aprovar e salvar estilo somente quando o cliente pedir. Use creation_library para resolver o ID; nunca adivinhe. Não publica. Ajustes geram nova versão com cobrança normal.',{id:string,action:{type:'string',enum:['approve','revise','save-style']},adjustment:string,name:string,videoOptions:videoSettings},['id','action']));
 Object.assign(TOOLS.find(t=>t.name==='creation_schedule').parameters.properties,{videoOptions:videoSettings,styleId:string,referenceOnlyIds:{type:'array',items:string}});
-export async function createConversation({db, dataDir, company, integration, list, saveRecord, queue, audit, json, assetPath, browserLaunch, respond, kernel, updateProfile, reviewPublication,integrationState,workerState,cloud=false,runtimeTools,browserOverride,deliveryOnly=true,creations,creationSchedules}) {
+export async function createConversation({db, dataDir, company, integration, list, saveRecord, queue, audit, json, assetPath, browserLaunch, respond, kernel, updateProfile, reviewPublication,integrationState,workerState,cloud=false,runtimeTools,browserOverride,deliveryOnly=true,creations,creationSchedules,financeReply}) {
   const browser = browserOverride || await createBrowserManager({
     db,
     dataDir,
@@ -547,6 +547,21 @@ export async function createConversation({db, dataDir, company, integration, lis
     }
     if (attachmentBytes > 20 * 1024 * 1024) throw new Error('Use até 20 MB de imagens e PDFs por pedido.');
     const key = String(d.idempotencyKey || randomUUID()).slice(0, 180);
+    if(!attachments.length&&financeReply){
+      const reply=await financeReply(org,user,text);
+      if(reply){
+        const receipt='finance-chat:'+createHash('sha256').update(JSON.stringify([org,id,user.id,key])).digest('hex');
+        await db.exec('SAVEPOINT finance_chat');
+        try{
+          const previous=await db.prepare('SELECT text FROM conversation_messages WHERE id=?').get(receipt+':user');
+          if(previous&&previous.text!==text)throw Object.assign(new Error('Esta chave corresponde a outro pedido.'),{status:409});
+          await db.prepare('INSERT INTO conversation_messages VALUES(?,?,?,?,?,?,?,?) ON CONFLICT(id) DO NOTHING').run(receipt+':user',id,org,'user',text,'[]',null,Date.now());
+          await receiveReferences(org,id,{key:receipt,reply});
+          await db.exec('RELEASE SAVEPOINT finance_chat');
+          return {direct:true,payload:{conversationId:id},replayed:!!previous};
+        }catch(error){await db.exec('ROLLBACK TO SAVEPOINT finance_chat');await db.exec('RELEASE SAVEPOINT finance_chat');throw error;}
+      }
+    }
     const existing = await db.prepare('SELECT id,kind,payload FROM jobs WHERE org_id=? AND idempotency_key=?').get(org, key);
     if (existing) {
       if (existing.kind !== 'conversation' || JSON.parse(existing.payload).conversationId !== id) {

@@ -12,6 +12,10 @@
     {
       "source": "/webhooks/helpu-whatsapp",
       "destination": "/api/runtime"
+    },
+    {
+      "source": "/webhooks/helpu-stripe",
+      "destination": "/api/runtime"
     }
   ],
   "functions": {

@@ -1,4 +1,5 @@
 import {randomUUID} from 'node:crypto';
+import {verifyStripeEvent} from './stripe-signature.mjs';
 
 const fail=(message,status=400)=>{throw Object.assign(new Error(message),{status});};
 const terminal=new Set(['canceled','incomplete_expired']);
@@ -148,5 +149,25 @@ export function createStripeBilling({db,metadata,saveMetadata,company,env=proces
       const url=stripeUrl(result.url,['checkout.stripe.com']);if(!url)fail('O Stripe não retornou um endereço de pagamento válido.',502);return {url};
     });
   }
-  return {state,action};
+  async function financialEvent(bytes,signature){
+    const event=verifyStripeEvent(bytes,signature,env.STRIPE_WEBHOOK_SECRET,now());
+    if(event.livemode!==(mode==='live'))fail('Modo Stripe incompatível.',400);
+    const invoice=event.type==='invoice.paid',checkout=['checkout.session.completed','checkout.session.async_payment_succeeded'].includes(event.type);
+    if(!invoice&&!checkout)return null;
+    const id=event.data.object.id;if(!(invoice?/^in_\w+$/:/^cs_\w+$/).test(id||''))fail('Objeto Stripe inválido.');
+    const object=await request((invoice?'invoices/':'checkout/sessions/')+id);
+    if(object.id!==id||object.livemode!==event.livemode||object.currency!=='brl')return null;
+    if(invoice?object.status!=='paid':object.payment_status!=='paid'||object.mode!=='payment'||object.invoice)return null;
+    const customerId=typeof object.customer==='string'?object.customer:object.customer?.id;
+    if(!/^cus_\w+$/.test(customerId||''))return null;
+    const customer=await request('customers/'+customerId),org=customer.metadata?.helpu_company;
+    if(!org||!await db.prepare('SELECT id FROM companies WHERE id=?').get(org))return null;
+    if((await metadata(org,storageKey)).customerId!==customerId)return null;
+    const amountCents=invoice?object.amount_paid:object.amount_total;
+    if(!Number.isSafeInteger(amountCents)||amountCents<1)return null;
+    const timestamp=(invoice?object.status_transitions?.paid_at:event.created)||event.created;
+    if(!Number.isFinite(timestamp))fail('Data Stripe inválida.',502);
+    return {orgId:org,mode,objectId:id,eventId:event.id,amountCents,paidAt:timestamp*1000,dueAt:(invoice&&Number.isFinite(object.due_date)?object.due_date:timestamp)*1000,periodAt:(invoice&&Number.isFinite(object.period_start)?object.period_start:timestamp)*1000,description:invoice?'Fatura Stripe '+(object.number||id):'Pagamento Stripe '+id,reference:id};
+  }
+  return {state,action,financialEvent};
 }

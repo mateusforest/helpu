@@ -62,3 +62,5 @@ import './company-diagnosis.test.mjs';
 import './pricing.test.mjs';
 
 import './admin-routing.test.mjs';
+import './finance.test.mjs';
+import './finance-stripe.test.mjs';

@@ -17,7 +17,7 @@ const apiFiles=files.filter(file=>file.replaceAll('\\','/').startsWith('function
 const apiBytes=apiFiles.reduce((total,file)=>total+fs.statSync(path.join(root,file)).size,0);
 assert.ok(apiBytes<250*1024*1024,'API package exceeds the 250MB uncompressed function limit');
 const routing=JSON.parse(fs.readFileSync(path.join(root,'config.json'),'utf8'));
-for(const route of ['/webhooks/helpu-whatsapp','/api/health','/api/auth/me','/api/portal/company/files/asset']){
+for(const route of ['/webhooks/helpu-whatsapp','/webhooks/helpu-stripe','/api/health','/api/auth/me','/api/portal/company/files/asset']){
   assert.ok(routing.routes.some(rule=>rule.dest?.split('?')[0]==='/api/runtime'&&new RegExp(rule.src).test(route)),'Nested API route was not built: '+route);
 }
 console.log(JSON.stringify({state:'compiled_package_verified',files:files.length,privateFiles:0,functions:configs.length,apiBytes,runtime:configs[0].runtime}));

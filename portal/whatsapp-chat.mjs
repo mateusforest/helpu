@@ -274,5 +274,17 @@ export function createWhatsAppChat({db, metadata, saveMetadata, conversation, as
       }
     }
   }
-  return {status,save,receive,webhook,tick};
+  async function financeReminder(org,userId,stage,checkOnly=false){
+    if(!configured())return false;
+    const saved=await metadata(org,key(userId)),link=saved.phone?await getClaim(saved.phone):null;
+    if(!link?.enabled||link.org!==org||link.userId!==userId||!await member(link))return false;
+    const inside=Number(link.lastInboundAt)>=now()-86400000,template=env.HELPU_WHATSAPP_FINANCE_TEMPLATE;
+    if(!inside&&!/^[a-z0-9_]{1,100}$/.test(template||''))return false;
+    if(checkOnly)return true;
+    const body={messaging_product:'whatsapp',to:link.phone};
+    if(inside){body.type='text';body.text={body:stage==='due_2'?'Uma cobrança da sua empresa vence em dois dias. Confira o boleto e o status na Helpu, em Minha empresa → Financeiro. Se já pagou, envie o comprovante por lá para conferência.':'Há um documento de cobrança disponível na Helpu. Confira o vencimento e o status em Minha empresa → Financeiro.'};}
+    else{body.type='template';body.template={name:template,language:{code:env.HELPU_WHATSAPP_TEMPLATE_LANGUAGE||'pt_BR'}};}
+    const result=await graph(config().phoneId+'/messages',body);return result.messages?.[0]?.id?'accepted':'uncertain';
+  }
+  return {status,save,receive,webhook,tick,financeReminder};
 }

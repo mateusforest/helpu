@@ -7,7 +7,7 @@ operador conferida pelo servidor. Não há um segundo cadastro administrativo.
 
 - Login de operador, ao chegar em `portal.html` sem destino específico, abre a
   administração. Clientes continuam no portal habitual.
-- Navegação administrativa própria: Visão geral, Clientes, Publicações,
+- Navegação administrativa própria: Visão geral, Clientes, Financeiro, Publicações,
   Consultorias, Comercial e Planos e custos.
 - Visão geral mostra números reais e próximos passos das filas existentes.
 - Diretório lista empresas cadastradas e contagens operacionais. Cadastro não
@@ -33,8 +33,8 @@ próprias verificações administrativas.
 
 Publicações, consultorias, comercial e preços reutilizam as funções e controles
 de versão existentes. Não há alteração no fluxo de aprovação, no faturamento,
-nas cotas ou na autorização de execução. Financeiro permanece identificado como
-pendente, sem saldo ou receita inventados. Não foram implementados impersonação
+nas cotas ou na autorização de execução. O Financeiro foi acrescentado no F12,
+com documentos privados e conciliação descritos em `financeiro-f12.md`. Não foram implementados impersonação
 de clientes ou leitura administrativa de conversas privadas.
 
 ## Validação
@@ -42,7 +42,7 @@ de clientes ou leitura administrativa de conversas privadas.
 - Teste de redirecionamento do operador, modo cliente explícito e callbacks.
 - Endpoint administrativo testado em SQLite e PostgreSQL: permissões, diretório,
   agregação por empresa, ausência de dados privados e revogação de operador.
-- Teste de navegador com contas fictícias: início administrativo, seis áreas,
+- Teste de navegador com contas fictícias: início administrativo, sete áreas,
   rascunho de oferta, volta ao cliente, acesso negado ao cliente, links antigos
   e telas de 1440, 390 e 320 px.
 - Fluxo completo de planos e propostas executado novamente na nova estrutura.

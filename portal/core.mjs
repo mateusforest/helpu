@@ -1,4 +1,5 @@
 import {adminOverview} from './admin-overview.mjs';
+import {createFinance} from './finance.mjs';
 import {createPricing} from './pricing.mjs';
 import {createCommercial} from './commercial.mjs';
 import {createConsultations} from './consultations.mjs';
@@ -163,9 +164,10 @@ export async function createPortal({db, dataDir, userFrom, json, safeOrigin, pro
     }catch(e){await db.exec('ROLLBACK');throw e;}
     await kernel.onBrand(org);
   }});
-  async function assetPath(org, id) {
+  async function assetPath(org, id, financialDownload=false) {
     const a = await db.prepare('SELECT * FROM assets WHERE id=? AND org_id=?').get(id, org);
     if (!a) fail('Arquivo não encontrado.', 404);
+    if(a.source_url==='helpu:finance'&&!financialDownload)fail('Use a área Financeiro para acessar este documento.',403);
     if(privateStorage)return privateStorage.localPath(a);
     return path.join(storage, a.path);
   }
@@ -667,7 +669,7 @@ export async function createPortal({db, dataDir, userFrom, json, safeOrigin, pro
     return await storeAsset(org, name, Buffer.concat(chunks), url);
   }
   async function files(org) {
-    return (await db.prepare('SELECT id,name,mime,size,source_url AS sourceUrl,created_at AS createdAt FROM assets WHERE org_id=? ORDER BY created_at DESC').all(org)).map(a => ({
+    return (await db.prepare("SELECT id,name,mime,size,source_url AS sourceUrl,created_at AS createdAt FROM assets WHERE org_id=? AND (source_url IS NULL OR source_url<>'helpu:finance') ORDER BY created_at DESC").all(org)).map(a => ({
       ...a,
       url: '/api/portal/files/' + a.id
     }));
@@ -797,6 +799,7 @@ export async function createPortal({db, dataDir, userFrom, json, safeOrigin, pro
     }
   });
   const conversation = await createConversation({
+    financeReply:(org,user,text)=>finance.chat(org,user,text),
     deliveryOnly,creations,creationSchedules,
     db,
     dataDir,
@@ -823,6 +826,7 @@ export async function createPortal({db, dataDir, userFrom, json, safeOrigin, pro
   const commercial=createCommercial({db,operator:assisted.operator,now:assistedNow,pricing});
   const whatsappWelcome=createWhatsAppWelcome({db,env:whatsappChatEnv,fetcher:whatsappChatFetch});
   const whatsappChat=createWhatsAppChat({db,metadata,saveMetadata,conversation,assetPath,storeAsset,env:whatsappChatEnv,fetcher:whatsappChatFetch,onInbound:whatsappWelcome.receive,onDelivery:whatsappWelcome.delivery});
+  const finance=createFinance({db,operator:assisted.operator,storeAsset,now:assistedNow,deliver:whatsappChat.financeReminder});
   async function registerSignup(user,input) {
     const contact=signupWhatsAppInput(input,whatsappChatEnv);
     const [org]=await companies(user);
@@ -1350,6 +1354,7 @@ export async function createPortal({db, dataDir, userFrom, json, safeOrigin, pro
     lastTick = Date.now();
     try {
       await whatsappWelcome.tick();
+      await finance.tick();
       await creationSchedules.tick();
       for (const expired of await db.prepare("SELECT * FROM jobs WHERE state='working' AND (lease_until IS NULL OR lease_until<?)").all(Date.now())) {
         if (expired.kind === 'conversation') await conversation.recover(expired);
@@ -1563,6 +1568,11 @@ export async function createPortal({db, dataDir, userFrom, json, safeOrigin, pro
     }
     if(pathname==='/api/connect/instagram/callback'){try{await instagramLogin.callback(req,res);}catch{if(!res.headersSent)res.writeHead(303,{Location:'/retorno.html?connection=failed','Cache-Control':'no-store','Referrer-Policy':'no-referrer'}).end();}return true;}
     if(pathname==='/webhooks/helpu-whatsapp'){await whatsappChat.webhook(req,res,url,readRaw);return true;}
+    if(pathname==='/webhooks/helpu-stripe'){
+      if(req.method!=='POST')fail('Método não permitido.',405);
+      const event=await billing.financialEvent(await readRaw(req,256*1024),req.headers['stripe-signature']);
+      json(res,200,await finance.recordStripe(event));return true;
+    }
     if (pathname.startsWith('/webhooks/')) {
       const [, , org, provider] = pathname.split('/');
       await webhook(req, res, url, org, provider);
@@ -1617,6 +1627,18 @@ export async function createPortal({db, dataDir, userFrom, json, safeOrigin, pro
       });
       return true;
     }
+    if(pathname==='/api/portal/finance'||pathname==='/api/portal/finance/files'){
+      const admin=url.searchParams.get('admin')==='1',financeOrg=url.searchParams.get('org')||'';
+      if(pathname.endsWith('/files')){
+        if(req.method!=='POST')fail('Método não permitido.',405);
+        await finance.access(financeOrg,user,admin);
+        const input={id:String(req.headers['x-finance-id']||''),version:Number(req.headers['x-record-version']),code:String(req.headers['x-payment-code']||''),bankReference:decodeURIComponent(String(req.headers['x-bank-reference']||''))};
+        json(res,200,await finance.upload(financeOrg,user,input,decodeURIComponent(String(req.headers['x-file-name']||'documento.pdf')),await readRaw(req,3*1024*1024),admin));
+      }else if(req.method==='GET')json(res,200,await finance.listing(financeOrg,user,admin));
+      else if(req.method==='POST')json(res,200,await finance.action(financeOrg,user,await body(req),admin));
+      else fail('Método não permitido.',405);
+      return true;
+    }
     if(pathname==='/api/portal/admin-overview'){
       if(!assisted.operator(user))fail('Acesso restrito à equipe autorizada.',403);
       if(req.method!=='GET')fail('Método não permitido.',405);
@@ -1666,10 +1688,11 @@ export async function createPortal({db, dataDir, userFrom, json, safeOrigin, pro
     if (pathname.startsWith('/api/portal/files/')) {
       const id = pathname.split('/').at(-1), asset = await db.prepare('SELECT * FROM assets WHERE id=?').get(id);
       if (!asset) fail('Arquivo não encontrado.', 404);
-      if(!await assisted.canReadAsset(user,asset)&&!await consultations.canReadAsset(user,asset)&&!await commercial.canReadAsset(user,asset))await access(asset.org_id, user);
+      if(asset.source_url==='helpu:finance')await finance.authorizeFile(user,asset);
+      else if(!await assisted.canReadAsset(user,asset)&&!await consultations.canReadAsset(user,asset)&&!await commercial.canReadAsset(user,asset))await access(asset.org_id, user);
       if (!['GET', 'HEAD'].includes(req.method)) fail('Método não permitido.', 405);
       if(privateStorage&&asset.size>3*1024*1024){res.writeHead(302,{Location:await privateStorage.signDownload(asset.org_id,asset.path),'Cache-Control':'private, no-store','Referrer-Policy':'no-referrer'}).end();return true;}
-      const file = await assetPath(asset.org_id,asset.id), stat = fs.statSync(file);
+      const file = await assetPath(asset.org_id,asset.id,true), stat = fs.statSync(file);
       let start = 0, end = stat.size - 1, status = 200;
       const headers = {
         'Content-Type': asset.mime,
