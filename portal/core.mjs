@@ -1,5 +1,6 @@
 import {adminOverview} from './admin-overview.mjs';
 import {createFinance} from './finance.mjs';
+import {createCommerce} from './commerce.mjs';
 import {createPricing} from './pricing.mjs';
 import {createCommercial} from './commercial.mjs';
 import {createConsultations} from './consultations.mjs';
@@ -587,6 +588,7 @@ export async function createPortal({db, dataDir, userFrom, json, safeOrigin, pro
     });
   }
   async function beforeMutation(job) {
+    await commerce.guard(job);
     await checkParent(job.org_id, parse(job.payload));
     const current = await db.prepare('SELECT cancel_requested FROM jobs WHERE id=?').get(job.id), op = await kernel.jobOperation(job);
     if (current?.cancel_requested || op?.paused || op?.state === 'cancelled') throw new ProviderError('A operação foi pausada; esta ação não será iniciada.', 'canceled');
@@ -764,7 +766,7 @@ export async function createPortal({db, dataDir, userFrom, json, safeOrigin, pro
   });
   const imageWorkflow=createImageWorkflow({db,record,company,metadata,saveMetadata,studio,integration,providers,storeAsset,assetPath,systemUpdate,setJob,beforeMutation});
   const reels=reelsRenderer||createReelsRenderer();
-  const creations=createCreations({db,company,integration,queue,saveRecord,record,assetPath,storeAsset,systemUpdate,setJob,beforeMutation,renderer:reels,respond:creationRespond,metadata,saveMetadata});
+  const creations=createCreations({commerce:()=>commerce,db,company,integration,queue,saveRecord,record,assetPath,storeAsset,systemUpdate,setJob,beforeMutation,renderer:reels,respond:creationRespond,metadata,saveMetadata});
   const creationSchedules=createCreationSchedules({db,creations,company});
   const runtimeTools=createRuntimeTools({runtime:cloudRuntime,db,assetPath,storeAsset,saveRecord,record,metadata,saveMetadata,queue,systemUpdate,setJob,beforeMutation});
   publication = await createPublicationWorkflow({
@@ -799,7 +801,7 @@ export async function createPortal({db, dataDir, userFrom, json, safeOrigin, pro
     }
   });
   const conversation = await createConversation({
-    financeReply:(org,user,text)=>finance.chat(org,user,text),
+    financeReply:async(org,user,text)=>await commerce.chat(org,user,text)||await finance.chat(org,user,text),
     deliveryOnly,creations,creationSchedules,
     db,
     dataDir,
@@ -827,6 +829,7 @@ export async function createPortal({db, dataDir, userFrom, json, safeOrigin, pro
   const whatsappWelcome=createWhatsAppWelcome({db,env:whatsappChatEnv,fetcher:whatsappChatFetch});
   const whatsappChat=createWhatsAppChat({db,metadata,saveMetadata,conversation,assetPath,storeAsset,env:whatsappChatEnv,fetcher:whatsappChatFetch,onInbound:whatsappWelcome.receive,onDelivery:whatsappWelcome.delivery});
   const finance=createFinance({db,operator:assisted.operator,storeAsset,now:assistedNow,deliver:whatsappChat.financeReminder});
+  const commerce=createCommerce({db,operator:assisted.operator,finance,creations,now:assistedNow});
   async function registerSignup(user,input) {
     const contact=signupWhatsAppInput(input,whatsappChatEnv);
     const [org]=await companies(user);
@@ -1626,6 +1629,12 @@ export async function createPortal({db, dataDir, userFrom, json, safeOrigin, pro
         operator: assisted.operator(user)
       });
       return true;
+    }
+    if(pathname==='/api/portal/commerce'){
+      const admin=url.searchParams.get('admin')==='1',target=url.searchParams.get('org')||'';
+      if(req.method==='GET')json(res,200,await commerce.listing(target,user,admin));
+      else if(req.method==='POST')json(res,200,await commerce.action(target,user,await body(req),admin));
+      else fail('Método não permitido.',405);return true;
     }
     if(pathname==='/api/portal/finance'||pathname==='/api/portal/finance/files'){
       const admin=url.searchParams.get('admin')==='1',financeOrg=url.searchParams.get('org')||'';

@@ -16,7 +16,7 @@ const formats=['feed','story','carousel','reels'];
 const canonical=value=>Array.isArray(value)?value.map(canonical):value&&typeof value==='object'?Object.fromEntries(Object.keys(value).sort().map(key=>[key,canonical(value[key])])):value;
 export const inlineVideoHash=(content,payload)=>hash(canonical({content,scenes:payload.scenes,references:payload.referenceAssetIds,...payload.videoOptions?{videoOptions:payload.videoOptions}:{}}));
 
-export function createCreations({db,company,integration,queue,saveRecord,record,assetPath,storeAsset,systemUpdate,setJob,beforeMutation,renderer,respond,metadata,saveMetadata,fetcher=fetch}){
+export function createCreations({commerce,db,company,integration,queue,saveRecord,record,assetPath,storeAsset,systemUpdate,setJob,beforeMutation,renderer,respond,metadata,saveMetadata,fetcher=fetch}){
  const styles=createVideoStyles({db});
  async function references(org,ids,format){
   if(!Array.isArray(ids)||ids.length>(format==='reels'?8:6)||new Set(ids).size!==ids.length)fail(format==='reels'?'Use até oito referências diferentes.':'Use até seis referências diferentes.');
@@ -41,7 +41,7 @@ export function createCreations({db,company,integration,queue,saveRecord,record,
   return {review:review.status||'pending',reviewedAt:review.at||null,revisionOf:req.revisionOf||null,videoOptions:plan?.videoOptions||req.videoOptions||null,conversationId:parse(row.payload).conversationId||null,id:row.id,prompt:req.prompt,format:req.format,slideCount:req.slideCount,duration:req.duration,status,assets,caption:plan?.caption||'',summary:status==='complete'?'Prévia pronta. Confira, aprove ou peça ajustes.':output.summary||'Seu pedido está em produção.',error:errorChild?.error||row.error||null,createdAt:row.created_at};
  }
  async function list(org){const rows=await db.prepare("SELECT id FROM jobs WHERE org_id=? AND kind='creation' ORDER BY created_at DESC LIMIT 30").all(org);return {creations:await Promise.all(rows.map(r=>get(org,r.id))),capabilities:await capabilities(org),styles:await styles.list(org)};}
- async function submit(org,user,input,{conversationId,parentJobId,videoOptionKeys}={}){
+ async function submit(org,user,input,{conversationId,parentJobId,videoOptionKeys,commercialApproval,publicationAt}={}){
   const prompt=String(input.prompt||'').trim(),format=input.format;
   if(!prompt||prompt.length>12000||!formats.includes(format))fail('Descreva o pedido e escolha Feed, Story, Carrossel ou Reels.');
   if(!/^[a-zA-Z0-9_-]{8,100}$/.test(input.requestId||''))fail('Identificador do pedido inválido.');
@@ -69,8 +69,9 @@ export function createCreations({db,company,integration,queue,saveRecord,record,
     if(conversationId&&!await db.prepare('SELECT 1 FROM conversations WHERE org_id=? AND id=?').get(org,conversationId))conversationId=null;
     if(!conversationId){const {randomUUID}=await import('node:crypto');conversationId=randomUUID();await db.prepare('INSERT INTO conversations(id,org_id,title,created_at,updated_at) VALUES(?,?,?,?,?)').run(conversationId,org,'Criações do Astra',Date.now(),Date.now());await saveMetadata?.(org,'creation-thread:'+user,{id:conversationId});}
   }
-  const j=await queue(org,user,'creation',{request,...conversationId?{conversationId}:{},...parentJobId?{parentJobId}:{}},null,key,{explicitCreation:true});
-  return get(org,j.id);
+  const unit=await commerce?.().reserve(org,user,request,input,key,commercialApproval);
+  if(unit?.quote){const q=unit.quote,money=n=>(n/100).toLocaleString('pt-BR',{style:'currency',currency:'BRL'});fail('Seu saldo não cobre este pedido. Extra: '+money(q.priceCents)+'. Previsão da próxima cobrança com mensalidade e extras autorizados: '+money(q.projectedCents)+'. Uma rodada de ajustes incluída; cobrança após entrega válida. Autorize em Meu plano → Extras ou responda exatamente: CONFIRMAR EXTRA '+q.id.slice(6)+'. Nenhuma geração foi iniciada.',409);}
+  try{const j=await queue(org,user,'creation',{request,...publicationAt?{publicationAt}:{},...conversationId?{conversationId}:{},...parentJobId?{parentJobId}:{}},null,key,{explicitCreation:true});await commerce?.().bind(unit,j.id);return get(org,j.id);}catch(e){await commerce?.().release(unit);throw e;}
  }
  async function checkQuota(org,count){
   const policy=(await company(org)).policy,day=new Intl.DateTimeFormat('en-CA',{timeZone:policy.timeZone||'America/Sao_Paulo'}).format(new Date());
@@ -115,7 +116,7 @@ export function createCreations({db,company,integration,queue,saveRecord,record,
    for(let index=0;index<(isVideo?1:req.slideCount);index++){
     const p=prepared.slides[index],key='creation-content:'+job.id+':'+index;
     let c=await db.prepare("SELECT id FROM records WHERE org_id=? AND kind='content' AND external_id=?").get(job.org_id,key);
-    if(!c)c=await saveRecord(job.org_id,'content',{title:p.title,caption:prepared.caption,visualPrompt:p.visualPrompt,format:isVideo?'video':req.format==='story'?'story':req.format==='carousel'?'carousel':'image',channel:'instagram',status:'draft',imageLayout:isVideo?'feed':req.format,slideIndex:index+1,slideCount:req.slideCount,carouselOutline:JSON.stringify(prepared.slides.map(s=>({title:s.title,text:s.text}))),referenceAssetIds:req.attachments},job.user_id,null,false,key);
+    if(!c)c=await saveRecord(job.org_id,'content',{title:p.title,caption:prepared.caption,visualPrompt:p.visualPrompt,format:isVideo?'video':req.format==='story'?'story':req.format==='carousel'?'carousel':'image',channel:'instagram',status:'draft',...(parse(job.payload).publicationAt?{scheduledAt:parse(job.payload).publicationAt}:{}),imageLayout:isVideo?'feed':req.format,slideIndex:index+1,slideCount:req.slideCount,carouselOutline:JSON.stringify(prepared.slides.map(s=>({title:s.title,text:s.text}))),referenceAssetIds:req.attachments},job.user_id,null,false,key);
     const visual=(await references(job.org_id,req.attachments,req.format)).filter(a=>!a.mime.startsWith('audio/')&&!req.referenceOnlyIds?.includes(a.id));
     // A longer request may exceed the renderer's per-scene limit if scaled literally.
     // Keep the saved layout and use the validated new plan's timing in that case.

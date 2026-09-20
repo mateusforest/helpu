@@ -64,3 +64,4 @@ import './pricing.test.mjs';
 import './admin-routing.test.mjs';
 import './finance.test.mjs';
 import './finance-stripe.test.mjs';
+import './commerce.test.mjs';

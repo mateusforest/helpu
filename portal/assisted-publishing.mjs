@@ -87,6 +87,7 @@ export async function createAssistedPublishing({db,assetPath,env=process.env,now
   }
   async function action(org,user,input,admin=false){
     if(admin){if(!operator(user))fail('Acesso restrito à equipe autorizada.',403);}else await manager(org,user);
+    if(!admin&&['authorize','create'].includes(input.action)){const row=await db.prepare("SELECT data FROM records WHERE org_id=? AND kind='subscription' AND id=?").get(org,'subscription:'+org);if(row){const subscription=JSON.parse(row.data);if(subscription.state!=='active'||subscription.plan!=='assisted'||subscription.start>now()||subscription.end<=now())fail('A publicação pela equipe faz parte do plano Helpu Assistido ativo.',403);}}
     return transaction(async()=>{
       const service=await lockService(org),act=input.action;
       if(['authorize','revoke','verify_access'].includes(act)){
