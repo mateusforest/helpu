@@ -1,5 +1,15 @@
 const topic = (title, intro, steps, example, result, recovery, links = []) => ({title, intro, steps, example, result, recovery, links});
 export const HELP_TOPICS = {
+  consultations: topic('Contratar uma consultoria', 'A equipe Helpu conduz este serviço humano, com proposta individual antes de contratar.',
+    ['Escolha o serviço, preencha o briefing e salve o rascunho. Envie os materiais e autorize a análise quando estiver pronto.', 'Confira escopo, preço, prazo, pagamento e revisões na proposta. Aceite somente após revisar as condições.', 'Acompanhe a entrega privada, consolide os ajustes incluídos e aceite a versão final.'],
+    'Solicitar um diagnóstico dos canais da empresa e um plano de ação para os próximos 30 dias.',
+    'O envio do briefing não cobra nem consome IA. A equipe confirma pagamento e briefing antes de iniciar o prazo. Propostas e entregas anteriores ficam no histórico.',
+    ['Se faltarem informações, use Enviar complemento. Não envie senhas ou dados pessoais de clientes.', 'Se quiser mudar a proposta, peça o ajuste antes de aceitar. Após contratar, combine mudanças de escopo ou encerramento com a equipe.'], [['Abrir consultorias', 'consultations']]),
+  'consultations-admin': topic('Conduzir consultorias', 'Esta fila reúne pedidos enviados para a equipe autorizada.',
+    ['Assuma o atendimento e faça a triagem. Solicite os complementos necessários.', 'Prepare a proposta sem prometer resultados garantidos. Após o aceite, confira o pagamento real e o briefing.', 'Inicie o prazo, registre pausas por informação pendente e publique a entrega com fontes, datas, fatos, hipóteses e prioridades.'],
+    'Analisar os canais indicados, preparar uma proposta delimitada e entregar um roteiro de ações com justificativas.',
+    'O cliente recebe a proposta e a entrega dentro do portal. A fila é a notificação interna; esta etapa não envia mensagens externas nem inicia cobranças.',
+    ['Não confirme pagamento apenas porque recebeu um comprovante: confira o recebimento.', 'Se faltar material durante a execução, registre a pausa e a informação necessária. Retome após conferir o complemento.'], [['Fila de consultorias', 'consultations-admin']]),
   assisted: topic('Solicitar publicação pela equipe', 'A Helpu acompanha a revisão e a publicação manual de uma peça pronta.',
     ['Autorize o serviço para a conta correta e combine com a equipe o acesso delegado na Meta.', 'Escolha os arquivos finais, a legenda e a data desejada. Se quiser impulsionar, preencha também objetivo, público, período e intenção de verba.', 'Aguarde a revisão Helpu. Confira e aprove a versão apresentada; o orçamento do anúncio tem aprovação separada.'],
     'Solicitar a publicação de uma foto com a legenda final, amanhã às 14h, e pedir orçamento de R$50 de mídia para Vacaria.',

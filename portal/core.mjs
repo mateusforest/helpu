@@ -1,3 +1,4 @@
+import {createConsultations} from './consultations.mjs';
 import {createAssistedPublishing} from './assisted-publishing.mjs';
 import {unlimited,parseUsageLimit,usageCount,usageSnapshot} from './usage.mjs';
 import {recordProviderUsage} from './provider-usage.mjs';
@@ -814,6 +815,7 @@ export async function createPortal({db, dataDir, userFrom, json, safeOrigin, pro
     browserOverride:cloudRuntime.configured?runtimeTools.browser:undefined
   });
   const assisted=await createAssistedPublishing({db,assetPath,env:operatorEnv,now:assistedNow});
+  const consultations=createConsultations({db,operator:assisted.operator,storeAsset,now:assistedNow});
   const whatsappWelcome=createWhatsAppWelcome({db,env:whatsappChatEnv,fetcher:whatsappChatFetch});
   const whatsappChat=createWhatsAppChat({db,metadata,saveMetadata,conversation,assetPath,storeAsset,env:whatsappChatEnv,fetcher:whatsappChatFetch,onInbound:whatsappWelcome.receive,onDelivery:whatsappWelcome.delivery});
   async function registerSignup(user,input) {
@@ -1591,6 +1593,19 @@ export async function createPortal({db, dataDir, userFrom, json, safeOrigin, pro
       });
       return true;
     }
+    if(pathname==='/api/portal/consultations-admin/files'){
+      if(req.method!=='POST')fail('Método não permitido.',405);
+      if(!assisted.operator(user))fail('Acesso restrito à equipe Helpu.',403);
+      const input={id:String(req.headers['x-consultation-id']||''),version:Number(req.headers['x-record-version'])};
+      const bytes=await readRaw(req,3*1024*1024);
+      json(res,200,await consultations.upload(String(req.headers['x-company-id']||''),user,input,decodeURIComponent(String(req.headers['x-file-name']||'arquivo')),bytes));return true;
+    }
+    if(pathname==='/api/portal/consultations-admin'){
+      if(req.method==='GET')json(res,200,await consultations.listing(null,user,true));
+      else if(req.method==='POST'){const input=await body(req);json(res,200,await consultations.action(input.orgId,user,input,true));}
+      else fail('Método não permitido.',405);
+      return true;
+    }
     if(pathname==='/api/portal/assisted-admin'){
       if(req.method==='GET')json(res,200,await assisted.adminListing(user));
       else if(req.method==='POST'){const input=await body(req);json(res,200,await assisted.action(input.orgId,user,input,true));}
@@ -1606,7 +1621,7 @@ export async function createPortal({db, dataDir, userFrom, json, safeOrigin, pro
     if (pathname.startsWith('/api/portal/files/')) {
       const id = pathname.split('/').at(-1), asset = await db.prepare('SELECT * FROM assets WHERE id=?').get(id);
       if (!asset) fail('Arquivo não encontrado.', 404);
-      if(!await assisted.canReadAsset(user,asset))await access(asset.org_id, user);
+      if(!await assisted.canReadAsset(user,asset)&&!await consultations.canReadAsset(user,asset))await access(asset.org_id, user);
       if (!['GET', 'HEAD'].includes(req.method)) fail('Método não permitido.', 405);
       if(privateStorage&&asset.size>3*1024*1024){res.writeHead(302,{Location:await privateStorage.signDownload(asset.org_id,asset.path),'Cache-Control':'private, no-store','Referrer-Policy':'no-referrer'}).end();return true;}
       const file = await assetPath(asset.org_id,asset.id), stat = fs.statSync(file);
@@ -1636,6 +1651,12 @@ export async function createPortal({db, dataDir, userFrom, json, safeOrigin, pro
     }
     const parts = pathname.split('/').filter(Boolean), org = parts[2], section = parts[3], kind = parts[4], id = parts[5];
     await access(org, user);
+    if(section==='consultations'){
+      if(req.method==='GET')json(res,200,await consultations.listing(org,user));
+      else if(req.method==='POST')json(res,200,await consultations.action(org,user,await body(req)));
+      else fail('Método não permitido.',405);
+      return true;
+    }
     if(section==='assisted'){
       if(req.method==='GET')json(res,200,await assisted.listing(org,user));
       else if(req.method==='POST')json(res,200,await assisted.action(org,user,await body(req)));

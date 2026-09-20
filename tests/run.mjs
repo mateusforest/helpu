@@ -1,3 +1,4 @@
+import './consultations.test.mjs';
 import './auth.test.mjs';
 import './signup-onboarding.test.mjs';
 import './contextual-help.test.mjs';
