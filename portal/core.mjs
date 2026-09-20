@@ -1,3 +1,4 @@
+import {createPricing} from './pricing.mjs';
 import {createCommercial} from './commercial.mjs';
 import {createConsultations} from './consultations.mjs';
 import {createAssistedPublishing} from './assisted-publishing.mjs';
@@ -817,7 +818,8 @@ export async function createPortal({db, dataDir, userFrom, json, safeOrigin, pro
   });
   const assisted=await createAssistedPublishing({db,assetPath,env:operatorEnv,now:assistedNow});
   const consultations=createConsultations({db,operator:assisted.operator,storeAsset,now:assistedNow});
-  const commercial=createCommercial({db,operator:assisted.operator,now:assistedNow});
+  const pricing=createPricing({db,operator:assisted.operator,now:assistedNow});
+  const commercial=createCommercial({db,operator:assisted.operator,now:assistedNow,pricing});
   const whatsappWelcome=createWhatsAppWelcome({db,env:whatsappChatEnv,fetcher:whatsappChatFetch});
   const whatsappChat=createWhatsAppChat({db,metadata,saveMetadata,conversation,assetPath,storeAsset,env:whatsappChatEnv,fetcher:whatsappChatFetch,onInbound:whatsappWelcome.receive,onDelivery:whatsappWelcome.delivery});
   async function registerSignup(user,input) {
@@ -1613,6 +1615,11 @@ export async function createPortal({db, dataDir, userFrom, json, safeOrigin, pro
         operator: assisted.operator(user)
       });
       return true;
+    }
+    if(pathname==='/api/portal/pricing'){
+      if(req.method==='GET')json(res,200,await pricing.listing(user,url.searchParams.get('orgId')));
+      else if(req.method==='POST')json(res,200,await pricing.action(user,await body(req)));
+      else fail('Método não permitido.',405);return true;
     }
     if(pathname==='/api/portal/commercial-preview'&&req.method==='GET'){json(res,200,await commercial.preview(user,url.searchParams.get('id')));return true;}
     if(pathname==='/api/portal/commercial-admin'){

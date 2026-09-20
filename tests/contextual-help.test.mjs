@@ -9,7 +9,7 @@ test('contextual help selects creation format and safely handles unknown routes'
   for(const [view,format,key] of [['conversation','feed','conversation'],['create','feed','images'],['create','story','images'],['create','carousel','images'],['create','reels','reels'],['video','feed','reels'],['browser','feed','integrations'],['toString','feed','general']])assert.equal(helpTopicFor(view,format),key);
 });
 test('every help topic includes steps, example, expected outcome and recovery with real routes',()=>{
-  const routes=new Set(['studio','conversation','brand','company','create/reels','create/feed','settings','integrations','activity','assisted','admin','consultations','consultations-admin','commercial','proposals']);
+  const routes=new Set(['studio','conversation','brand','company','create/reels','create/feed','settings','integrations','activity','assisted','admin','consultations','consultations-admin','commercial','proposals','pricing']);
   for(const [key,t] of Object.entries(HELP_TOPICS)){
     assert.ok(t.title&&t.intro&&t.example&&t.result);assert.ok(t.steps.length>=3&&t.recovery.length>=2);
     for(const [,route]of t.links)assert.ok(routes.has(route),route);
