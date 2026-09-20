@@ -1,3 +1,4 @@
+import {createAssistedPublishing} from './assisted-publishing.mjs';
 import {unlimited,parseUsageLimit,usageCount,usageSnapshot} from './usage.mjs';
 import {recordProviderUsage} from './provider-usage.mjs';
 import {createCreations,inlineVideoHash} from './creations.mjs';
@@ -56,7 +57,7 @@ const statuses = {
   messages: ['draft', 'recorded'],
   tasks: ['todo', 'doing', 'done']
 };
-export async function createPortal({db, dataDir, userFrom, json, safeOrigin, providers = createProviders(), startScheduler = true, browserLaunch, conversationRespond, publicationFetch, publicationResolve,cloud=false,storageClient,instagramLoginFetch,instagramLoginEnv,stripeFetch,stripeEnv,runtimeEnv,runtimeFetch,whatsappChatEnv=process.env,whatsappChatFetch,openaiEnv=process.env,deliveryOnly=true,creationRespond,reelsRenderer}) {
+export async function createPortal({db, dataDir, userFrom, json, safeOrigin, providers = createProviders(), startScheduler = true, browserLaunch, conversationRespond, publicationFetch, publicationResolve,cloud=false,storageClient,instagramLoginFetch,instagramLoginEnv,stripeFetch,stripeEnv,runtimeEnv,runtimeFetch,whatsappChatEnv=process.env,whatsappChatFetch,openaiEnv=process.env,deliveryOnly=true,creationRespond,reelsRenderer,operatorEnv=process.env,assistedNow=Date.now}) {
   const cloudRuntime=createCloudRuntime({env:runtimeEnv,fetcher:runtimeFetch});
   if(db.dialect==='postgres'){
     const migration=await db.prepare('SELECT version FROM portal_migrations ORDER BY version DESC LIMIT 1').get();
@@ -812,6 +813,7 @@ export async function createPortal({db, dataDir, userFrom, json, safeOrigin, pro
     reviewPublication: publication.review,cloud,runtimeTools,
     browserOverride:cloudRuntime.configured?runtimeTools.browser:undefined
   });
+  const assisted=await createAssistedPublishing({db,assetPath,env:operatorEnv,now:assistedNow});
   const whatsappWelcome=createWhatsAppWelcome({db,env:whatsappChatEnv,fetcher:whatsappChatFetch});
   const whatsappChat=createWhatsAppChat({db,metadata,saveMetadata,conversation,assetPath,storeAsset,env:whatsappChatEnv,fetcher:whatsappChatFetch,onInbound:whatsappWelcome.receive,onDelivery:whatsappWelcome.delivery});
   async function registerSignup(user,input) {
@@ -1584,8 +1586,15 @@ export async function createPortal({db, dataDir, userFrom, json, safeOrigin, pro
       json(res, 200, {
         user,
         companies: await companies(user),
-        agents: AGENTS
+        agents: AGENTS,
+        operator: assisted.operator(user)
       });
+      return true;
+    }
+    if(pathname==='/api/portal/assisted-admin'){
+      if(req.method==='GET')json(res,200,await assisted.adminListing(user));
+      else if(req.method==='POST'){const input=await body(req);json(res,200,await assisted.action(input.orgId,user,input,true));}
+      else fail('Método não permitido.',405);
       return true;
     }
     if (pathname === '/api/portal/companies' && req.method === 'POST') {
@@ -1597,7 +1606,7 @@ export async function createPortal({db, dataDir, userFrom, json, safeOrigin, pro
     if (pathname.startsWith('/api/portal/files/')) {
       const id = pathname.split('/').at(-1), asset = await db.prepare('SELECT * FROM assets WHERE id=?').get(id);
       if (!asset) fail('Arquivo não encontrado.', 404);
-      await access(asset.org_id, user);
+      if(!await assisted.canReadAsset(user,asset))await access(asset.org_id, user);
       if (!['GET', 'HEAD'].includes(req.method)) fail('Método não permitido.', 405);
       if(privateStorage&&asset.size>3*1024*1024){res.writeHead(302,{Location:await privateStorage.signDownload(asset.org_id,asset.path),'Cache-Control':'private, no-store','Referrer-Policy':'no-referrer'}).end();return true;}
       const file = await assetPath(asset.org_id,asset.id), stat = fs.statSync(file);
@@ -1627,6 +1636,12 @@ export async function createPortal({db, dataDir, userFrom, json, safeOrigin, pro
     }
     const parts = pathname.split('/').filter(Boolean), org = parts[2], section = parts[3], kind = parts[4], id = parts[5];
     await access(org, user);
+    if(section==='assisted'){
+      if(req.method==='GET')json(res,200,await assisted.listing(org,user));
+      else if(req.method==='POST')json(res,200,await assisted.action(org,user,await body(req)));
+      else fail('Método não permitido.',405);
+      return true;
+    }
     if(section==='creation-schedules'){if(req.method==='GET')json(res,200,{schedules:await creationSchedules.list(org,user.id)});else if(req.method==='POST'){const input=await body(req);json(res,200,kind?await creationSchedules.update(org,user.id,kind,input.action):await creationSchedules.create(org,user.id,input,input.conversationId));}else fail('Método não permitido.',405);return true;}
     if(section==='creations'){if(req.method==='GET')json(res,200,kind?{creation:await creations.get(org,kind)}:await creations.list(org));else if(req.method==='POST'&&!kind)json(res,201,{creation:await creations.submit(org,user.id,await body(req))});else if(req.method==='POST'&&kind)json(res,200,{creation:await creations.review(org,user.id,kind,await body(req))});else fail('Método não permitido.',405);return true;}
     if(section==='whatsapp-chat'){

@@ -1,6 +1,7 @@
 import './auth.test.mjs';
 import './signup-onboarding.test.mjs';
 import './contextual-help.test.mjs';
+import './assisted-publishing.test.mjs';
 import './portal.test.mjs';
 import './ui.test.mjs';
 import './conversation.test.mjs';

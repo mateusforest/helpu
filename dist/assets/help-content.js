@@ -1,5 +1,15 @@
 const topic = (title, intro, steps, example, result, recovery, links = []) => ({title, intro, steps, example, result, recovery, links});
 export const HELP_TOPICS = {
+  assisted: topic('Solicitar publicação pela equipe', 'A Helpu acompanha a revisão e a publicação manual de uma peça pronta.',
+    ['Autorize o serviço para a conta correta e combine com a equipe o acesso delegado na Meta.', 'Escolha os arquivos finais, a legenda e a data desejada. Se quiser impulsionar, preencha também objetivo, público, período e intenção de verba.', 'Aguarde a revisão Helpu. Confira e aprove a versão apresentada; o orçamento do anúncio tem aprovação separada.'],
+    'Solicitar a publicação de uma foto com a legenda final, amanhã às 14h, e pedir orçamento de R$50 de mídia para Vacaria.',
+    'Você acompanha o pedido e, após a execução manual, o link registrado pela equipe. O pedido não inicia uma publicação ou cobrança automaticamente.',
+    ['Se precisar alterar uma peça aprovada, edite o pedido para criar uma nova versão e aprove novamente.', 'Se o resultado estiver a conferir, aguarde a conferência na conta para evitar uma postagem duplicada.', 'Revogar a autorização bloqueia novos inícios; uma execução já iniciada precisa ser conferida com a equipe.'], [['Ver pedidos', 'assisted'], ['Abrir Biblioteca', 'studio']]),
+  admin: topic('Conduzir a fila da equipe', 'Esta área é exclusiva dos operadores autorizados da Helpu.',
+    ['Confira a autorização e registre a conferência do acesso delegado à conta.', 'Revise a peça e encaminhe a versão ao cliente. Apresente separadamente verba de mídia e taxa Helpu, quando houver.', 'No horário aprovado, inicie a publicação manual, confira o resultado na Meta e registre o link. Atualize as etapas do anúncio com evidências.'],
+    'Revisar a legenda, aguardar o aceite do cliente e registrar o link da postagem realizada na conta aprovada.',
+    'Responsável, alterações, aprovações e resultados ficam no histórico. O portal registra o trabalho humano; não executa campanhas ou gastos por esses botões.',
+    ['Se houve dúvida após iniciar a publicação, registre o impedimento e confira o perfil antes de repetir.', 'Se mudar peça, conta ou data, envie uma nova versão para aprovação.', 'Se o acesso foi revogado, não inicie novos trabalhos. Registre o encerramento de anúncios já em andamento.'], [['Fila da equipe', 'admin']]),
   conversation: topic('Pedir e ajustar pelo chat', 'Conte o que precisa e envie os materiais na mesma conversa.',
     ['Confira a empresa selecionada no topo.', 'Anexe os arquivos e explique quais devem aparecer e quais servem apenas de referência.', 'Informe objetivo, formato e ajustes. Aguarde o resultado do pedido antes de repeti-lo.'],
     'Crie um Story com esta foto do imóvel. Preserve a foto, use as cores da marca e escreva “Agende sua visita”. Entregue uma prévia para revisar.',
