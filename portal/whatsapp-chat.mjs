@@ -15,8 +15,9 @@ export function whatsappPhone(value, {international = false} = {}) {
 }
 // Meta can report Brazilian mobile numbers without the ninth digit.
 const phoneKey = n => /^55\d{2}9\d{8}$/.test(n) ? n.slice(0,4) + n.slice(5) : n;
+export {phoneKey as whatsappPhoneKey};
 
-export function createWhatsAppChat({db, metadata, saveMetadata, conversation, assetPath, storeAsset, env = process.env, fetcher = fetch, now = Date.now}) {
+export function createWhatsAppChat({db, metadata, saveMetadata, conversation, assetPath, storeAsset, onInbound, onDelivery, env = process.env, fetcher = fetch, now = Date.now}) {
   const officialPhone = env.HELPU_WHATSAPP_NUMBER ? whatsappPhone(env.HELPU_WHATSAPP_NUMBER, {international:true}) : '';
   const config = () => ({token: env.HELPU_WHATSAPP_ACCESS_TOKEN, phoneId: env.HELPU_WHATSAPP_PHONE_NUMBER_ID, secret: env.HELPU_WHATSAPP_APP_SECRET, verify: env.HELPU_WHATSAPP_VERIFY_TOKEN});
   const configured = () => !!officialPhone && Object.values(config()).every(Boolean);
@@ -66,11 +67,13 @@ export function createWhatsAppChat({db, metadata, saveMetadata, conversation, as
   async function receive(value) {
     if (!configured() || String(value.metadata?.phone_number_id) !== String(config().phoneId)) return;
     if (value.metadata?.display_phone_number && phoneKey(whatsappPhone(value.metadata.display_phone_number, {international:true})) !== phoneKey(officialPhone)) return;
+    await onDelivery?.(value.statuses || []);
     for (const msg of (value.messages || []).slice(0,100)) {
       if (!msg.id || !msg.from) continue;
       const phone = whatsappPhone(msg.from, {international:true}), time = Number(msg.timestamp)*1000;
       if (!Number.isFinite(time) || time < now()-86400000 || time > now()+300000) continue;
       const text = String(msg.text?.body || '').slice(0,16000), code = /^HELPU ([a-f0-9]{32})$/i.exec(text.trim());
+      await onInbound?.({phone,text});
       if (code) {
         const pending = await db.prepare("SELECT * FROM records WHERE kind='connection_validation' AND external_id LIKE 'whatsapp-chat:%' AND json_extract(data,'$.codeHash')=?").get(hash(code[1].toLowerCase()));
         if (!pending) continue;

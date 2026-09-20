@@ -205,6 +205,7 @@ export async function createHelpuServer({dataDir = process.env.HELPU_DATA_DIR ||
           return;
         }
         if (pathname === '/api/auth/signup') {
+          await portal.validateSignup(body);
           const name = typeof body.name === 'string' ? body.name.trim() : '';
           const company = typeof body.company === 'string' ? body.company.trim() : '';
           if (name.length < 2 || name.length > 100 || company.length > 120) {
@@ -216,9 +217,17 @@ export async function createHelpuServer({dataDir = process.env.HELPU_DATA_DIR ||
           const salt = randomBytes(16).toString('hex');
           const passwordHash = (await scrypt(password, salt, 64)).toString('hex');
           let record;
+          await db.exec('SAVEPOINT signup_account');
           try {
             record = await addUser.run(name, email, company, salt, passwordHash, Date.now());
+            await portal.registerSignup({id:record.lastInsertRowid,name,email,company},body);
+            const previousToken = tokenFrom(req);
+            if (previousToken) await removeSession.run(hashToken(previousToken));
+            await session(res, record.lastInsertRowid);
+            await db.exec('RELEASE SAVEPOINT signup_account');
           } catch (error) {
+            await db.exec('ROLLBACK TO SAVEPOINT signup_account');
+            await db.exec('RELEASE SAVEPOINT signup_account');
             if (error.code==='23505'||String(error.message).includes('UNIQUE')) {
               json(res, 409, {
                 error: 'Não foi possível criar a conta com esse e-mail. Se já tem uma conta, entre na Helpu.'
@@ -227,9 +236,6 @@ export async function createHelpuServer({dataDir = process.env.HELPU_DATA_DIR ||
             }
             throw error;
           }
-          const previousToken = tokenFrom(req);
-          if (previousToken) await removeSession.run(hashToken(previousToken));
-          await session(res, record.lastInsertRowid);
           json(res, 201, {
             user: {
               name,

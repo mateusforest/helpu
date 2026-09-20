@@ -33,6 +33,11 @@ export default async function handler(req,res){
       json(res,200,{status:'ok',storage:'supabase',runtime:'vercel'});return;
     }
     await app.handle(req,res);
+    // Welcome delivery has its own durable claim and never starts an AI job.
+    // It does not depend on enabling the daily marketing automation.
+    if(req.method==='POST'&&route==='/api/auth/signup'&&res.statusCode===201){
+      waitUntil(app.portal.dispatchSignupWelcome().catch(()=>console.error('helpu_welcome_dispatch_failed')));
+    }
     // An authenticated poll can resume a queued creation if a previous wake was lost.
     if(req.method==='GET'&&res.statusCode===200&&/^\/api\/portal\/[^/]+\/creations(?:\/[^/]+)?$/.test(route)){
       waitUntil(continueCreations(app).catch(()=>console.error('helpu_creation_wake_failed')));

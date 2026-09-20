@@ -1,0 +1,17 @@
+#contextual-help{padding:0 clamp(18px,4vw,56px);display:flex;justify-content:flex-end;margin:0 0 8px}
+#contextual-help button{display:flex;align-items:center;gap:8px;min-height:44px;color:#5c5148;font-size:14px;white-space:normal;text-align:left}
+#contextual-help button span{display:inline-grid;place-items:center;width:21px;height:21px;border:1px solid #b8aa9e;border-radius:50%;flex-shrink:0}
+.context-help-body{font-size:15px;line-height:1.65;overflow-wrap:anywhere;color:#403a34}
+.context-help-body h3{font-size:17px;margin:24px 0 8px;color:#24211f}
+.context-help-body p{margin:0 0 12px}
+.context-help-body ol,.context-help-body ul{padding-left:24px;margin:8px 0 16px}
+.context-help-body li+li{margin-top:8px}
+.context-help-body blockquote{margin:8px 0;padding:16px;border-left:3px solid #ff581c;background:#fff5ed;border-radius:0 8px 8px 0}
+.context-help-links{display:flex;gap:10px;flex-wrap:wrap;margin:20px 0}
+.context-help-links a{white-space:normal;text-align:center;max-width:100%}
+.context-help-topics{border-top:1px solid #ebe5df;margin:24px 0 16px;padding-top:16px}
+.context-help-topics summary{cursor:pointer;min-height:44px}
+.context-help-topics>div{display:grid;gap:4px}
+.context-help-topics button{text-align:left;white-space:normal;min-height:44px}
+#contextual-help button:focus-visible,.context-help-body :is(a,button,summary):focus-visible{outline:2px solid #b63d0c;outline-offset:3px}
+@media(max-width:480px){.context-help-links{flex-direction:column}.context-help-links a{width:100%}}

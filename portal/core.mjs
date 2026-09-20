@@ -4,6 +4,7 @@ import {createCreations,inlineVideoHash} from './creations.mjs';
 import {createCreationSchedules} from './creation-schedules.mjs';
 import {createReelsRenderer} from './reels-renderer.mjs';
 import {createWhatsAppChat} from './whatsapp-chat.mjs';
+import {createWhatsAppWelcome,signupWhatsAppInput} from './whatsapp-welcome.mjs';
 import {resolveOpenAIConfig} from './openai-config.mjs';
 import {createStripeBilling} from './stripe-billing.mjs';
 import {createInstagramLogin} from './instagram-login.mjs';
@@ -246,13 +247,14 @@ export async function createPortal({db, dataDir, userFrom, json, safeOrigin, pro
   }
   async function newCompany(user, name) {
     const id = randomUUID(), now = Date.now();
-    await db.exec('BEGIN IMMEDIATE');
+    await db.exec('SAVEPOINT new_company');
     try {
       await db.prepare('INSERT INTO companies VALUES(?,?,?,?,?,?)').run(id, name, JSON.stringify({}), JSON.stringify(DEFAULT_POLICY), now, now);
       await db.prepare('INSERT INTO memberships VALUES(?,?,?)').run(id, user.id, 'owner');
-      await db.exec('COMMIT');
+      await db.exec('RELEASE SAVEPOINT new_company');
     } catch (e) {
-      await db.exec('ROLLBACK');
+      await db.exec('ROLLBACK TO SAVEPOINT new_company');
+      await db.exec('RELEASE SAVEPOINT new_company');
       throw e;
     }
     await audit(id, user.id, 'Empresa criada', id, name);
@@ -810,7 +812,14 @@ export async function createPortal({db, dataDir, userFrom, json, safeOrigin, pro
     reviewPublication: publication.review,cloud,runtimeTools,
     browserOverride:cloudRuntime.configured?runtimeTools.browser:undefined
   });
-  const whatsappChat=createWhatsAppChat({db,metadata,saveMetadata,conversation,assetPath,storeAsset,env:whatsappChatEnv,fetcher:whatsappChatFetch});
+  const whatsappWelcome=createWhatsAppWelcome({db,env:whatsappChatEnv,fetcher:whatsappChatFetch});
+  const whatsappChat=createWhatsAppChat({db,metadata,saveMetadata,conversation,assetPath,storeAsset,env:whatsappChatEnv,fetcher:whatsappChatFetch,onInbound:whatsappWelcome.receive,onDelivery:whatsappWelcome.delivery});
+  async function registerSignup(user,input) {
+    const contact=signupWhatsAppInput(input,whatsappChatEnv);
+    const [org]=await companies(user);
+    await whatsappWelcome.register(org.id,user,contact);
+    await saveMetadata(org.id,'onboarding:'+user.id,{state:'active',completed:[],goal:'',createdAt:Date.now()});
+  }
   async function verifyPublication(job, content, external) {
     const org = job.org_id, providerId = external.publishedId;
     let evidence;
@@ -1331,6 +1340,7 @@ export async function createPortal({db, dataDir, userFrom, json, safeOrigin, pro
     busy = true;
     lastTick = Date.now();
     try {
+      await whatsappWelcome.tick();
       await creationSchedules.tick();
       for (const expired of await db.prepare("SELECT * FROM jobs WHERE state='working' AND (lease_until IS NULL OR lease_until<?)").all(Date.now())) {
         if (expired.kind === 'conversation') await conversation.recover(expired);
@@ -1620,9 +1630,39 @@ export async function createPortal({db, dataDir, userFrom, json, safeOrigin, pro
     if(section==='creation-schedules'){if(req.method==='GET')json(res,200,{schedules:await creationSchedules.list(org,user.id)});else if(req.method==='POST'){const input=await body(req);json(res,200,kind?await creationSchedules.update(org,user.id,kind,input.action):await creationSchedules.create(org,user.id,input,input.conversationId));}else fail('Método não permitido.',405);return true;}
     if(section==='creations'){if(req.method==='GET')json(res,200,kind?{creation:await creations.get(org,kind)}:await creations.list(org));else if(req.method==='POST'&&!kind)json(res,201,{creation:await creations.submit(org,user.id,await body(req))});else if(req.method==='POST'&&kind)json(res,200,{creation:await creations.review(org,user.id,kind,await body(req))});else fail('Método não permitido.',405);return true;}
     if(section==='whatsapp-chat'){
-      if(req.method==='GET')json(res,200,await whatsappChat.status(org,user));
+      if(req.method==='GET'){
+        const value=await whatsappChat.status(org,user),welcome=await whatsappWelcome.status(org,user);
+        json(res,200,{...value,phone:value.phone||welcome.phone,welcome});
+      }
       else if(req.method==='POST')json(res,200,await whatsappChat.save(org,user,await body(req)));
       else fail('Método não permitido.',405);
+      return true;
+    }
+    if(section==='whatsapp-welcome'){
+      if(req.method==='GET')json(res,200,await whatsappWelcome.status(org,user));
+      else if(req.method==='POST'){
+        const input=await body(req);
+        if(input.action!=='revoke')fail('Ação inválida.',400);
+        json(res,200,await whatsappWelcome.revoke(org,user));
+      }else fail('Método não permitido.',405);
+      return true;
+    }
+    if(section==='onboarding'){
+      const key='onboarding:'+user.id,saved=await metadata(org,key);
+      const steps=['company','brand','create','review','whatsapp'];
+      if(req.method==='GET')json(res,200,{state:saved.state||'available',completed:saved.completed||[],goal:saved.goal||''});
+      else if(req.method==='POST'){
+        const input=await body(req),next={...saved,updatedAt:Date.now()};
+        if(['start','resume'].includes(input.action)){next.state='active';if(saved.state==='completed'||input.action==='start')next.completed=[];}
+        else if(input.action==='skip')next.state='paused';
+        else if(input.action==='finish')next.state='completed';
+        else if(input.action==='step' && steps.includes(input.step)){
+          next.completed=[...new Set([...(saved.completed||[]),input.step])];
+        }else if(input.action==='goal' && ['present','offer','educate'].includes(input.goal))next.goal=input.goal;
+        else fail('Escolha uma etapa válida do guia.',400);
+        await saveMetadata(org,key,next);
+        json(res,200,{state:next.state||'active',completed:next.completed||[],goal:next.goal||''});
+      }else fail('Método não permitido.',405);
       return true;
     }
     if(section==='billing'){
@@ -2157,6 +2197,9 @@ export async function createPortal({db, dataDir, userFrom, json, safeOrigin, pro
   }
   return {
     handle,
+    registerSignup,
+    validateSignup:input=>signupWhatsAppInput(input,whatsappChatEnv),
+    dispatchSignupWelcome:()=>whatsappWelcome.tick(),
     tick,
     queue,
     state,

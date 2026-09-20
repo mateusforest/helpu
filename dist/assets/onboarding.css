@@ -1,0 +1,11 @@
+#onboarding-guide:not(:empty){padding:20px clamp(18px,4vw,56px) 0}
+.first-access-panel{margin:0;padding:24px;border-left:3px solid var(--orange,#ff571f)}
+.onboarding-heading{display:flex;justify-content:space-between;align-items:flex-start;gap:16px}
+.onboarding-heading h2{margin:6px 0 12px;font-size:22px;line-height:1.25}
+.first-access-panel>p{max-width:840px;line-height:1.65;padding:0}
+body[data-onboarding="active"] .conversation-composer{position:static}
+.onboarding-actions{display:flex;flex-wrap:wrap;align-items:center;gap:12px;margin-top:18px}
+.first-access-panel .p-field{max-width:480px;margin-top:16px}
+.first-access-panel .micro-copy{margin-top:16px}
+.onboarding-resume{display:flex;justify-content:flex-end;margin:0 0 12px}
+@media(max-width:600px){.first-access-panel{padding:18px}.onboarding-heading{flex-direction:column;gap:0}.onboarding-actions .p-button{white-space:normal;text-align:center}.onboarding-actions{align-items:stretch}.first-access-panel .p-field{width:100%}}
