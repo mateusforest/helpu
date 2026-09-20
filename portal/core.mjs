@@ -1,3 +1,4 @@
+import {createCommercial} from './commercial.mjs';
 import {createConsultations} from './consultations.mjs';
 import {createAssistedPublishing} from './assisted-publishing.mjs';
 import {unlimited,parseUsageLimit,usageCount,usageSnapshot} from './usage.mjs';
@@ -816,6 +817,7 @@ export async function createPortal({db, dataDir, userFrom, json, safeOrigin, pro
   });
   const assisted=await createAssistedPublishing({db,assetPath,env:operatorEnv,now:assistedNow});
   const consultations=createConsultations({db,operator:assisted.operator,storeAsset,now:assistedNow});
+  const commercial=createCommercial({db,operator:assisted.operator,now:assistedNow});
   const whatsappWelcome=createWhatsAppWelcome({db,env:whatsappChatEnv,fetcher:whatsappChatFetch});
   const whatsappChat=createWhatsAppChat({db,metadata,saveMetadata,conversation,assetPath,storeAsset,env:whatsappChatEnv,fetcher:whatsappChatFetch,onInbound:whatsappWelcome.receive,onDelivery:whatsappWelcome.delivery});
   async function registerSignup(user,input) {
@@ -1537,6 +1539,25 @@ export async function createPortal({db, dataDir, userFrom, json, safeOrigin, pro
   }
   async function handle(req, res, pathname) {
     const url = new URL(req.url, 'http://localhost');
+    if(pathname.startsWith('/api/presentations/')){
+      const match=/^\/api\/presentations\/([a-f\d-]{36})(?:\/(interest|media)(?:\/(\d))?)?$/.exec(pathname);
+      if(!match)fail('Apresentação indisponível.',404);
+      const [,slug,action,index]=match;
+      if(!action&&req.method==='GET'){json(res,200,commercial.publicDTO(await commercial.publicPage(slug)));return true;}
+      if(action==='interest'&&!index&&req.method==='POST'){
+        if(!safeOrigin(req))fail('Origem não permitida.',403);
+        if(!captureAllowed(req))fail('Aguarde alguns minutos antes de tentar novamente.',429);
+        json(res,200,await commercial.interest(slug,await body(req)));return true;
+      }
+      if(action==='media'&&index!==undefined&&['GET','HEAD'].includes(req.method)){
+        const a=await commercial.publicMedia(slug,index),file=await assetPath(a.orgId,a.id),stat=fs.statSync(file);
+        let start=0,end=stat.size-1,status=200;
+        const headers={'Content-Type':a.mime,'Cache-Control':'no-store','X-Robots-Tag':'noindex','Accept-Ranges':'bytes','Content-Disposition':'inline'};
+        if(req.headers.range){const range=/^bytes=(\d+)-(\d*)$/.exec(req.headers.range);if(!range)fail('Faixa inválida.',416);start=Number(range[1]);end=range[2]?Math.min(Number(range[2]),end):end;if(start>end||start>=stat.size)fail('Faixa inválida.',416);status=206;headers['Content-Range']='bytes '+start+'-'+end+'/'+stat.size;}
+        headers['Content-Length']=end-start+1;res.writeHead(status,headers);if(req.method==='HEAD')res.end();else fs.createReadStream(file,{start,end}).on('error',()=>res.destroy()).pipe(res);return true;
+      }
+      fail('Método não permitido.',405);
+    }
     if(pathname==='/api/connect/instagram/callback'){try{await instagramLogin.callback(req,res);}catch{if(!res.headersSent)res.writeHead(303,{Location:'/retorno.html?connection=failed','Cache-Control':'no-store','Referrer-Policy':'no-referrer'}).end();}return true;}
     if(pathname==='/webhooks/helpu-whatsapp'){await whatsappChat.webhook(req,res,url,readRaw);return true;}
     if (pathname.startsWith('/webhooks/')) {
@@ -1593,6 +1614,17 @@ export async function createPortal({db, dataDir, userFrom, json, safeOrigin, pro
       });
       return true;
     }
+    if(pathname==='/api/portal/commercial-preview'&&req.method==='GET'){json(res,200,await commercial.preview(user,url.searchParams.get('id')));return true;}
+    if(pathname==='/api/portal/commercial-admin'){
+      if(req.method==='GET')json(res,200,await commercial.adminList(user));
+      else if(req.method==='POST'){const input=await body(req);if(input.kind==='page')json(res,200,await commercial.pageAction(user,input));else if(input.kind==='interest')json(res,200,await commercial.leadAction(user,input));else if(input.kind==='offer')json(res,200,await commercial.offerAction(user,input));else fail('Ação inválida.');}
+      else fail('Método não permitido.',405);return true;
+    }
+    if(pathname==='/api/portal/commercial-proposals'){
+      if(req.method==='GET')json(res,200,{offers:await commercial.offers(user)});
+      else if(req.method==='POST')json(res,200,await commercial.customerAction(user,await body(req)));
+      else fail('Método não permitido.',405);return true;
+    }
     if(pathname==='/api/portal/consultations-admin/files'){
       if(req.method!=='POST')fail('Método não permitido.',405);
       if(!assisted.operator(user))fail('Acesso restrito à equipe Helpu.',403);
@@ -1621,7 +1653,7 @@ export async function createPortal({db, dataDir, userFrom, json, safeOrigin, pro
     if (pathname.startsWith('/api/portal/files/')) {
       const id = pathname.split('/').at(-1), asset = await db.prepare('SELECT * FROM assets WHERE id=?').get(id);
       if (!asset) fail('Arquivo não encontrado.', 404);
-      if(!await assisted.canReadAsset(user,asset)&&!await consultations.canReadAsset(user,asset))await access(asset.org_id, user);
+      if(!await assisted.canReadAsset(user,asset)&&!await consultations.canReadAsset(user,asset)&&!await commercial.canReadAsset(user,asset))await access(asset.org_id, user);
       if (!['GET', 'HEAD'].includes(req.method)) fail('Método não permitido.', 405);
       if(privateStorage&&asset.size>3*1024*1024){res.writeHead(302,{Location:await privateStorage.signDownload(asset.org_id,asset.path),'Cache-Control':'private, no-store','Referrer-Policy':'no-referrer'}).end();return true;}
       const file = await assetPath(asset.org_id,asset.id), stat = fs.statSync(file);

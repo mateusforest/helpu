@@ -1,5 +1,15 @@
 const topic = (title, intro, steps, example, result, recovery, links = []) => ({title, intro, steps, example, result, recovery, links});
 export const HELP_TOPICS = {
+  commercial: topic('Preparar uma apresentação comercial', 'A equipe cria páginas públicas por setor e propostas privadas para cada conta.',
+    ['Crie a apresentação, personalize a mensagem e anexe apenas exemplos autorizados. Confira a prévia restrita.', 'Libere o link após revisar o conteúdo público. Copie o endereço e compartilhe quando houver autorização para esse contato.', 'Acompanhe os interesses na fila e prepare a proposta para o e-mail de login do destinatário.'],
+    'Criar uma apresentação para uma imobiliária com exemplos ilustrativos identificados e receber um pedido de conversa.',
+    'O link apresenta aplicações e recebe interesses. A proposta fica no portal da conta destinatária, com versão e aceite. Nada é cobrado ou enviado automaticamente.',
+    ['Se o destinatário ainda não tem conta, peça que se cadastre antes de disponibilizar a proposta privada.', 'Salvar um rascunho não atualiza a versão pública. Revise e libere novamente; use Desativar link para retirá-la do ar.'], [['Abrir Comercial Helpu', 'commercial']]),
+  proposals: topic('Revisar uma proposta', 'As propostas desta área são dirigidas à sua conta de login.',
+    ['Confira a empresa, o escopo, as entregas e o valor total.', 'Leia prazo, revisões, pagamento, eventual renovação e cancelamento. Peça ajuste se algo não estiver claro.', 'Aceite a versão somente depois de revisar todas as condições. O registro ficará no histórico.'],
+    'Pedir que a equipe especifique a quantidade de vídeos e as revisões antes de aceitar.',
+    'O aceite registra as condições apresentadas, sem executar cobrança ou ativar serviços automaticamente.',
+    ['Se a proposta venceu, peça uma nova versão à equipe.', 'Se ela não aparece, confira o e-mail da conta destinatária. Consultorias do formulário têm a proposta na área Consultorias.'], [['Ver propostas', 'proposals'], ['Ver consultorias', 'consultations']]),
   consultations: topic('Contratar uma consultoria', 'A equipe Helpu conduz este serviço humano, com proposta individual antes de contratar.',
     ['Escolha o serviço, preencha o briefing e salve o rascunho. Envie os materiais e autorize a análise quando estiver pronto.', 'Confira escopo, preço, prazo, pagamento e revisões na proposta. Aceite somente após revisar as condições.', 'Acompanhe a entrega privada, consolide os ajustes incluídos e aceite a versão final.'],
     'Solicitar um diagnóstico dos canais da empresa e um plano de ação para os próximos 30 dias.',
