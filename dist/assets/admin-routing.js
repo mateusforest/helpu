@@ -1,4 +1,4 @@
-const views=new Set(['admin','consultations-admin','commercial','pricing']);
+const views=new Set(['admin','consultations-admin','commercial','pricing','intelligence']);
 export function adminDestination(operator,href){
  if(!operator)return null;
  const url=new URL(href),view=url.hash.replace(/^#\//,'');

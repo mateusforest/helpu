@@ -24,8 +24,11 @@ export function applyMediaContext(args,context,assets){
   const explicit=args.attachments;
   let attachments=[...new Set(Array.isArray(explicit)?explicit:context.referenceIds)];
   if(args.format!=='reels')return {...args,attachments:explicit??attachments.filter(id=>assets.find(a=>a.id===id)?.mime.startsWith('image/'))};
+  const referenceOnlyIds=args.referenceOnlyIds??[];
+  if(!Array.isArray(referenceOnlyIds)||referenceOnlyIds.some(id=>!assets.some(a=>a.id===id&&(a.mime.startsWith('image/')||a.mime==='video/mp4'))))fail('A referência de estilo não está disponível neste pedido. Envie o arquivo novamente.');
+  attachments=[...new Set([...attachments,...referenceOnlyIds])];
   let options={...args.videoOptions},requiredSourceAssetIds=[];
-  if(allImages){requiredSourceAssetIds=assets.filter(a=>a.mime.startsWith('image/')).map(a=>a.id);attachments=[...new Set([...attachments,...requiredSourceAssetIds])];}
+  if(allImages){requiredSourceAssetIds=assets.filter(a=>a.mime.startsWith('image/')&&!referenceOnlyIds.includes(a.id)).map(a=>a.id);attachments=[...new Set([...attachments,...requiredSourceAssetIds])];}
   // Match explicit client corrections only, in order; never infer permission
   // from assistant prose or from the contents of an attachment.
   let music;

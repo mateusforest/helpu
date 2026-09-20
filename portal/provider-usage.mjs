@@ -1,8 +1,9 @@
 import {createHash,randomUUID} from 'node:crypto';
+import {estimateTextCost,estimateImageCost} from './ai-costs.mjs';
 
 const integer=value=>Number.isSafeInteger(value)&&value>=0?value:null;
 const identifier=value=>typeof value==='string'&&/^[a-zA-Z0-9_.:/-]{1,180}$/.test(value)?value:null;
-const operations=new Set(['conversation','post','creation_plan','image','agent','contextual_review','operational_validation']);
+const operations=new Set(['conversation','post','creation_plan','image','agent','contextual_review','operational_validation','model_evaluation']);
 
 // Provider measurements only. Missing fields stay unknown, never estimated as zero.
 // Cached input is a subset of input; reasoning output is a subset of output.
@@ -18,7 +19,7 @@ export function measuredTokens(usage){
 
 // Internal records cannot be written through the public records API. No prompts,
 // outputs, file names, API keys, headers or provider error messages are persisted.
-export async function recordProviderUsage(db,job,response,{operation,model,observedAt=Date.now()}={}){
+export async function recordProviderUsage(db,job,response,{operation,model,observedAt=Date.now(),startedAt,serviceTier}={}){
  if(!job?.org_id||(!job.id&&!identifier(job.operationId))||!operations.has(operation))throw new Error('Invalid usage context');
  const responseId=identifier(response?.id)||identifier(response?.responseId);
  const requestId=identifier(response?.requestId);
@@ -27,7 +28,10 @@ export async function recordProviderUsage(db,job,response,{operation,model,obser
  const tokens=measuredTokens(response?.usage),at=integer(observedAt)??Date.now();
  const value={schemaVersion:1,provider:'openai',operation,orgId:job.org_id,jobId:job.id||null,operationId:identifier(job.operationId),
   model:identifier(response?.model)||identifier(model),configuredModel:identifier(model),
-  responseId,requestId,observedAt:at,usageAvailable:Object.values(tokens).some(n=>n!==null),tokens};
+  responseId,requestId,observedAt:at,usageAvailable:Object.values(tokens).some(n=>n!==null),tokens,
+  latencyMs:integer(response?.latencyMs)??(integer(startedAt)!==null?integer(at-startedAt):null),
+  serviceTier:['default','flex','priority','fast'].includes(response?.service_tier)?response.service_tier:serviceTier||null};
+ value.estimatedCost=(operation==='image'?estimateImageCost:estimateTextCost)({...value,tokens:{...tokens,cacheWriteInput:integer(response?.usage?.input_tokens_details?.cache_creation_tokens)}});
  try{
   const saved=await db.prepare("INSERT INTO records(id,org_id,kind,data,external_id,created_at,updated_at) VALUES(?,?,'provider_usage',?,?,?,?) ON CONFLICT(org_id,kind,external_id) DO NOTHING").run(randomUUID(),job.org_id,JSON.stringify(value),externalId,at,at);
   return {recorded:saved.changes===1,externalId};

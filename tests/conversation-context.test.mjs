@@ -3,6 +3,12 @@ import assert from 'node:assert/strict';
 import {conversationRequestContext,applyMediaContext,LEGACY_RECEIPT} from '../portal/conversation-context.mjs';
 const msg=(text,attachments=[],createdAt=100,role='user')=>({text,attachments,createdAt,role});
 const assets=[{id:'image-a',mime:'image/png'},{id:'image-b',mime:'image/jpeg'},{id:'video',mime:'video/mp4'}];
+test('style references are attached without becoming required scene material',()=>{
+ const context={current:{text:'Use todas as imagens'},referenceIds:assets.map(a=>a.id)};
+ const r=applyMediaContext({format:'reels',attachments:['image-a'],referenceOnlyIds:['video','image-b']},context,assets);
+ assert.deepEqual(r.attachments,['image-a','video','image-b']);assert.deepEqual(r.requiredSourceAssetIds,['image-a']);assert.deepEqual(r.referenceOnlyIds,['video','image-b']);
+ assert.throws(()=>applyMediaContext({format:'reels',referenceOnlyIds:['foreign']},context,assets),/referência de estilo/);
+});
 test('latest correction wins and all images survive a model choosing only the last video',()=>{
  const context=conversationRequestContext([msg(LEGACY_RECEIPT,['image-a']),msg('Arquivo recebido pelo WhatsApp.',['image-b','video'],101),msg('Crie um vídeo sem música',[],102),msg('Sem música conforme pedido',[],103,'assistant'),msg('Unifique todas as imagens no vídeo. Utilize a música',[],104)]);
  assert.deepEqual(context.referenceIds,['image-a','image-b','video']);assert.doesNotMatch(JSON.stringify(context.input),/Confirme o recebimento/);

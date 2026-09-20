@@ -1,6 +1,7 @@
 import {adminOverview} from './admin-overview.mjs';
 import {createFinance} from './finance.mjs';
 import {createCommerce} from './commerce.mjs';
+import {createAIManagement} from './ai-management.mjs';
 import {createPricing} from './pricing.mjs';
 import {createCommercial} from './commercial.mjs';
 import {createConsultations} from './consultations.mjs';
@@ -298,7 +299,9 @@ export async function createPortal({db, dataDir, userFrom, json, safeOrigin, pro
   }
   async function integration(org, id) {
     const saved = await storedIntegration(org, id);
-    return id === 'openai' ? resolveOpenAIConfig(saved, openaiEnv) : saved;
+    if(id!=='openai')return saved;
+    const routing=await db.prepare("SELECT data FROM records WHERE org_id=? AND kind='ai_routing' AND id=?").get(org,'ai-routing:'+org);
+    return {...resolveOpenAIConfig(saved,openaiEnv),aiRouting:parse(routing?.data)};
   }
   async function integrationState(org) {
     return await mapAsync(CONNECTORS, async def => {
@@ -830,6 +833,7 @@ export async function createPortal({db, dataDir, userFrom, json, safeOrigin, pro
   const whatsappChat=createWhatsAppChat({db,metadata,saveMetadata,conversation,assetPath,storeAsset,env:whatsappChatEnv,fetcher:whatsappChatFetch,onInbound:whatsappWelcome.receive,onDelivery:whatsappWelcome.delivery});
   const finance=createFinance({db,operator:assisted.operator,storeAsset,now:assistedNow,deliver:whatsappChat.financeReminder});
   const commerce=createCommerce({db,operator:assisted.operator,finance,creations,now:assistedNow});
+  const aiManagement=createAIManagement({db,operator:assisted.operator,integration,now:assistedNow});
   async function registerSignup(user,input) {
     const contact=signupWhatsAppInput(input,whatsappChatEnv);
     const [org]=await companies(user);
@@ -1629,6 +1633,12 @@ export async function createPortal({db, dataDir, userFrom, json, safeOrigin, pro
         operator: assisted.operator(user)
       });
       return true;
+    }
+    if(pathname==='/api/portal/ai-management'){
+      const target=url.searchParams.get('org')||'';
+      if(req.method==='GET')json(res,200,await aiManagement.listing(target,user));
+      else if(req.method==='POST')json(res,200,await aiManagement.action(target,user,await body(req)));
+      else fail('Método não permitido.',405);return true;
     }
     if(pathname==='/api/portal/commerce'){
       const admin=url.searchParams.get('admin')==='1',target=url.searchParams.get('org')||'';

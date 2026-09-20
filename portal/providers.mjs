@@ -1,6 +1,7 @@
 import {googlePresence} from './google-presence.mjs';
 import {AGENTS} from './catalog.mjs';
 import {randomUUID} from 'node:crypto';
+import {aiModel} from './ai-routing.mjs';
 export class ProviderError extends Error{constructor(message,state='failed'){super(message);this.state=state;}}
 // Only known provider codes are reflected to customers; never echo raw API bodies.
 export function openAIError(response,data) {
@@ -50,9 +51,10 @@ export function createProviders(fetcher=fetch){
   throw new ProviderError(`O serviço recusou a solicitação (${response.status}). Verifique permissões, limites e configuração.`,response.status===401||response.status===403?'blocked':uncertain&&response.status>=500?'uncertain':'failed');
  }return withResponse?{data,requestId:response.headers.get('x-request-id')}:data;}
  async function measuredResponse(options,onUsage){
+  const startedAt=Date.now();options={...options,body:{...options.body,service_tier:'default'}};
   const result=await request('https://api.openai.com/v1/responses',{...options,withResponse:true});
   const data=result.data;
-  if(onUsage)await onUsage({id:data?.id||null,requestId:result.requestId,model:data?.model||options.body.model,configuredModel:options.body.model,usage:data?.usage||null});
+  if(onUsage)await onUsage({id:data?.id||null,requestId:result.requestId,model:data?.model||options.body.model,configuredModel:options.body.model,usage:data?.usage||null,service_tier:data?.service_tier||'default',latencyMs:Date.now()-startedAt});
   return data;
  }
  const metaVersion=c=>/^v\d+\.\d+$/.test(c.version||'')?c.version:'v24.0';
@@ -77,8 +79,8 @@ export function createProviders(fetcher=fetch){
     images.forEach((image,index)=>form.append('image[]',new Blob([image.bytes],{type:image.mime}),'reference-'+(index+1)+({ 'image/png':'.png','image/jpeg':'.jpg','image/webp':'.webp'}[image.mime])));
     body=form;headers={Authorization:headers.Authorization};endpoint='edits';
    }
-   const result=await request('https://api.openai.com/v1/images/'+endpoint,{method:'POST',headers,uncertain:true,withResponse:true,body});
-   const measurement={id:result.data?.id||null,requestId:result.requestId,model:result.data?.model||'gpt-image-2.5-sunburst',usage:result.data?.usage||null};
+   const startedAt=Date.now(),result=await request('https://api.openai.com/v1/images/'+endpoint,{method:'POST',headers,uncertain:true,withResponse:true,body});
+   const measurement={id:result.data?.id||null,requestId:result.requestId,model:result.data?.model||'gpt-image-2.5-sunburst',usage:result.data?.usage||null,service_tier:'default',latencyMs:Date.now()-startedAt};
    if(onUsage)await onUsage(measurement);
    if(result.data?.data?.length!==1)throw new ProviderError('A OpenAI não retornou uma única imagem verificável. Confira a tentativa antes de repetir.','uncertain');
    return {base64:result.data.data[0].b64_json,...measurement};
@@ -112,7 +114,7 @@ export function createProviders(fetcher=fetch){
    }catch(e){return {...responseMetadata(data,model,startedAt),status:e.state==='blocked'?'blocked':'failed',structuredOutput:false,toolCalling,tools:available.map(name=>({name,status:'available_unvalidated'})),error:e instanceof ProviderError?e.message:'Não foi possível concluir o teste operacional da inteligência.',providerDiagnostic:e.providerDiagnostic||null};}
   },
   async contextualReview(config,{company,objective,content,knowledge=[],imageDataUrl=null,onUsage}){
-   const startedAt=Date.now(),model=modelFor(config);requireFields(config,['apiKey'],'OpenAI');
+   const startedAt=Date.now(),model=aiModel(config,'contextual_review');requireFields(config,['apiKey'],'OpenAI');
    if(imageDataUrl&&(!/^data:image\/(png|jpeg|webp);base64,[a-zA-Z0-9+/=]+$/.test(imageDataUrl)||Buffer.byteLength(imageDataUrl.slice(imageDataUrl.indexOf(',')+1),'base64')>20*1024*1024))throw new ProviderError('A revisão visual precisa de uma imagem PNG, JPEG ou WebP de até 20 MB.','blocked');
    const criteria=['objective','brand_identity','tone','factual_claims','channel',...(imageDataUrl?['visual_alignment']:[])];
    const check={type:'object',properties:{criterion:{type:'string',enum:criteria},passed:{type:'boolean'},note:{type:'string'}},required:['criterion','passed','note'],additionalProperties:false};
@@ -124,6 +126,7 @@ export function createProviders(fetcher=fetch){
   },
   instagramIdentity,
   async text(config,{agent='creative',brief,company,records,onUsage}){
+   config={...config,model:aiModel(config,'agent')};
    requireFields(config,['apiKey'],'OpenAI');const role=AGENTS.find(a=>a.id===agent)||AGENTS[2];
    const piece={type:'object',additionalProperties:false,properties:{title:{type:'string'},caption:{type:'string'},visualPrompt:{type:'string'},format:{type:'string',enum:['image','video','story','carousel','text']},channel:{type:'string',enum:['instagram','whatsapp','google','website','other']}},required:['title','caption','visualPrompt','format','channel']};
    const schema={type:'object',additionalProperties:false,properties:{summary:{type:'string'},recommendations:{type:'array',items:{type:'string'}},questions:{type:'array',items:{type:'string'}},pieces:{type:'array',items:piece}},required:['summary','recommendations','questions','pieces']};
