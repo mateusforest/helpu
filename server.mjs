@@ -289,7 +289,7 @@ export async function createHelpuServer({dataDir = process.env.HELPU_DATA_DIR ||
         res.writeHead(404).end();
         return;
       }
-      if (['conta.html', 'portal.html'].some(name => target === path.join(resolvedRoot, name)) && !await userFrom(req)) {
+      if (['conta.html', 'portal.html', 'admin.html'].some(name => target === path.join(resolvedRoot, name)) && !await userFrom(req)) {
         res.writeHead(302, {
           'Location': '/entrar.html',
           'Cache-Control': 'no-store'

@@ -1,3 +1,4 @@
+import {adminOverview} from './admin-overview.mjs';
 import {createPricing} from './pricing.mjs';
 import {createCommercial} from './commercial.mjs';
 import {createConsultations} from './consultations.mjs';
@@ -1615,6 +1616,11 @@ export async function createPortal({db, dataDir, userFrom, json, safeOrigin, pro
         operator: assisted.operator(user)
       });
       return true;
+    }
+    if(pathname==='/api/portal/admin-overview'){
+      if(!assisted.operator(user))fail('Acesso restrito à equipe autorizada.',403);
+      if(req.method!=='GET')fail('Método não permitido.',405);
+      json(res,200,await adminOverview(db));return true;
     }
     if(pathname==='/api/portal/pricing'){
       if(req.method==='GET')json(res,200,await pricing.listing(user,url.searchParams.get('orgId')));

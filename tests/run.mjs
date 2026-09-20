@@ -60,3 +60,5 @@ import './provider-usage-summary.test.mjs';
 import './company-diagnosis.test.mjs';
 
 import './pricing.test.mjs';
+
+import './admin-routing.test.mjs';
