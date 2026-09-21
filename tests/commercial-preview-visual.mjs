@@ -19,6 +19,15 @@ try{
   await page.screenshot({path:path.join(output,`abertura-${width}.png`)});
  }
  for(let i=0;i<4;i++){await page.locator(`[data-step="${i}"]`).click();assert.equal(await page.locator(`[data-step="${i}"]`).getAttribute('aria-selected'),'true');}
+ for(let i=0;i<6;i++){await page.locator(`[data-chapter="${i}"]`).click();assert.equal(await page.locator('#story-count').innerText(),`0${i+1} / 06`);assert.equal(await page.locator(`[data-chapter="${i}"]`).getAttribute('aria-selected'),'true');assert.ok(await page.locator('.story-stage').evaluate(el=>el.scrollHeight<=el.clientHeight+1),`story overflow ${i}`);}
+ assert.equal(await page.locator('#watch-story').isVisible(),false);
+ await page.locator('#read-story').click();assert.match(await page.locator('#dialog-content').innerText(),/Fortaleza/);await page.keyboard.press('Escape');
+ await page.evaluate(()=>{window.HELPU_STORY_MEDIA.chapters[0].image='assets/imobiliaria.jpg';window.HELPU_STORY_MEDIA.chapters[0].alt='TEST ONLY';showChapter(0);});
+ await page.waitForFunction(()=>document.querySelector('.story-visual').classList.contains('has-photo'));
+ await page.evaluate(()=>{window.HELPU_STORY_MEDIA.chapters[0].image='assets/missing-test-image.jpg';showChapter(0);});
+ await page.waitForFunction(()=>!document.querySelector('.story-visual img'));
+ assert.equal(await page.locator('#story-year').innerText(),'2020');
+ await page.evaluate(()=>{window.HELPU_STORY_MEDIA.chapters[0].image='';showChapter(0);});
  for(const selector of ['#show-portal','[data-art="imobiliaria"]','[data-art="bebidas"]']){
   await page.locator(selector).click();await page.locator('#detail[open]').waitFor();
   await page.waitForFunction(()=>{const i=document.querySelector('#dialog-content img');return i?.complete&&i.naturalWidth>0;});
@@ -40,5 +49,6 @@ try{
  }
  assert.deepEqual(errors,[]);
  await page.setViewportSize({width:1440,height:1000});await page.evaluate(()=>scrollTo(0,0));await page.screenshot({path:path.join(output,'pagina-completa.png'),fullPage:true});
- console.log('Passed: 320/390/1440 px, images, demo tabs, modal focus/escape, comparison math, quiz validation and all three recommendations, proposal download.');
+ const filmPage=await browser.newPage();await filmPage.addInitScript(()=>Object.defineProperty(window,'HELPU_STORY_MEDIA',{get:()=>({film:{src:'assets/missing-film.mp4',title:'TEST ONLY'}}),set:()=>{}}));await filmPage.goto(pathToFileURL(path.join(root,'index.html')).href);await filmPage.locator('#watch-story').click();await filmPage.getByText('O filme não carregou. Você pode conhecer a trajetória pelos capítulos da apresentação.').waitFor();await filmPage.keyboard.press('Escape');await filmPage.close();
+ console.log('Passed: 320/390/1440 px, story chapters and media fallback, images, demo tabs, modal focus/escape, comparison math, quiz validation and all three recommendations, proposal download.');
 }finally{await browser.close();}

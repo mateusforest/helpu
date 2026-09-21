@@ -22,3 +22,9 @@ Revisar a oferta e autorizar publicação. Definir destino do atendimento e proc
 ## Verificação
 
 `node tests/commercial-preview-visual.mjs` confere layout em 320, 390 e 1440 pixels, imagens, etapas, modais, comparação, três recomendações e download do resumo, sem serviços externos.
+
+## Abertura com história
+
+A revisão seguinte começa pela trajetória relatada pelos fundadores: Vacaria (2020), São Paulo, Fortaleza, Porto Alegre e retorno a Vacaria. São seis capítulos navegáveis, sem cronologia anual inventada. Métricas históricas estão identificadas como informadas pelos fundadores e separadas dos resultados da nova plataforma. Não foi produzido um filme nem inserido acervo fictício.
+
+`story-media.js` prepara fotos por capítulo e vídeo com capa e legendas. `PEDIDO-PARA-O-EDITOR.md` contém roteiro, direção e entregas para a outra conversa; `ACERVO-E-INTEGRACAO.md` orienta a seleção e o encaixe dos materiais. O leitor mantém controle da navegação, e o vídeo só terá CTA quando houver um arquivo configurado.
