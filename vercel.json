@@ -6,6 +6,22 @@
   "outputDirectory": "dist",
   "rewrites": [
     {
+      "source": "/apresentação",
+      "destination": "/apresentacao-publica/index.html"
+    },
+    {
+      "source": "/apresentação/",
+      "destination": "/apresentacao-publica/index.html"
+    },
+    {
+      "source": "/apresentacao",
+      "destination": "/apresentacao-publica/index.html"
+    },
+    {
+      "source": "/apresentacao/",
+      "destination": "/apresentacao-publica/index.html"
+    },
+    {
       "source": "/api/:path*",
       "destination": "/api/runtime"
     },
