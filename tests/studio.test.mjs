@@ -77,7 +77,7 @@ test('produção existente: origem, dependências e evidência sem geração fic
   const open = async () => {
     server = await createHelpuServer({
       dataDir: directory,
-      portalOptions: {
+      portalOptions: {operatorEnv:{HELPU_OPERATOR_USER_IDS:'1'},
         startScheduler: false,
         providers
       }

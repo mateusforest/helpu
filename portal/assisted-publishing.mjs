@@ -1,8 +1,8 @@
 import {randomUUID,createHash} from 'node:crypto';
 import fs from 'node:fs';
 
-export const ASSISTED_CONSENT_VERSION='assisted-2026-09-20';
-export const ASSISTED_CONSENT='Autorizo a equipe Helpu a revisar os materiais deste serviço e publicar manualmente na conta indicada, somente após minha aprovação da versão, legenda e data. O acesso deve ser delegado pela Meta e pode ser revogado. Impulsionamentos exigem orçamento e aprovação separados.';
+export const ASSISTED_CONSENT_VERSION='assisted-2026-09-21';
+export const ASSISTED_CONSENT='Autorizo a equipe Helpu a revisar os materiais deste serviço e publicar manualmente na conta indicada, somente após minha aprovação da versão, legenda e data. A liberação de acesso à conta será combinada com a equipe e poderá ser revogada. Esta autorização não faz login nem ativa publicação automática. Impulsionamentos exigem orçamento e aprovação separados.';
 const fail=(message,status=400)=>{throw Object.assign(new Error(message),{status});};
 const text=(v,max=3000)=>typeof v==='string'?v.trim().slice(0,max):'';
 const digest=v=>createHash('sha256').update(v).digest('hex');
@@ -93,8 +93,8 @@ export async function createAssistedPublishing({db,assetPath,env=process.env,now
       if(['authorize','revoke','verify_access'].includes(act)){
         const prior=await serviceRow(org);if(prior)versionCheck(decode(prior),input);else if(input.version!==0)fail('Atualize a autorização.',409);
         if(act==='verify_access'){
-          if(!admin)fail('Somente um operador pode confirmar o acesso delegado.',403);requireActive(service);
-          const evidence=text(input.evidence,1000);if(evidence.length<10)fail('Registre como conferiu o acesso delegado na Meta.');
+          if(!admin)fail('Somente um operador pode confirmar o acesso autorizado.',403);requireActive(service);
+          const evidence=text(input.evidence,1000);if(evidence.length<10)fail('Registre como conferiu o acesso autorizado na Meta.');
           return write(org,prior.id,'assisted_service',{...service,delegated:{account:service.account,operator:String(user.id),at:now(),evidence}},prior,user,act);
         }
         if(admin)fail('A autorização precisa vir do responsável pela empresa.',403);
@@ -136,7 +136,7 @@ export async function createAssistedPublishing({db,assetPath,env=process.env,now
         else if(act==='submit_review'){active();editable();if(!['review','changes_requested','failed'].includes(r.state))fail('O pedido já foi encaminhado.',409);next.state='awaiting_approval';next.assignee=String(user.id);next.note=text(input.note,1000);}
         else if(act==='start_publication'){
           active();if(r.state!=='scheduled'||!r.approval||r.approval.revision!==r.revision||r.approval.hash!==digest(JSON.stringify(r.snapshot)))fail('Esta versão ainda não está aprovada.',409);
-          if(!service.delegated||service.delegated.account!==r.snapshot.account)fail('Confira o acesso delegado à conta antes de publicar.',409);
+          if(!service.delegated||service.delegated.account!==r.snapshot.account)fail('Confira o acesso autorizado à conta antes de publicar.',409);
           if(Date.parse(r.snapshot.scheduledAt)>now())fail('Aguarde o horário aprovado ou peça aprovação de outra data.',409);
           const current=await assets(org,r.snapshot.assets.map(a=>a.id));if(current.some((a,i)=>a.hash!==r.snapshot.assets[i].hash))fail('Um arquivo mudou. A peça precisa de uma nova aprovação.',409);
           next.state='publishing';next.execution={operator:String(user.id),startedAt:now(),revision:r.revision};next.assignee=String(user.id);
@@ -155,7 +155,7 @@ export async function createAssistedPublishing({db,assetPath,env=process.env,now
           if(!['closed','results'].includes(input.state))active();const b=r.boost;if(!b?.approval||b.approval.revision!==r.revision||b.approval.termsHash!==digest(JSON.stringify(b.terms)))fail('O orçamento atual ainda não foi aprovado.',409);
           const allowed={approved:'configured',configured:'meta_review',meta_review:'active',active:'closed',closed:'results'};
           if(allowed[b.state]!==input.state)fail('Etapa de anúncio inválida.',409);
-          if(r.state!=='published'||!['closed','results'].includes(input.state)&&!service?.delegated)fail('Publique a peça aprovada e confirme o acesso delegado antes de registrar o anúncio.',409);
+          if(r.state!=='published'||!['closed','results'].includes(input.state)&&!service?.delegated)fail('Publique a peça aprovada e confirme o acesso autorizado antes de registrar o anúncio.',409);
           const evidence=text(input.evidence,1000);if(evidence.length<5)fail('Registre a evidência desta etapa.');
           if(input.state==='active'&&(now()<Date.parse(b.terms.startAt)||now()>Date.parse(b.terms.endAt)))fail('A ativação precisa estar dentro do período aprovado.',409);
           const url=externalLink(input.url,true);next.boost={...b,state:input.state,evidence:[...b.evidence,{state:input.state,at:now(),operator:String(user.id),note:evidence,url}]};

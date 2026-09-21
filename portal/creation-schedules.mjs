@@ -17,10 +17,11 @@ export function nextWeekly({weekdays,time,timeZone},after){
 }
 export function createCreationSchedules({db,creations,company,now=Date.now}){
  const decode=row=>row?{id:row.id,...JSON.parse(row.data)}:null;
+ async function enabled(org){const p=(await company(org)).policy;return p.schedulesEnabled??p.enabled;}
  async function write(org,id,data){await db.prepare("INSERT INTO records(id,org_id,kind,data,external_id,created_at,updated_at) VALUES(?,?,'creation_schedule',?,?,?,?) ON CONFLICT(id) DO UPDATE SET data=excluded.data,updated_at=excluded.updated_at").run(id,org,JSON.stringify(data),id,now(),now());return {id,...data};}
  const list=async(org,user)=> (await db.prepare("SELECT * FROM records WHERE org_id=? AND kind='creation_schedule' ORDER BY created_at DESC LIMIT 100").all(org)).map(decode).filter(s=>s.userId===user);
  async function create(org,user,input,conversationId,idempotencyKey){
-  if(!(await company(org)).policy.enabled)fail('Ative a automação da empresa em Autonomia antes de programar gerações.');
+  if(!await enabled(org))fail('Permita gerações agendadas em Minha empresa → Preferências antes de programar.');
   if(!['feed','story','carousel','reels'].includes(input.format)||!String(input.prompt||'').trim()||input.prompt.length>12000)fail('Informe o pedido e o formato da criação.');
   if(!conversationId||!await db.prepare('SELECT 1 FROM conversations WHERE org_id=? AND id=?').get(org,conversationId))fail('Conversa não encontrada.');
   const timeZone=input.timeZone||(await company(org)).policy.timeZone||'America/Sao_Paulo';
@@ -41,7 +42,7 @@ export function createCreationSchedules({db,creations,company,now=Date.now}){
  async function tick(){
   const rows=await db.prepare("SELECT * FROM records WHERE kind='creation_schedule' AND json_extract(data,'$.enabled')=1 AND json_extract(data,'$.nextAt')<=? ORDER BY created_at LIMIT 10").all(now());
   for(const row of rows){const s=decode(row);delete s.id;
-   if(!(await company(row.org_id)).policy.enabled)continue;
+   if(!await enabled(row.org_id))continue;
    if(!await db.prepare('SELECT 1 FROM memberships WHERE org_id=? AND user_id=?').get(row.org_id,s.userId)){await write(row.org_id,row.id,{...s,enabled:false,lastError:'O criador não tem mais acesso à empresa.'});continue;}
    try{const creation=await creations.submit(row.org_id,s.userId,{...s.request,requestId:'schedule_'+row.id+'_'+s.nextAt},{conversationId:s.conversationId});await write(row.org_id,row.id,{...s,enabled:s.repeat==='weekly',nextAt:s.repeat==='weekly'?nextWeekly(s.rule,now()):s.nextAt,lastCreationId:creation.id,lastRunAt:now(),lastError:null});}
    catch{await write(row.org_id,row.id,{...s,enabled:false,lastError:'Não foi possível iniciar a criação. Confira conexão, referências e limites antes de reativar.'});}

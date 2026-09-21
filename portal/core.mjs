@@ -1673,6 +1673,35 @@ export async function createPortal({db, dataDir, userFrom, json, safeOrigin, pro
       else fail('Método não permitido.',405);
       return true;
     }
+    if(pathname==='/api/portal/admin-settings'){
+      if(!assisted.operator(user))fail('Acesso restrito à equipe Helpu.',403);
+      const target=url.searchParams.get('org')||'',c=await company(target);
+      if(!c)fail('Empresa não encontrada.',404);
+      if(req.method==='POST'){
+        const d=await body(req);
+        if(d.expectedUpdatedAt!==c.updatedAt)fail('As preferências mudaram. Atualize antes de salvar.',409);
+        const policy={...c.policy};
+        if(d.action==='reset'){
+          if(!policy.usageTestingEnabled)fail('Reset disponível somente na fase de testes.',422);
+          policy.usageResetAt=Date.now();
+        }else if(d.action==='save'){
+          for(const k of ['dailyRuns','dailyMedia','dailyMessages'])if(k in (d.policy||{})){
+            if(unlimited(d.policy[k])&&!policy.usageTestingEnabled)fail('Uso sem limite disponível somente na fase de testes.',422);
+            policy[k]=parseUsageLimit(d.policy[k]);
+          }
+          for(const k of ['enabled','autoMedia'])if(k in (d.policy||{}))policy[k]=d.policy[k]===true;
+          if(d.policy?.publicBaseUrl!==undefined){
+            if(d.policy.publicBaseUrl&&!publicUrl(d.policy.publicBaseUrl))fail('O endereço público precisa usar HTTPS.');
+            policy.publicBaseUrl=str(d.policy.publicBaseUrl,400).replace(/\/$/,'');
+          }
+        }else fail('Ação inválida.');
+        const saved=await db.prepare('UPDATE companies SET policy=?,updated_at=? WHERE id=? AND updated_at=?').run(JSON.stringify(policy),Math.max(Date.now(),c.updatedAt+1),target,c.updatedAt);
+        if(saved.changes!==1)fail('As preferências mudaram. Atualize antes de salvar.',409);
+        await audit(target,user.id,d.action==='reset'?'Uso interno zerado':'Controles internos atualizados',target);
+      }else if(req.method!=='GET')fail('Método não permitido.',405);
+      const current=await company(target);
+      json(res,200,{company:{id:current.id,name:current.name,updatedAt:current.updatedAt},policy:current.policy,usage:await usageSnapshot(db,target,current.policy)});return true;
+    }
     if(pathname==='/api/portal/admin-overview'){
       if(!assisted.operator(user))fail('Acesso restrito à equipe autorizada.',403);
       if(req.method!=='GET')fail('Método não permitido.',405);
@@ -2031,6 +2060,7 @@ export async function createPortal({db, dataDir, userFrom, json, safeOrigin, pro
       return true;
     }
     if (section === 'usage' && req.method === 'POST' && kind === 'reset') {
+      if(!assisted.operator(user))fail('O uso interno é administrado pela equipe Helpu.',403);
       await body(req);
       if((await company(org)).policy.usageTestingEnabled!==true)fail('O reset está disponível apenas para empresas habilitadas para testes.',403);
       const membership=await db.prepare('SELECT role FROM memberships WHERE org_id=? AND user_id=?').get(org,user.id);
@@ -2050,6 +2080,7 @@ export async function createPortal({db, dataDir, userFrom, json, safeOrigin, pro
     if (section === 'company' && req.method === 'PATCH') {
       const d = await body(req);
       if (d.expectedUpdatedAt !== undefined && d.expectedUpdatedAt !== (await company(org)).updatedAt) fail('O contexto mudou. Atualize antes de salvar.', 409);
+      if(Object.keys(d.policy||{}).some(k=>['dailyRuns','dailyMedia','dailyMessages','publicBaseUrl','usageTestingEnabled','usageResetAt','enabled','autoMedia'].includes(k))&&!assisted.operator(user))fail('Os controles internos são administrados pela equipe Helpu. Consulte sua franquia em Meu plano.',403);
       const c = await company(org), profile = {
         ...c.profile,
         _evidence: c.profileEvidence
@@ -2057,7 +2088,7 @@ export async function createPortal({db, dataDir, userFrom, json, safeOrigin, pro
       const policy = {
         ...c.policy
       };
-      for (const k of ['enabled', 'autoMedia', 'allowPublishing', 'autoReply']) if ((k in (d.policy || ({})))) policy[k] = d.policy[k] === true;
+      for (const k of ['enabled', 'autoMedia', 'schedulesEnabled', 'allowPublishing', 'autoReply']) if ((k in (d.policy || ({})))) policy[k] = d.policy[k] === true;
       if(['dailyRuns','dailyMedia','dailyMessages'].some(k=>k in (d.policy||{}))){
         const membership=await db.prepare('SELECT role FROM memberships WHERE org_id=? AND user_id=?').get(org,user.id);
         if(!['owner','admin'].includes(membership?.role))fail('Somente a administração pode alterar os limites.',403);
@@ -2149,6 +2180,7 @@ export async function createPortal({db, dataDir, userFrom, json, safeOrigin, pro
     if (section === 'jobs') {
       if (req.method === 'POST' && !kind) {
         const d = await body(req);
+        if(d.kind==='agent'&&d.payload?.purpose==='company_diagnosis'&&!assisted.operator(user))fail('Solicite o diagnóstico humano em Consultorias. A equipe enviará uma proposta com valor e prazo.',403);
         const key = str(d.idempotencyKey, 180) || randomUUID();
         json(res, 201, await queue(org, user.id, d.kind, d.payload || ({}), d.scheduledAt, key, {explicitImage:d.kind==='image'}));
         return true;

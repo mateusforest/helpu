@@ -38,7 +38,7 @@ test('diagnóstico reutiliza fila, perfil salvo, idempotência, limites e mediç
   return Response.json({id:'resp_diagnosis_'+calls,model:'test-model',status:'completed',usage:{input_tokens:30,output_tokens:20,total_tokens:50},output:[{type:'message',content:[{type:'output_text',text:JSON.stringify({summary:'Diagnóstico do cadastro.',recommendations:['Validar posicionamento.'],questions:['Qual oferta priorizar?'],pieces:[{title:'Peça não solicitada',caption:'Não deve ser criada',visualPrompt:'Não deve virar imagem',format:'image',channel:'instagram'}]})}]}]},{headers:{'x-request-id':'req_diagnosis_'+calls}});
  });
  const dataDir=fs.mkdtempSync(path.join(os.tmpdir(),'helpu-diagnosis-'));
- const server=await createHelpuServer({dataDir,portalOptions:{startScheduler:false,openaiEnv:{OPENAI_API_KEY:'test-only-key'},providers}});
+ const server=await createHelpuServer({dataDir,portalOptions: {operatorEnv:{HELPU_OPERATOR_USER_IDS:'1'},startScheduler:false,openaiEnv:{OPENAI_API_KEY:'test-only-key'},providers}});
  await new Promise(r=>server.listen(0,'127.0.0.1',r));t.after(async()=>{await server.portal.shutdown();await new Promise(r=>server.close(r));});
  const origin='http://127.0.0.1:'+server.address().port;let cookie='',org;
  const request=async(route,method='GET',data,session=cookie)=>{const r=await fetch(origin+route,{method,headers:{Origin:origin,Cookie:session,'Content-Type':'application/json'},body:data===undefined?undefined:JSON.stringify(data)});if(r.headers.get('set-cookie'))cookie=r.headers.get('set-cookie').split(';')[0];return {status:r.status,body:await r.json()};};

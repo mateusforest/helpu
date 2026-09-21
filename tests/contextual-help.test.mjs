@@ -9,7 +9,7 @@ test('contextual help selects creation format and safely handles unknown routes'
   for(const [view,format,key] of [['conversation','feed','conversation'],['create','feed','images'],['create','story','images'],['create','carousel','images'],['create','reels','reels'],['video','feed','reels'],['browser','feed','integrations'],['toString','feed','general']])assert.equal(helpTopicFor(view,format),key);
 });
 test('every help topic includes steps, example, expected outcome and recovery with real routes',()=>{
-  const routes=new Set(['finance','studio','conversation','brand','company','create/reels','create/feed','settings','integrations','activity','assisted','admin','consultations','consultations-admin','commercial','proposals','pricing']);
+  const routes=new Set(['finance','studio','conversation','brand','company','create/reels','create/feed','settings','integrations','activity','assisted','admin','consultations','consultations-admin','commercial','proposals','pricing','commerce']);
   for(const [key,t] of Object.entries(HELP_TOPICS)){
     assert.ok(t.title&&t.intro&&t.example&&t.result);assert.ok(t.steps.length>=3&&t.recovery.length>=2);
     for(const [,route]of t.links)assert.ok(routes.has(route),route);
@@ -20,7 +20,7 @@ test('every help topic includes steps, example, expected outcome and recovery wi
 test('help preserves explicit distinctions between scheduling, activation and provider balance',()=>{
   assert.match(HELP_TOPICS.calendar.result,/não confirma publicação automática/);
   assert.match(HELP_TOPICS.whatsapp.intro,/separados/);
-  assert.match(HELP_TOPICS.settings.recovery.join(' '),/não libera saldo externo/);
+  assert.match(HELP_TOPICS.settings.recovery.join(' '),/Limites técnicos são administrados pela Helpu/);
 });
 test('help opens without network calls, workspace updates or executing a task',()=>{
   const old=globalThis.document;let click,dialog,closed=false;

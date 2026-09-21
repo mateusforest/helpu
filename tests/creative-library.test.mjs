@@ -11,7 +11,7 @@ test('biblioteca criativa: pausa, retomada, identidade, referência e revisão i
  const dataDir=fs.mkdtempSync(path.join(os.tmpdir(),'helpu-creative-'));
  const responses=[],inputs=[],imageInputs=[],plans=[],sent=[];
  const env={HELPU_WHATSAPP_BATCH_MS:'0',HELPU_WHATSAPP_NUMBER:'15551234567',HELPU_WHATSAPP_PHONE_NUMBER_ID:'official-phone',HELPU_WHATSAPP_ACCESS_TOKEN:'fake',HELPU_WHATSAPP_APP_SECRET:'fake-secret',HELPU_WHATSAPP_VERIFY_TOKEN:'fake'};
- const server=await createHelpuServer({dataDir,portalOptions:{startScheduler:false,openaiEnv:{OPENAI_API_KEY:'fake'},whatsappChatEnv:env,whatsappChatFetch:async(url,r)=>{
+ const server=await createHelpuServer({dataDir,portalOptions: {operatorEnv:{HELPU_OPERATOR_USER_IDS:'1,2'},startScheduler:false,openaiEnv:{OPENAI_API_KEY:'fake'},whatsappChatEnv:env,whatsappChatFetch:async(url,r)=>{
   if(url.includes('/123456?'))return Response.json({url:'https://lookaside.fbsbx.com/creative',mime_type:'image/png',file_size:testPng().length});
   if(url==='https://lookaside.fbsbx.com/creative')return new Response(testPng());
   sent.push(r);return Response.json({messages:[{id:'sent-'+sent.length}]});

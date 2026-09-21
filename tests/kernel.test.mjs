@@ -74,7 +74,7 @@ test('kernel: chat, registros compartilhados e continuidade sem publicação fic
   const start = async () => {
     server = await createHelpuServer({
       dataDir,
-      portalOptions: {deliveryOnly:false,
+      portalOptions: {operatorEnv:{HELPU_OPERATOR_USER_IDS:'1'},deliveryOnly:false,
         startScheduler: false,
         providers,
         conversationRespond: async (config, body) => {

@@ -62,7 +62,7 @@ test('Astra online: chat, fila, vídeo na Biblioteca e proteção de permissões
   const dataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'helpu-runtime-integration-'));
   const remote = fakeRuntime();
   let responses = [], autoExport = false, projectId, org, cookie = '';
-  const server = await createHelpuServer({ dataDir, portalOptions: {deliveryOnly:false,
+  const server = await createHelpuServer({ dataDir, portalOptions: {operatorEnv:{HELPU_OPERATOR_USER_IDS:'1'},deliveryOnly:false,
     startScheduler: false,
     runtimeEnv: { HELPU_RUNTIME_URL: 'https://runtime.example.test', HELPU_RUNTIME_SECRET: 'runtime-test-secret-'.repeat(3) },
     runtimeFetch: remote.fetch,
@@ -187,7 +187,7 @@ test('Astra online: chat, fila, vídeo na Biblioteca e proteção de permissões
 test('sem runtime configurado o chat não anuncia ferramentas de vídeo nem executa chamada inventada', async () => {
   const dataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'helpu-runtime-missing-'));
   let calls = 0, turns = 0, cookie = '';
-  const server = await createHelpuServer({ dataDir, portalOptions: {deliveryOnly:false,
+  const server = await createHelpuServer({ dataDir, portalOptions: {operatorEnv:{HELPU_OPERATOR_USER_IDS:'1'},deliveryOnly:false,
     startScheduler: false, runtimeEnv: {}, runtimeFetch: async () => { calls++; throw new Error('Runtime ausente não deve ser chamado.'); },
     conversationRespond: async (_, body) => {
       assert.equal(body.tools.some(item => item.name.startsWith('video_')), false);

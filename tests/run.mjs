@@ -71,3 +71,4 @@ import './ai-management.test.mjs';
 import './ai-routing-integration.test.mjs';
 
 import './video-recipes.test.mjs';
+import './customer-portal.test.mjs';

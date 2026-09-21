@@ -204,7 +204,7 @@ test('primeira publicação Instagram: identidade, aprovação vinculada e evid�
   const start = async () => {
     server = await createHelpuServer({
       dataDir,
-      portalOptions: {deliveryOnly:false,
+      portalOptions: {operatorEnv:{HELPU_OPERATOR_USER_IDS:'1'},deliveryOnly:false,
         startScheduler: false,
         providers,
         publicationResolve: async () => [{
