@@ -3,12 +3,17 @@
 ## Onde usar
 
 - Cliente: **Minha empresa → Consultorias** (`/portal.html#/consultations`).
-- Equipe: **Minha empresa → Consultorias da equipe** (`/portal.html#/consultations-admin`).
+- Equipe: **Administração → Consultorias e sites** (`/admin.html#/consultations-admin`).
 - A equipe usa a mesma designação de operador do F07, documentada em `assisted-publishing.md`. E-mail informado no formulário não concede acesso administrativo.
 
 ## Serviços e contratação
 
 Quatro formulários compartilham contexto da empresa e têm perguntas específicas: diagnóstico e plano de ação, mercado e posicionamento, identidade de comunicação, qualidade de presença e conteúdo. O cliente salva rascunhos, envia arquivos e links nos campos de texto e autoriza a análise. Um formulário enviado cria um pedido/tarefa na fila específica de consultorias, com indicação da próxima ação e contador de triagens/revisões. Não dispara um agente, e-mail ou WhatsApp.
+
+O serviço de sites profissionais acrescenta um formulário próprio em
+`/portal.html#/websites` e usa a fila administrativa de consultorias. Seus
+rascunhos de preço, escopo, exemplos e controle de saldo final estão descritos
+em [Operação administrativa, sites e Pix](admin-criacao-sites-pix.md).
 
 A equipe assume o atendimento, pede complementos e apresenta escopo, entregas, exclusões, valor, condições de pagamento, prazo inicial, quantidade e prazo das revisões. Nenhum preço padrão foi aprovado ou ativado. O aceite do cliente fica vinculado ao número da proposta; alterar uma proposta antes do aceite cria outra versão e mantém a anterior.
 

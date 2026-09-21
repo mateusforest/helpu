@@ -5,7 +5,9 @@
 - Administração → Financeiro: cobranças de todas as empresas, busca, criação,
   correção antes de anexar boleto, reemissão e confirmação manual no banco.
 - Cliente → Minha empresa → Financeiro: consulta restrita a owner/admin,
-  boleto atual, linha digitável, comprovante PDF, histórico e consentimento WhatsApp.
+  Pix com chave e favorecido, boleto atual, linha digitável, comprovante PDF,
+  histórico e consentimento WhatsApp. A equipe escolhe Pix, boleto ou ambos
+  como alternativas de quitação da mesma cobrança.
 - Valores em centavos, versão obrigatória nas alterações. Reemissão mantém a
   mesma dívida e conserva os documentos anteriores para a equipe.
 - Cada cobrança exige referência do pedido/contrato, competência, descrição,
@@ -28,7 +30,7 @@ O worker existente executa o agendador. Datas seguem America/Sao_Paulo.
 O cliente precisa autorizar avisos financeiros e ter WhatsApp operacional
 conectado e verificado. A preferência de boas-vindas não é reutilizada.
 
-- D-2: cobrança aberta, boleto atual, sem comprovante em análise.
+- D-2: cobrança aberta, boleto atual ou Pix cadastrado, sem comprovante em análise.
 - Documento disponibilizado depois de D-2: aviso de disponibilidade, sem
   afirmar que faltam dois dias. Não há cobrança de atraso automática.
 - Revalidação de estado, papel, consentimento e vínculo antes do envio.
@@ -47,6 +49,9 @@ conectado e verificado. A preferência de boas-vindas não é reutilizada.
 
 Sicredi é manual nesta etapa: emitir no banco, anexar PDF e linha digitável,
 conferir liquidação. Não há conexão automática com a conta bancária.
+Pix também é manual: chave, nome do beneficiário e instituição são informados
+na cobrança; o cliente copia a chave e paga no banco. Não há QR Code dinâmico.
+Enviar comprovante não confirma recebimento nem ativa o plano automaticamente.
 
 Stripe mantém o Checkout e o portal de cobrança já existentes em Minha conta.
 O novo endpoint `POST /webhooks/helpu-stripe` registra pagamentos confirmados

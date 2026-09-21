@@ -1,3 +1,5 @@
+import {createAdminClients,clientControl} from './admin-clients.mjs';
+import {createInternalMarketing} from './internal-marketing.mjs';
 import {createManualWhatsApp} from './whatsapp-manual.mjs';
 import {createReviewPreview} from './review-preview.mjs';
 import {createTemplateCatalog} from './template-catalog.mjs';
@@ -240,9 +242,10 @@ export async function createPortal({db, dataDir, userFrom, json, safeOrigin, pro
     if (!user) fail('Entre para acessar o portal.', 401);
     if (!await db.prepare('SELECT 1 FROM memberships WHERE org_id=? AND user_id=?').get(org, user.id)) fail('Empresa não encontrada.', 404);
   }
-  async function company(org) {
+  async function company(org,effective=true) {
     const row = await db.prepare('SELECT * FROM companies WHERE id=?').get(org);
     if (!row) fail('Empresa não encontrada.', 404);
+    const control=await clientControl(db,org,assistedNow());
     const profile = parse(row.profile), profileEvidence = profile._evidence || ({});
     delete profile._evidence;
     return {
@@ -253,6 +256,7 @@ export async function createPortal({db, dataDir, userFrom, json, safeOrigin, pro
       policy: {
         ...DEFAULT_POLICY,
         ...parse(row.policy),
+        ...(effective&&control.grantActive?{dailyRuns:'unlimited',dailyMedia:'unlimited',dailyMessages:'unlimited'}:{}),
         usageTestingEnabled:parse(row.policy).usageTestingEnabled===true||(process.env.HELPU_USAGE_TEST_ORGS||'').split(',').map(v=>v.trim()).includes(org)
       },
       createdAt: row.created_at,
@@ -431,6 +435,8 @@ export async function createPortal({db, dataDir, userFrom, json, safeOrigin, pro
     }
   }
   async function queue(org, user, kind, payload = {}, scheduledAt = null, key = randomUUID(), options = {}) {
+    if((await clientControl(db,org,assistedNow())).state!=='active')fail('O acesso desta empresa está inativo.',409);
+    if(kind==='helpu_publish'&&options.internalMarketing!==true)fail('Publicação restrita à operação oficial Helpu.',403);
     if(kind==='creation'&&!options.explicitCreation)fail('Use a tela de criação para este pedido.',409);
     if(deliveryOnly && ['publish','insights','metaCampaign','googlePresence','send'].includes(kind)) fail('A Helpu entrega o conteúdo pelo WhatsApp vinculado; a publicação é manual. Esta ação não está disponível.',409);
     await checkParent(org, payload);
@@ -441,7 +447,7 @@ export async function createPortal({db, dataDir, userFrom, json, safeOrigin, pro
       payload={agent:'strategy',purpose:'company_diagnosis',brief};
     }
     if(kind==='image')payload.provider='openai';
-    if (!['agent', 'image', 'video', 'publish', 'send', 'insights', 'metaCampaign', 'googlePresence', 'conversation','creation'].includes(kind)) fail('Ação inválida.');
+    if (!['agent', 'image', 'video', 'publish', 'send', 'insights', 'metaCampaign', 'googlePresence', 'conversation','creation','helpu_publish'].includes(kind)) fail('Ação inválida.');
     if (['image', 'video', 'publish'].includes(kind)) await record(org, 'content', payload.contentId);
     if (kind === 'send') await record(org, 'messages', payload.messageId);
     if (kind === 'metaCampaign') await record(org, 'campaigns', payload.campaignId);
@@ -597,6 +603,7 @@ export async function createPortal({db, dataDir, userFrom, json, safeOrigin, pro
     });
   }
   async function beforeMutation(job) {
+    if((await clientControl(db,job.org_id,assistedNow())).state!=='active')throw new ProviderError('O acesso desta empresa está inativo.','blocked');
     await commerce.guard(job);
     await checkParent(job.org_id, parse(job.payload));
     const current = await db.prepare('SELECT cancel_requested FROM jobs WHERE id=?').get(job.id), op = await kernel.jobOperation(job);
@@ -720,7 +727,7 @@ export async function createPortal({db, dataDir, userFrom, json, safeOrigin, pro
       creationCapabilities: await creations.capabilities(org),
       agents: AGENTS,
       jobs: (await db.prepare('SELECT * FROM jobs WHERE org_id=? ORDER BY created_at DESC LIMIT 150').all(org)).map(decodeJob),
-      audit: await db.prepare('SELECT * FROM audit WHERE org_id=? ORDER BY created_at DESC LIMIT 60').all(org),
+      audit: await db.prepare("SELECT * FROM audit WHERE org_id=? AND action NOT LIKE 'Cliente:%' AND action<>'Arquivo consultado pela equipe' ORDER BY created_at DESC LIMIT 60").all(org),
       worker: await workerState()
     };
   }
@@ -844,6 +851,8 @@ export async function createPortal({db, dataDir, userFrom, json, safeOrigin, pro
   const whatsappChat=createWhatsAppChat({db,metadata,saveMetadata,conversation,assetPath,storeAsset,resolveDeliveryAsset:reviewPreview.resolve,env:whatsappChatEnv,fetcher:whatsappChatFetch,manualInbox:manualWhatsApp,onInbound:whatsappWelcome.receive,onDelivery:async statuses=>{await whatsappWelcome.delivery(statuses);await manualWhatsApp.delivery(statuses);}});
   const finance=createFinance({db,operator:assisted.operator,storeAsset,now:assistedNow,deliver:whatsappChat.financeReminder});
   const commerce=createCommerce({db,operator:assisted.operator,finance,creations,now:assistedNow});
+  const adminClients=createAdminClients({db,operator:assisted.operator,now:assistedNow});
+  const internalMarketing=createInternalMarketing({db,operator:assisted.operator,access,adminClients,creations,integration,providers,privateStorage,assetPath,storeAsset,queue,setJob,audit,now:assistedNow});
   const aiManagement=createAIManagement({db,operator:assisted.operator,integration,now:assistedNow});
   async function registerSignup(user,input) {
     const contact=signupWhatsAppInput(input,whatsappChatEnv);
@@ -920,6 +929,8 @@ export async function createPortal({db, dataDir, userFrom, json, safeOrigin, pro
     }
   }
   async function execute(job) {
+    if((await clientControl(db,job.org_id,assistedNow())).state!=='active')throw new ProviderError('O acesso desta empresa está inativo.','blocked');
+    if(job.kind==='helpu_publish'){await internalMarketing.run(job);return;}
     if(deliveryOnly && ['publish','insights','metaCampaign','googlePresence','send'].includes(job.kind)) throw new ProviderError('Ação anterior suspensa: a Helpu agora prepara e entrega conteúdo para publicação manual.','blocked');
     if (job.kind === 'agent' && job.idempotency_key.startsWith('daily-director:')) {
       const priority = await routinePriority(job.org_id);
@@ -1374,6 +1385,7 @@ export async function createPortal({db, dataDir, userFrom, json, safeOrigin, pro
       await whatsappWelcome.tick();
       await finance.tick();
       await creationSchedules.tick();
+      await internalMarketing.tick();
       for (const expired of await db.prepare("SELECT * FROM jobs WHERE state='working' AND (lease_until IS NULL OR lease_until<?)").all(Date.now())) {
         if (expired.kind === 'conversation') await conversation.recover(expired);
         const recovery = await kernel.recover(expired);
@@ -1386,7 +1398,7 @@ export async function createPortal({db, dataDir, userFrom, json, safeOrigin, pro
           ...DEFAULT_POLICY,
           ...parse(row.policy)
         };
-        if (!p.enabled) continue;
+        if (!p.enabled || (await clientControl(db,row.id,assistedNow())).state!=='active') continue;
         const priority = await routinePriority(row.id), previous = await metadata(row.id, 'routine:daily');
         if (JSON.stringify({
           ...previous,
@@ -1679,7 +1691,7 @@ export async function createPortal({db, dataDir, userFrom, json, safeOrigin, pro
     }
     if(pathname==='/api/portal/admin-settings'){
       if(!assisted.operator(user))fail('Acesso restrito à equipe Helpu.',403);
-      const target=url.searchParams.get('org')||'',c=await company(target);
+      const target=url.searchParams.get('org')||'',c=await company(target,false);
       if(!c)fail('Empresa não encontrada.',404);
       if(req.method==='POST'){
         const d=await body(req);
@@ -1717,6 +1729,17 @@ export async function createPortal({db, dataDir, userFrom, json, safeOrigin, pro
         json(res,201,await manualWhatsApp.upload(user,url.searchParams.get('phone')||'',decodeURIComponent(String(req.headers['x-file-name']||'arquivo')),await readRaw(req,(privateStorage?3:25)*1024*1024)));
       }else if(req.method==='GET')json(res,200,await manualWhatsApp.listing(user,url.searchParams.get('phone')));
       else if(req.method==='POST')json(res,200,await manualWhatsApp.action(user,await body(req)));
+      else fail('Método não permitido.',405);return true;
+    }
+    if(pathname==='/api/portal/admin-clients'){
+      const target=url.searchParams.get('org');
+      if(req.method==='GET')json(res,200,target?await adminClients.detail(target,user):await adminClients.listing(user));
+      else if(req.method==='POST')json(res,200,await adminClients.action(target,user,await body(req)));
+      else fail('Método não permitido.',405);return true;
+    }
+    if(pathname==='/api/portal/internal-marketing'){
+      if(req.method==='GET')json(res,200,{...await internalMarketing.listing(user),login:instagramLogin.status()});
+      else if(req.method==='POST'){const d=await body(req);if(d.action==='connect'){const config=await internalMarketing.requireConfig(user);json(res,200,await instagramLogin.start(req,res,config.orgId,user,{internalMarketing:true}));}else json(res,200,await internalMarketing.action(user,d));}
       else fail('Método não permitido.',405);return true;
     }
     if(pathname==='/api/portal/admin-overview'){
@@ -1765,10 +1788,11 @@ export async function createPortal({db, dataDir, userFrom, json, safeOrigin, pro
       json(res, 201, await newCompany(user, name));
       return true;
     }
-    if (pathname.startsWith('/api/portal/files/')) {
+    if (pathname.startsWith('/api/portal/files/')||pathname.startsWith('/api/portal/admin-client-files/')) {
       const id = pathname.split('/').at(-1);let asset = await db.prepare('SELECT * FROM assets WHERE id=?').get(id);
       if (!asset) fail('Arquivo não encontrado.', 404);
-      if(asset.source_url==='helpu:manual-whatsapp'){if(!assisted.operator(user))fail('Arquivo restrito ao atendimento da equipe Helpu.',403);}
+      if(pathname.startsWith('/api/portal/admin-client-files/')){if(!assisted.operator(user))fail('Acesso restrito à equipe Helpu.',403);if(asset.org_id!==url.searchParams.get('org'))fail('Arquivo não encontrado.',404);await adminClients.audit(asset.org_id,user,'Arquivo consultado pela equipe',asset.id);}
+      else if(asset.source_url==='helpu:manual-whatsapp'){if(!assisted.operator(user))fail('Arquivo restrito ao atendimento da equipe Helpu.',403);}
       else if(asset.source_url==='helpu:finance')await finance.authorizeFile(user,asset);
       else if(!await templateCatalog.canReadAsset(user,asset)&&!await assisted.canReadAsset(user,asset)&&!await consultations.canReadAsset(user,asset)&&!await commercial.canReadAsset(user,asset))await access(asset.org_id, user);
       if (!['GET', 'HEAD'].includes(req.method)) fail('Método não permitido.', 405);
@@ -2086,7 +2110,7 @@ export async function createPortal({db, dataDir, userFrom, json, safeOrigin, pro
       await db.exec('BEGIN IMMEDIATE');
       try {
         if(db.dialect==='postgres')await db.prepare('SELECT id FROM companies WHERE id=? FOR UPDATE').get(org);
-        const c=await company(org),before=await usageSnapshot(db,org,c.policy),at=Date.now();
+        const c=await company(org,false),before=await usageSnapshot(db,org,c.policy),at=Date.now();
         const policy={...c.policy,usageResetAt:at};
         await db.prepare('UPDATE companies SET policy=?,updated_at=? WHERE id=?').run(JSON.stringify(policy),Math.max(at,c.updatedAt+1),org);
         await audit(org,user.id,'Uso interno zerado',org,JSON.stringify({before,resetAt:at}));
@@ -2099,7 +2123,7 @@ export async function createPortal({db, dataDir, userFrom, json, safeOrigin, pro
       const d = await body(req);
       if (d.expectedUpdatedAt !== undefined && d.expectedUpdatedAt !== (await company(org)).updatedAt) fail('O contexto mudou. Atualize antes de salvar.', 409);
       if(Object.keys(d.policy||{}).some(k=>['dailyRuns','dailyMedia','dailyMessages','publicBaseUrl','usageTestingEnabled','usageResetAt','enabled','autoMedia'].includes(k))&&!assisted.operator(user))fail('Os controles internos são administrados pela equipe Helpu. Consulte sua franquia em Meu plano.',403);
-      const c = await company(org), profile = {
+      const c = await company(org,false), profile = {
         ...c.profile,
         _evidence: c.profileEvidence
       };

@@ -51,12 +51,12 @@ test('configurações e segurança da conta persistem e isolam as sessões',asyn
 
 test('login oficial vincula a empresa iniciadora e impede falsificação e repetição',async()=>{
  const dataDir=fs.mkdtempSync(path.join(os.tmpdir(),'helpu-instagram-login-'));
- const external=[];
- const server=await createHelpuServer({dataDir,portalOptions:{startScheduler:false,instagramLoginEnv:{HELPU_PUBLIC_URL:'https://helpu.example',HELPU_INSTAGRAM_APP_ID:'123',HELPU_INSTAGRAM_APP_SECRET:'app-secret'},instagramLoginFetch:async(url,options)=>{
+ const external=[],operatorEnv={};let username='empresa_teste';
+ const server=await createHelpuServer({dataDir,portalOptions:{startScheduler:false,operatorEnv,instagramLoginEnv:{HELPU_PUBLIC_URL:'https://helpu.example',HELPU_INSTAGRAM_APP_ID:'123',HELPU_INSTAGRAM_APP_SECRET:'app-secret'},instagramLoginFetch:async(url,options)=>{
   external.push({url:String(url),options});
   if(String(url).includes('/oauth/access_token'))return Response.json({access_token:'short-secret',user_id:'17841400000000001'});
   if(String(url).includes('/access_token?'))return Response.json({access_token:'long-secret',expires_in:5184000});
-  return Response.json({user_id:'17841400000000001',username:'empresa_teste'});
+  return Response.json({user_id:'17841400000000001',username});
  }}});
  await new Promise(r=>server.listen(0,'127.0.0.1',r));const origin='http://127.0.0.1:'+server.address().port;
  const request=(route,body,cookie='')=>fetch(origin+route,{method:body?'POST':'GET',headers:{Origin:origin,Cookie:cookie,'Content-Type':'application/json'},body:body?JSON.stringify(body):undefined,redirect:'manual'});
@@ -75,8 +75,20 @@ test('login oficial vincula a empresa iniciadora e impede falsificação e repet
   assert.equal(invalid.status,400);const invalidBody=await invalid.json();assert.match(invalidBody.error,/ID numérico/);assert.doesNotMatch(JSON.stringify(invalidBody),/invalid@example.test|replacement-token/);
   const unchanged=(await (await request('/api/portal/'+org+'/state',null,session)).json()).integrations.find(c=>c.id==='instagram');assert.equal(unchanged.identity.accountId,'17841400000000001');assert.equal(unchanged.configured,true);
   assert.match((await request(callback,null,session+'; '+proof)).headers.get('location'),/failed/);assert.equal(external.length,3);
+  operatorEnv.HELPU_OPERATOR_USER_IDS=String(bootstrap.user.id);
+  assert.equal((await request('/api/portal/internal-marketing',{action:'setup',orgId:org,username:'helpumarketing',confirmed:true},session)).status,200);
+  for(const accepted of [false,true]){
+   const internal=await request('/api/portal/internal-marketing',{action:'connect'},session);assert.equal(internal.status,200);
+   const internalUrl=new URL((await internal.json()).url),internalProof=internal.headers.get('set-cookie').split(';')[0];
+   assert.deepEqual(internalUrl.searchParams.get('scope').split(','),['instagram_business_basic','instagram_business_content_publish','instagram_business_manage_insights']);
+   if(accepted)username='helpumarketing';
+   const response=await request('/api/connect/instagram/callback?state='+internalUrl.searchParams.get('state')+'&code=test-internal',null,session+'; '+internalProof);
+   assert.equal(response.status,303);assert.match(response.headers.get('location'),accepted?/admin\.html#\/marketing/:/failed/);
+   const actual=(await(await request('/api/portal/'+org+'/state',null,session)).json()).integrations.find(c=>c.id==='instagram');assert.equal(actual.identity.username,accepted?'helpumarketing':'empresa_teste');
+  }
+  const requestsBeforeLogout=external.length;
   const second=await request('/api/portal/'+org+'/integrations/instagram/login',{},session),auth2=new URL((await second.json()).url),proof2=second.headers.get('set-cookie').split(';')[0];
   await request('/api/auth/logout',{},session);
-  assert.match((await request('/api/connect/instagram/callback?state='+auth2.searchParams.get('state')+'&code=test-code',null,proof2)).headers.get('location'),/failed/);assert.equal(external.length,3);
+  assert.match((await request('/api/connect/instagram/callback?state='+auth2.searchParams.get('state')+'&code=test-code',null,proof2)).headers.get('location'),/failed/);assert.equal(external.length,requestsBeforeLogout);
  }finally{await server.portal.shutdown();await new Promise(r=>server.close(r));}
 });

@@ -1,3 +1,4 @@
+import './admin-evolution.test.mjs';
 import './commercial.test.mjs';
 import './consultations.test.mjs';
 import './auth.test.mjs';

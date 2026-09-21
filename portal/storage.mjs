@@ -27,9 +27,9 @@ export function createStorage({url, key, directory, fetcher=fetch}) {
     if(actual.length!==bytes.length||hashFile(actual)!==hash)throw new Error('Private upload verification failed');
     return {bucket,path:object,hash};
   }
-  async function sign(org,file,upload){
+  async function sign(org,file,upload,expiresIn=60){
     const object=objectKey(org,file);
-    const response=await fetcher(new URL('/storage/v1/object/'+(upload?'upload/sign/':'sign/')+bucket+'/'+object,base),{method:'POST',headers:{Authorization:'Bearer '+key,apikey:key,'Content-Type':'application/json'},body:JSON.stringify(upload?{}:{expiresIn:60}),redirect:'error',signal:AbortSignal.timeout(15000)});
+    const response=await fetcher(new URL('/storage/v1/object/'+(upload?'upload/sign/':'sign/')+bucket+'/'+object,base),{method:'POST',headers:{Authorization:'Bearer '+key,apikey:key,'Content-Type':'application/json'},body:JSON.stringify(upload?{}:{expiresIn}),redirect:'error',signal:AbortSignal.timeout(15000)});
     if(!response.ok)throw new Error('Private file authorization failed');
     const data=await response.json();const target=new URL('/storage/v1'+(data.url||data.signedURL),base);
     if(target.origin!==base.origin||!target.pathname.startsWith('/storage/v1/object/'))throw new Error('Invalid private file URL');
@@ -51,5 +51,5 @@ export function createStorage({url, key, directory, fetcher=fetch}) {
     if(bytes.length!==asset.size||hashFile(bytes)!==asset.sha256)throw new Error('Private file integrity check failed');
     fs.writeFileSync(local,bytes,{mode:0o600});return local;
   }
-  return {put,localPath,download,signUpload:(org,file)=>sign(org,file,true),signDownload:(org,file)=>sign(org,file,false)};
+  return {put,localPath,download,signPublication:(org,file)=>sign(org,file,false,3600),signUpload:(org,file)=>sign(org,file,true),signDownload:(org,file)=>sign(org,file,false)};
 }

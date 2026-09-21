@@ -17,15 +17,15 @@ export function createInstagramLogin({db,access,saveConnection,env=process.env,f
  }
  return {
   status(){const config=instagramLoginConfig(env);return {available:config.ready,redirectUri:config.redirectUri,missing:[!config.redirectUri&&'HELPU_PUBLIC_URL',!config.appId&&'HELPU_INSTAGRAM_APP_ID',!config.appSecret&&'HELPU_INSTAGRAM_APP_SECRET'].filter(Boolean)};},
-  async start(req,res,org,user){
+  async start(req,res,org,user,{internalMarketing=false}={}){
    const config=instagramLoginConfig(env);if(!config.ready)fail('O login do Instagram ainda precisa ser configurado no aplicativo da Meta e na hospedagem.',409);
    const token=sessionToken(req);if(!token)fail('Entre novamente no Helpu.',401);
    const state=randomBytes(32).toString('hex'),proof=randomBytes(32).toString('hex'),time=now();
-   const data={actor:user.id,expiresAt:time+600000,proofHash:digest(proof),sessionHash:digest(token),redirectUri:config.redirectUri};
+   const data={internalMarketing,actor:user.id,expiresAt:time+600000,proofHash:digest(proof),sessionHash:digest(token),redirectUri:config.redirectUri};
    await db.prepare("DELETE FROM records WHERE kind='oauth_state' AND org_id=? AND (json_extract(data,'$.expiresAt')<? OR json_extract(data,'$.actor')=?)").run(org,time,user.id);
    await db.prepare("INSERT INTO records(id,org_id,kind,data,external_id,created_at,updated_at) VALUES(?,?,'oauth_state',?,?,?,?)").run(randomUUID(),org,JSON.stringify(data),'instagram:'+digest(state),time,time);
    const url=new URL('https://www.instagram.com/oauth/authorize');
-   url.search=new URLSearchParams({client_id:config.appId,redirect_uri:config.redirectUri,response_type:'code',scope:'instagram_business_basic,instagram_business_content_publish,instagram_business_manage_comments,instagram_business_manage_messages',state,enable_fb_login:'0',force_authentication:'1'}).toString();
+   url.search=new URLSearchParams({client_id:config.appId,redirect_uri:config.redirectUri,response_type:'code',scope:internalMarketing?'instagram_business_basic,instagram_business_content_publish,instagram_business_manage_insights':'instagram_business_basic,instagram_business_content_publish,instagram_business_manage_comments,instagram_business_manage_messages',state,enable_fb_login:'0',force_authentication:'1'}).toString();
    res.setHeader('Set-Cookie',`helpu_instagram_oauth=${proof}; Path=/api/connect/instagram; HttpOnly; SameSite=Lax; Secure; Max-Age=600`);
    return {url:url.href};
   },
@@ -54,8 +54,9 @@ export function createInstagramLogin({db,access,saveConnection,env=process.env,f
    const profile=await remote('https://graph.instagram.com/me?fields=user_id,username',{headers:{Authorization:'Bearer '+long.access_token}});
    const accountId=profile.user_id;
    if(!/^\d+$/.test(accountId||'')||!/^\w[\w.]{0,29}$/.test(profile.username||''))fail('Não foi possível identificar a conta profissional.');
+   if(saved.internalMarketing&&profile.username.toLowerCase()!=='helpumarketing')fail('A criação da Helpu aceita somente a conta @helpumarketing. A conexão anterior foi preservada.',409);
    await saveConnection(row.org_id,saved.actor,{accessToken:long.access_token,accountId:String(accountId),expiresAt:now()+long.expires_in*1000,username:profile.username});
-   res.writeHead(303,{Location:'/retorno.html?connection=connected&company='+encodeURIComponent(row.org_id),'Cache-Control':'no-store','Referrer-Policy':'no-referrer'}).end();
+   res.writeHead(303,{Location:saved.internalMarketing?'/admin.html#/marketing':'/retorno.html?connection=connected&company='+encodeURIComponent(row.org_id),'Cache-Control':'no-store','Referrer-Policy':'no-referrer'}).end();
   }
  };
 }

@@ -37,7 +37,7 @@ export function createConsultations({db,operator,storeAsset,now=Date.now}){
     return {requests,clients,canManage,operatorId:admin?String(user.id):null,pendingCount:requests.filter(r=>['triage','revision'].includes(r.state)).length};
   }
   async function action(org,user,input,admin=false){await role(org,user,admin);return transaction(async()=>{
-    const act=input.action;const adminActions=['assign','request_info','propose','payment','brief_complete','start','pause','resume','report_draft','deliver'];const clientActions=['save','submit','answer','accept_proposal','decline','revise','complete','cancel'];
+    const act=input.action;const adminActions=['assign','request_info','propose','payment','settle_website','brief_complete','start','pause','resume','report_draft','deliver'];const clientActions=['save','submit','answer','accept_proposal','decline','revise','complete','cancel'];
     if(!(admin?adminActions:clientActions).includes(act))fail('Ação não permitida para este acesso.',403);
     let old=input.id?await row(input.id):null,r=decode(old),id=r?.id;
     if(!r){if(input.id||act!=='save')fail('Pedido não encontrado.',404);if(!/^[a-f\d-]{36}$/i.test(input.requestKey||''))fail('Identificador de solicitação inválido.');id='consultation:'+org+':'+input.requestKey;old=await row(id);if(old){const previous=decode(old);delete previous.reportDraft;delete previous.deliveryAssets;return previous;}
@@ -60,6 +60,7 @@ export function createConsultations({db,operator,storeAsset,now=Date.now}){
     if(act==='decline'){requireState(r,['proposed']);r.note=text(input.note);if(!r.note)fail('Explique o ajuste desejado na proposta.');r.state='triage';}
     if(act==='payment'){requireState(r,['accepted']);if(input.confirmed!==true||!text(input.note))fail('Confirme a conferência do pagamento e registre a referência, sem dados bancários sensíveis.');r.payment={at:now(),actor:String(user.id),reference:text(input.note),source:'manual_operator',proposalNumber:r.acceptance.proposalNumber};}
     if(act==='brief_complete'){requireState(r,['accepted']);completeBrief(r);if(input.confirmed!==true)fail('Confirme que o briefing está completo.');r.briefVerified={at:now(),actor:String(user.id)};}
+    if(act==='settle_website'){requireState(r,['working','revision','delivered']);if(r.type!=='website'||input.confirmed!==true||!text(input.note))fail('Confirme o saldo final do site e registre a referência bancária.');r.finalPayment={at:now(),actor:String(user.id),reference:text(input.note),proposalNumber:r.acceptance.proposalNumber};}
     if(act==='start'){requireState(r,['accepted']);if(!r.payment||!r.briefVerified)fail('Confirme o pagamento e o briefing antes de iniciar o prazo.',409);r.state='working';r.assignee=String(user.id);r.assigneeName=text(user.name,120);r.startedAt=now();r.dueDate=workingDate(dateAt(now()),r.proposals.at(-1).businessDays);}
     if(act==='pause'){requireState(r,['working','revision']);r.note=text(input.note);if(!r.note)fail('Informe o motivo da pausa e o que falta receber.');r.paused={at:now(),state:r.state,reason:r.note};r.state='paused';}
     if(act==='resume'){requireState(r,['paused']);if(input.confirmed!==true)fail('Confirme que as informações necessárias foram recebidas.');r.dueDate=workingDate(r.dueDate,pausedDays(dateAt(r.paused.at),dateAt(now())));r.state=r.paused.state;r.paused=null;}
@@ -68,7 +69,7 @@ export function createConsultations({db,operator,storeAsset,now=Date.now}){
       else{r.deliveries.push({number:r.deliveries.length+1,at:now(),actor:String(user.id),report,assets,proposalNumber:r.acceptance.proposalNumber});r.reportDraft=null;r.state='delivered';}
     }
     if(act==='revise'){requireState(r,['delivered']);if(r.revisionsUsed>=r.proposals.at(-1).revisions)fail('As revisões incluídas foram utilizadas. Combine um novo escopo com a equipe.',409);r.note=text(input.note);if(!r.note)fail('Consolide os ajustes desejados.');r.revisionsUsed++;r.state='revision';r.dueDate=workingDate(dateAt(now()),r.proposals.at(-1).revisionBusinessDays);}
-    if(act==='complete'){requireState(r,['delivered']);if(input.consent!==true)fail('Confirme que revisou e aceita esta entrega.');r.finalAcceptance={at:now(),actor:String(user.id),deliveryNumber:r.deliveries.at(-1).number};r.state='completed';}
+    if(act==='complete'){if(r.type==='website'&&!r.finalPayment)fail('A equipe precisa confirmar o saldo final antes de encerrar o projeto.',409);requireState(r,['delivered']);if(input.consent!==true)fail('Confirme que revisou e aceita esta entrega.');r.finalAcceptance={at:now(),actor:String(user.id),deliveryNumber:r.deliveries.at(-1).number};r.state='completed';}
     if(act==='cancel'){requireState(r,['draft','triage','needs_info','proposed']);if(r.acceptance)fail('Após contratar, combine o encerramento com a equipe.',409);r.state='canceled';}
     const result=await write(org,id,r,old,user,act,admin);
     if(!admin){delete result.reportDraft;delete result.deliveryAssets;}
