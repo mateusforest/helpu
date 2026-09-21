@@ -8,7 +8,7 @@ import {findBrowser} from '../scripts/runtime.mjs';
 import {testPng} from './image-fixture.mjs';
 const dataDir=fs.mkdtempSync(path.join(os.tmpdir(),'helpu-creative-visual-'));
 const output=path.resolve('../output/creative-library-qa');fs.mkdirSync(output,{recursive:true});
-const app=await createHelpuServer({dataDir,portalOptions:{startScheduler:false,conversationRespond:async()=>{throw Error('Nenhuma IA real neste teste');}}});
+const operatorEnv={};const app=await createHelpuServer({dataDir,portalOptions:{operatorEnv,startScheduler:false,conversationRespond:async()=>{throw Error('Nenhuma IA real neste teste');}}});
 await new Promise(r=>app.listen(0,'127.0.0.1',r));const origin='http://127.0.0.1:'+app.address().port;let browser;
 try{
  browser=await chromium.launch({executablePath:findBrowser(),headless:true});const ctx=await browser.newContext({viewport:{width:1440,height:1050},locale:'pt-BR',reducedMotion:'reduce'});
@@ -18,7 +18,7 @@ try{
  const uploaded=await ctx.request.post(base+'files',{headers:{Origin:origin,'X-File-Name':'Foto de produto.png','Content-Type':'application/octet-stream'},data:testPng()});assert.ok(uploaded.ok());
  const page=await ctx.newPage(),errors=[];page.on('pageerror',e=>errors.push(e.message));
  await page.goto(origin+'/portal.html#/studio');await page.locator('.creative-library').waitFor();
- assert.equal(await page.locator('.creative-library-group').count(),6);assert.equal(await page.locator('.creative-library-group[open]').count(),0);
+ assert.equal(await page.locator('.creative-library-group').count(),7);assert.equal(await page.locator('.creative-library-group[open]').count(),0);
  await page.screenshot({path:path.join(output,'desktop.png'),fullPage:true});
  const refs=page.locator('details').filter({has:page.locator('summary strong',{hasText:'Referências e inspirações'})});
  await refs.locator('summary').click();await refs.locator('input[type=file]').setInputFiles({name:'Inspiracao.png',mimeType:'image/png',buffer:testPng()});
@@ -30,5 +30,8 @@ try{
  await page.waitForFunction(()=>document.querySelector('#creative-direction')?.textContent==='Premium, minimalista e legível');
  await page.setViewportSize({width:390,height:844});await page.screenshot({path:path.join(output,'mobile.png'),fullPage:true});
  assert.ok(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth+1),'Sem transbordamento horizontal');
- assert.deepEqual(errors,[]);console.log(JSON.stringify({groups:6,upload:true,notes:true,direction:true,mobile:true,errors,output}));
+ operatorEnv.HELPU_OPERATOR_USER_IDS=String(boot.user.id);await page.setViewportSize({width:1440,height:1050});await page.goto(origin+'/admin.html#/templates');await page.locator('[data-template="new"]').waitFor();await page.locator('[data-template="new"]').click();
+ await page.locator('#template-form [name=name]').fill('Bebidas — editorial');await page.locator('#template-form [name=sectors]').fill('Bebidas e adegas');await page.locator('#template-form [name=description]').fill('Produto em destaque e margens amplas');await page.locator('#template-form [name=file]').setInputFiles({name:'Editorial.png',mimeType:'image/png',buffer:testPng()});await page.locator('#template-form [name=state]').selectOption('published');await page.locator('#template-form button').click();await page.locator('[data-template="edit"]').waitFor();await page.screenshot({path:path.join(output,'admin-templates.png'),fullPage:true});
+ await page.goto(origin+'/portal.html?mode=client#/studio');const shared=page.locator('details').filter({has:page.locator('summary strong',{hasText:'Templates da Helpu'})});await shared.locator('summary').click();await page.locator('#template-sector').selectOption('Bebidas e adegas');await page.locator('[data-template="adopt"]').click();await page.waitForFunction(()=>document.querySelector('.creative-library')?.textContent.includes('Referência — Editorial.png'));
+ assert.deepEqual(errors,[]);console.log(JSON.stringify({groups:7,upload:true,notes:true,direction:true,mobile:true,adminPublish:true,clientAdopt:true,errors,output}));
 }finally{await browser?.close();await app.portal.shutdown();await new Promise(r=>app.close(r));const target=path.resolve(dataDir);assert.ok(target.startsWith(path.resolve(os.tmpdir())+path.sep+'helpu-creative-visual-'));fs.rmSync(target,{recursive:true,force:true});}

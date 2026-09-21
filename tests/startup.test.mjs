@@ -104,6 +104,9 @@ test('inicialização e desenvolvimento local', {
     });
     fs.cpSync(path.join(project, 'node_modules'), path.join(fixture, 'node_modules'), {
       recursive: true,
+      // Isolate fixtures even when the workspace dependency folder is a junction.
+      // Windows otherwise attempts to create a privileged symlink during cpSync.
+      dereference: true,
       // Startup tests do not render; native executable copies add 160 MB of unrelated I/O.
       filter: source => !/(?:ffmpeg-static[\\/](?:ffmpeg|ffmpeg\.exe)|@ffprobe-installer[\\/]linux-x64[\\/]ffprobe)$/.test(source)
     });

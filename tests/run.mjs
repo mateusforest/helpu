@@ -39,6 +39,7 @@ import './delivery-mode.test.mjs';
 
 import './creations.test.mjs';
 import './creative-library.test.mjs';
+import './template-catalog.test.mjs';
 
 import './creation-ui.test.mjs';
 

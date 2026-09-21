@@ -157,6 +157,17 @@ export function createReelsRenderer({ env = process.env, ffmpegPath, ffprobePath
   };
   return {
     configured,
+    async reviewPreview({bytes,mime}){
+      if(!ffmpeg||!font||!existsSync(ffmpeg)||!existsSync(font))throw error('Prévia protegida indisponível.');
+      const work=await fs.mkdtemp(path.join(os.tmpdir(),'helpu-review-')),signal=AbortSignal.timeout(timeoutMs),video=mime==='video/mp4';
+      try{
+        await fs.copyFile(font,path.join(work,'font.ttf'));await fs.writeFile(path.join(work,'input'+(video?'.mp4':'.img')),bytes);
+        const filter="scale=640:640:force_original_aspect_ratio=decrease:force_divisible_by=2,drawtext=fontfile=font.ttf:text='HELPU - PREVIA':fontsize=30:fontcolor=white@0.75:box=1:boxcolor=black@0.35:x=(w-tw)/2:y=h*0.28,drawtext=fontfile=font.ttf:text='AGUARDANDO APROVACAO':fontsize=20:fontcolor=white@0.75:box=1:boxcolor=black@0.35:x=(w-tw)/2:y=h*0.55,drawtext=fontfile=font.ttf:text='HELPU - PREVIA':fontsize=30:fontcolor=white@0.75:box=1:boxcolor=black@0.35:x=(w-tw)/2:y=h*0.78";
+        const out=path.join(work,video?'preview.mp4':'preview.png');
+        await run(ffmpeg,['-v','error','-nostdin','-y','-protocol_whitelist','file,pipe','-i',video?'input.mp4':'input.img','-vf',filter,...video?['-map','0:v:0','-map','0:a?','-r','24','-c:v','libx264','-preset','ultrafast','-crf','29','-threads','2','-c:a','aac','-b:a','64k','-t','30','-movflags','+faststart']:['-frames:v','1','-threads','1'],out],{signal,cwd:work});
+        const output=await fs.readFile(out);if(output.length>16*1024*1024)throw error('Prévia muito grande.');return output;
+      }finally{const target=path.resolve(work);if(!target.startsWith(path.resolve(os.tmpdir())+path.sep+'helpu-review-'))throw error('Pasta temporária inválida.');await fs.rm(target,{recursive:true,force:true});}
+    },
     capabilities: () => ({ available: configured(), provider: 'astra-reels', width: 1080, height: 1920, maxDuration: 30, maxScenes: 8, features: ['text-scenes', 'image-backgrounds', 'image-motion', 'import-mp4', 'trim', 'loop-source', 'source-audio', 'export-mp4','landscape','music-upload','animated-type','smooth-transitions','visual-reference-sampling'], limitations: ['Sem geração de filmagens, voz ou música por IA.'] }),
     async preflight({ assets = [] } = {}) {
       const byId = validateAssets(assets);

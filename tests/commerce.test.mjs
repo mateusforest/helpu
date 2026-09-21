@@ -1,4 +1,5 @@
 import test from 'node:test';
+import {testPng} from './image-fixture.mjs';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import os from 'node:os';
@@ -9,9 +10,9 @@ import {createDatabase} from '../portal/database.mjs';
 import {createHelpuServer} from '../server.mjs';
 const stamp=Date.parse('2026-09-21T12:00:00Z');
 for(const postgres of [false,true])test('Contratação e saldo em '+(postgres?'PostgreSQL':'SQLite'),async t=>{
- const dir=fs.mkdtempSync(path.join(os.tmpdir(),'helpu-commerce-'));let pg,database;const env={};
+ const dir=fs.mkdtempSync(path.join(os.tmpdir(),'helpu-commerce-'));let pg,database,previewEnabled=false;const env={};
  if(postgres){pg=await PGlite.create({parsers:{20:Number}});await pg.exec('CREATE ROLE anon; CREATE ROLE authenticated; CREATE ROLE service_role; CREATE SCHEMA storage; CREATE TABLE storage.buckets(id text PRIMARY KEY,name text,public boolean,file_size_limit bigint);');for(const file of ['20260913113000_preserve_helpu_data.sql','20260913140000_activate_cloud_runtime.sql'])await pg.exec(fs.readFileSync(new URL('../supabase/migrations/'+file,import.meta.url),'utf8'));await pg.exec('INSERT INTO helpu.portal_migrations VALUES(1,1),(2,1),(3,1),(4,1); SET ROLE helpu_runtime;');let queued=Promise.resolve();database=createDatabase({pool:{async connect(){const prior=queued;let release;queued=new Promise(r=>release=r);await prior;return {async query(sql,args){const result=await pg.query(sql,args);return {...result,rowCount:result.affectedRows};},release};},async end(){}}});}
- const app=await createHelpuServer({dataDir:dir,database,portalOptions:{startScheduler:false,operatorEnv:env,assistedNow:()=>stamp,whatsappChatEnv:{},openaiEnv:{OPENAI_API_KEY:'fake-commerce-key'}}});await new Promise(r=>app.listen(0,'127.0.0.1',r));const origin='http://127.0.0.1:'+app.address().port,db=app.database;
+ const app=await createHelpuServer({dataDir:dir,database,portalOptions:{reelsRenderer:{configured:()=>true,reviewPreview:async()=>{if(!previewEnabled)throw Error('Preview unavailable');return testPng(8,8);}},startScheduler:false,operatorEnv:env,assistedNow:()=>stamp,whatsappChatEnv:{},openaiEnv:{OPENAI_API_KEY:'fake-commerce-key'}}});await new Promise(r=>app.listen(0,'127.0.0.1',r));const origin='http://127.0.0.1:'+app.address().port,db=app.database;
  async function request(url,who,body,foreign=false){const res=await fetch(origin+url,{method:body?'POST':'GET',headers:{Cookie:who?.cookie||'',Origin:foreign?'https://evil.example':origin,'Content-Type':'application/json'},body:body?JSON.stringify(body):undefined});return {status:res.status,body:await res.json(),cookie:res.headers.get('set-cookie')?.split(';')[0]};}
  async function signup(name){const s=await request('/api/auth/signup',null,{name,email:name+'@example.test',password:'only-test-12345',company:name});assert.equal(s.status,201);const b=await request('/api/portal/bootstrap',s);return {cookie:s.cookie,user:b.body.user,org:b.body.companies[0].id};}
  const ok=async p=>{const r=await p;assert.equal(r.status,200,JSON.stringify(r.body));return r.body;};let operator,client,other,r;
@@ -19,7 +20,7 @@ for(const postgres of [false,true])test('Contratação e saldo em '+(postgres?'P
  const act=(input,who=client,admin=false)=>request(url(client,admin),who,input);
  const fresh=()=>({format:'feed',prompt:'Apresente a empresa com fatos do cadastro',requestId:randomUUID(),attachments:[]});
  const create=input=>request('/api/portal/'+client.org+'/creations',client,input);
- async function delivered(id){const asset=randomUUID(),child=randomUUID();await db.prepare('INSERT INTO assets(id,org_id,name,mime,size,path,created_at) VALUES(?,?,?,?,?,?,?)').run(asset,client.org,'Arte de teste.png','image/png',1,'fixture',stamp);await db.prepare("INSERT INTO jobs(id,org_id,user_id,kind,payload,state,scheduled_at,output,idempotency_key,created_at,updated_at) VALUES(?,?,?,'image',?,'succeeded',?,?,?,?,?)").run(child,client.org,client.user.id,JSON.stringify({creationId:id}),stamp,JSON.stringify({assetId:asset}),child,stamp,stamp);await db.prepare("UPDATE jobs SET state='succeeded' WHERE id=?").run(id);}
+ async function delivered(id){const asset=randomUUID(),child=randomUUID();fs.writeFileSync(path.join(dir,'uploads','fixture'),testPng(16,16));await db.prepare('INSERT INTO assets(id,org_id,name,mime,size,path,created_at) VALUES(?,?,?,?,?,?,?)').run(asset,client.org,'Arte de teste.png','image/png',testPng(16,16).length,'fixture',stamp);await db.prepare("INSERT INTO jobs(id,org_id,user_id,kind,payload,state,scheduled_at,output,idempotency_key,created_at,updated_at) VALUES(?,?,?,'image',?,'succeeded',?,?,?,?,?)").run(child,client.org,client.user.id,JSON.stringify({creationId:id}),stamp,JSON.stringify({assetId:asset}),child,stamp,stamp);await db.prepare("UPDATE jobs SET state='succeeded' WHERE id=?").run(id);}
  try{
  operator=await signup('CommerceOperator');client=await signup('CommerceClient');other=await signup('CommerceOther');env.HELPU_OPERATOR_USER_IDS=String(operator.user.id);
  await db.prepare('UPDATE companies SET policy=? WHERE id=?').run(JSON.stringify({dailyAI:1000,dailyMedia:1000,dailyMessages:1000,enabled:false}),client.org);
@@ -60,6 +61,15 @@ for(const postgres of [false,true])test('Contratação e saldo em '+(postgres?'P
  });
  await t.test('extra entregue fatura uma vez; revisão incluída não permite outro briefing',async()=>{
   let state=await ok(request(url(),client));const usage=state.usage.find(u=>u.quoteId===quote.id);assert.ok(usage.jobId);await delivered(usage.jobId);
+  state=await ok(request(url(),client));assert.equal(state.extrasCents,0);assert.equal(state.usage.find(u=>u.jobId===usage.jobId).state,'reserved');
+  const preview=(await request('/api/portal/'+client.org+'/creations/'+usage.jobId,client)).body.creation;
+  const readFile=()=>fetch(origin+'/api/portal/files/'+preview.assets[0].id,{headers:{Cookie:client.cookie}});
+  assert.equal((await readFile()).status,409);previewEnabled=true;
+  const protectedFile=await readFile();assert.equal(protectedFile.status,200);assert.deepEqual(Buffer.from(await protectedFile.arrayBuffer()),testPng(8,8));
+  await ok(request('/api/portal/'+client.org+'/creations/'+usage.jobId,client,{action:'approve'}));
+  assert.deepEqual(Buffer.from(await (await readFile()).arrayBuffer()),testPng(16,16));
+  await ok(request('/api/portal/'+client.org+'/creations/'+usage.jobId,client,{action:'approve'}));
+  assert.equal((await db.prepare("SELECT count(*) AS n FROM conversation_messages WHERE id=?").get('approval:'+usage.jobId)).n,1);
   state=await ok(request(url(),client));assert.equal(state.extrasCents,5900);
   const charge=await ok(act({action:'invoice_extras',competence:'2026-10',dueDate:'2026-10-20',includeMonthly:true},operator,true));assert.equal(charge.amountCents,74900);
   assert.equal((await act({action:'invoice_extras',competence:'2026-10',dueDate:'2026-10-20',includeMonthly:true},operator,true)).status,409);
@@ -73,6 +83,17 @@ for(const postgres of [false,true])test('Contratação e saldo em '+(postgres?'P
   let state=await ok(request(url(),client));const carousel=state.quotes.find(q=>q.type==='carousel');const accepted=await ok(act({action:'accept_extra',id:carousel.id,priceCents:14900,confirmed:true}));
   await db.prepare("UPDATE jobs SET state='failed',error='Falha técnica' WHERE id=?").run(accepted.id);
   state=await ok(request(url(),client));assert.equal(state.quotes.find(q=>q.id===carousel.id).state,'void');assert.equal(state.extrasCents,0);
+ });
+ await t.test('ajuste antes de aprovar mantém uma reserva e debita uma vez ao aprovar a versão final',async()=>{
+  const before=await ok(request(url(),client)),root=before.usage.find(u=>u.state==='reserved'&&!u.revisionOf&&!u.quoteId);
+  assert.ok(root);await delivered(root.jobId);
+  const revise=()=>request('/api/portal/'+client.org+'/creations/'+root.jobId,client,{action:'revise',adjustment:'Aumente o título',requestId:randomUUID()});
+  const version=(await ok(revise())).creation;assert.equal((await revise()).status,400);
+  assert.equal((await request('/api/portal/'+client.org+'/creations/'+root.jobId,client,{action:'approve'})).status,400);
+  await delivered(version.id);let pending=await ok(request(url(),client));assert.equal(pending.consumed.image,0);assert.equal(pending.usage.find(u=>u.id===root.id).state,'reserved');
+  await ok(request('/api/portal/'+client.org+'/creations/'+version.id,client,{action:'approve'}));
+  pending=await ok(request(url(),client));assert.equal(pending.consumed.image,1);assert.equal(pending.remaining.image,0);
+  assert.equal((await request('/api/portal/'+client.org+'/creations/'+version.id,client,{action:'revise',adjustment:'Outra alteração',requestId:randomUUID()})).status,409);
  });
  }finally{await app.portal.shutdown();await new Promise(r=>app.close(r));await pg?.close();const target=path.resolve(dir);assert.ok(target.startsWith(path.resolve(os.tmpdir())+path.sep+'helpu-commerce-'));fs.rmSync(target,{recursive:true,force:true});}
 });

@@ -1,3 +1,5 @@
+import {createReviewPreview} from './review-preview.mjs';
+import {createTemplateCatalog} from './template-catalog.mjs';
 import {adminOverview} from './admin-overview.mjs';
 import {createFinance} from './finance.mjs';
 import {createCommerce} from './commerce.mjs';
@@ -562,7 +564,7 @@ export async function createPortal({db, dataDir, userFrom, json, safeOrigin, pro
       error,
       external: ext
     });
-    if(['image','video'].includes(row.kind)&&['succeeded','blocked','failed','uncertain','canceled'].includes(state)){if(parse(row.payload).creationId&&state==='succeeded'){const content=await record(row.org_id,'content',parse(row.payload).contentId);output={...output,summary:(parse(row.payload).slideIndex?'Página '+parse(row.payload).slideIndex+' · ':'')+(output?.summary||'Arquivo pronto.')+(content.caption?'\n\nLegenda:\n'+content.caption:'')};}await conversation.mediaResult(row,state,output||{},error);}
+    if(['image','video'].includes(row.kind)&&['succeeded','blocked','failed','uncertain','canceled'].includes(state)){if(parse(row.payload).creationId&&state==='succeeded'){const content=await record(row.org_id,'content',parse(row.payload).contentId);const parent=await db.prepare('SELECT payload FROM jobs WHERE org_id=? AND id=?').get(row.org_id,parse(row.payload).creationId);const protectedReview=parse(parent?.payload).approvalRequired;output={...output,...protectedReview?{previewAssetId:output.assetId}:{},summary:(protectedReview?'Prévia protegida para aprovação. O arquivo final e o consumo do plano serão liberados após aprovar. ': '')+(parse(row.payload).slideIndex?'Página '+parse(row.payload).slideIndex+' · ':'')+(protectedReview?'Confira a prévia e aprove ou peça ajustes.':output?.summary||'Arquivo pronto.')+(content.caption?'\n\nLegenda:\n'+content.caption:'')};}await conversation.mediaResult(row,state,output||{},error);}
   }
   async function authorizeJob(job) {
     if (job.kind === 'publish' && parse(job.external).publishedId) return;
@@ -676,7 +678,7 @@ export async function createPortal({db, dataDir, userFrom, json, safeOrigin, pro
     return await storeAsset(org, name, Buffer.concat(chunks), url);
   }
   async function files(org) {
-    return (await db.prepare("SELECT id,name,mime,size,source_url AS sourceUrl,created_at AS createdAt FROM assets WHERE org_id=? AND (source_url IS NULL OR source_url<>'helpu:finance') ORDER BY created_at DESC").all(org)).map(a => ({
+    return (await db.prepare("SELECT id,name,mime,size,source_url AS sourceUrl,created_at AS createdAt FROM assets WHERE org_id=? AND (source_url IS NULL OR source_url NOT IN ('helpu:finance','helpu:review-preview')) ORDER BY created_at DESC").all(org)).map(a => ({
       ...a,
       url: '/api/portal/files/' + a.id
     }));
@@ -775,6 +777,7 @@ export async function createPortal({db, dataDir, userFrom, json, safeOrigin, pro
   const creativeLibrary=createCreativeLibrary({db,metadata,saveMetadata,company});
   const creations=createCreations({creativeLibrary,commerce:()=>commerce,db,company,integration,queue,saveRecord,record,assetPath,storeAsset,systemUpdate,setJob,beforeMutation,renderer:reels,respond:creationRespond,metadata,saveMetadata});
   const creationSchedules=createCreationSchedules({db,creations,company});
+  const reviewPreview=createReviewPreview({db,metadata,storeAsset,assetPath,renderer:reels});
   const runtimeTools=createRuntimeTools({runtime:cloudRuntime,db,assetPath,storeAsset,saveRecord,record,metadata,saveMetadata,queue,systemUpdate,setJob,beforeMutation});
   publication = await createPublicationWorkflow({
     db,
@@ -831,10 +834,11 @@ export async function createPortal({db, dataDir, userFrom, json, safeOrigin, pro
   });
   const assisted=await createAssistedPublishing({db,assetPath,env:operatorEnv,now:assistedNow});
   const consultations=createConsultations({db,operator:assisted.operator,storeAsset,now:assistedNow});
+  const templateCatalog=createTemplateCatalog({db,operator:assisted.operator,access,storeAsset,assetPath,creativeLibrary});
   const pricing=createPricing({db,operator:assisted.operator,now:assistedNow});
   const commercial=createCommercial({db,operator:assisted.operator,now:assistedNow,pricing});
   const whatsappWelcome=createWhatsAppWelcome({db,env:whatsappChatEnv,fetcher:whatsappChatFetch});
-  const whatsappChat=createWhatsAppChat({db,metadata,saveMetadata,conversation,assetPath,storeAsset,env:whatsappChatEnv,fetcher:whatsappChatFetch,onInbound:whatsappWelcome.receive,onDelivery:whatsappWelcome.delivery});
+  const whatsappChat=createWhatsAppChat({db,metadata,saveMetadata,conversation,assetPath,storeAsset,resolveDeliveryAsset:reviewPreview.resolve,env:whatsappChatEnv,fetcher:whatsappChatFetch,onInbound:whatsappWelcome.receive,onDelivery:whatsappWelcome.delivery});
   const finance=createFinance({db,operator:assisted.operator,storeAsset,now:assistedNow,deliver:whatsappChat.financeReminder});
   const commerce=createCommerce({db,operator:assisted.operator,finance,creations,now:assistedNow});
   const aiManagement=createAIManagement({db,operator:assisted.operator,integration,now:assistedNow});
@@ -1638,6 +1642,13 @@ export async function createPortal({db, dataDir, userFrom, json, safeOrigin, pro
       });
       return true;
     }
+    if(pathname==='/api/portal/template-catalog'){
+      if(req.method==='GET')json(res,200,await templateCatalog.list(user,url.searchParams.get('admin')==='1'));
+      else if(req.method==='POST')json(res,200,await templateCatalog.action(user,await body(req)));
+      else fail('Método não permitido.',405);return true;
+    }
+    const templateAdopt=pathname.match(/^\/api\/portal\/([^/]+)\/template-catalog$/);
+    if(templateAdopt){if(req.method!=='POST')fail('Método não permitido.',405);json(res,200,await templateCatalog.adopt(templateAdopt[1],user,(await body(req)).id));return true;}
     if(pathname==='/api/portal/ai-management'){
       const target=url.searchParams.get('org')||'';
       if(req.method==='GET')json(res,200,await aiManagement.listing(target,user));
@@ -1709,11 +1720,12 @@ export async function createPortal({db, dataDir, userFrom, json, safeOrigin, pro
       return true;
     }
     if (pathname.startsWith('/api/portal/files/')) {
-      const id = pathname.split('/').at(-1), asset = await db.prepare('SELECT * FROM assets WHERE id=?').get(id);
+      const id = pathname.split('/').at(-1);let asset = await db.prepare('SELECT * FROM assets WHERE id=?').get(id);
       if (!asset) fail('Arquivo não encontrado.', 404);
       if(asset.source_url==='helpu:finance')await finance.authorizeFile(user,asset);
-      else if(!await assisted.canReadAsset(user,asset)&&!await consultations.canReadAsset(user,asset)&&!await commercial.canReadAsset(user,asset))await access(asset.org_id, user);
+      else if(!await templateCatalog.canReadAsset(user,asset)&&!await assisted.canReadAsset(user,asset)&&!await consultations.canReadAsset(user,asset)&&!await commercial.canReadAsset(user,asset))await access(asset.org_id, user);
       if (!['GET', 'HEAD'].includes(req.method)) fail('Método não permitido.', 405);
+      asset=await reviewPreview.resolve(asset);
       if(privateStorage&&asset.size>3*1024*1024){res.writeHead(302,{Location:await privateStorage.signDownload(asset.org_id,asset.path),'Cache-Control':'private, no-store','Referrer-Policy':'no-referrer'}).end();return true;}
       const file = await assetPath(asset.org_id,asset.id,true), stat = fs.statSync(file);
       let start = 0, end = stat.size - 1, status = 200;

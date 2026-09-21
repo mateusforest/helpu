@@ -41,7 +41,7 @@ export function createCreations({creativeLibrary,commerce,db,company,integration
   if(errorChild)status=errorChild.state==='canceled'?'blocked':errorChild.state;
   else if(row.state==='succeeded'&&children.length===count&&assets.length===count)status='complete';
   const review=await metadata?.(org,'creation-review:'+row.id)||{};
-  return {review:review.status||'pending',reviewedAt:review.at||null,revisionOf:req.revisionOf||null,videoOptions:plan?.videoOptions||req.videoOptions||null,conversationId:parse(row.payload).conversationId||null,id:row.id,prompt:req.prompt,format:req.format,slideCount:req.slideCount,duration:req.duration,status,assets,caption:plan?.caption||'',summary:status==='complete'?'Prévia pronta. Confira, aprove ou peça ajustes.':output.summary||'Seu pedido está em produção.',error:errorChild?.error||row.error||null,createdAt:row.created_at};
+  return {approvalRequired:!!parse(row.payload).approvalRequired,review:review.status||'pending',reviewedAt:review.at||null,approvedAt:review.approvedAt||(review.status==='approved'?review.at:null),revisionOf:req.revisionOf||null,videoOptions:plan?.videoOptions||req.videoOptions||null,conversationId:parse(row.payload).conversationId||null,id:row.id,prompt:req.prompt,format:req.format,slideCount:req.slideCount,duration:req.duration,status,assets,caption:plan?.caption||'',summary:status==='complete'?'Prévia pronta. Confira, aprove ou peça ajustes.':output.summary||'Seu pedido está em produção.',error:errorChild?.error||row.error||null,createdAt:row.created_at};
  }
  async function list(org){const rows=await db.prepare("SELECT id FROM jobs WHERE org_id=? AND kind='creation' ORDER BY created_at DESC LIMIT 30").all(org);return {creations:await Promise.all(rows.map(r=>get(org,r.id))),capabilities:await capabilities(org),styles:await styles.list(org)};}
  async function submit(org,user,input,{conversationId,parentJobId,videoOptionKeys,commercialApproval,publicationAt}={}){
@@ -95,8 +95,8 @@ export function createCreations({creativeLibrary,commerce,db,company,integration
     if(!conversationId){const {randomUUID}=await import('node:crypto');conversationId=randomUUID();await db.prepare('INSERT INTO conversations(id,org_id,title,created_at,updated_at) VALUES(?,?,?,?,?)').run(conversationId,org,'Criações do Astra',Date.now(),Date.now());await saveMetadata?.(org,'creation-thread:'+user,{id:conversationId});}
   }
   const unit=await commerce?.().reserve(org,user,request,input,key,commercialApproval);
-  if(unit?.quote){const q=unit.quote,money=n=>(n/100).toLocaleString('pt-BR',{style:'currency',currency:'BRL'});fail('Seu saldo não cobre este pedido. Extra: '+money(q.priceCents)+'. Previsão da próxima cobrança com mensalidade e extras autorizados: '+money(q.projectedCents)+'. Uma rodada de ajustes incluída; cobrança após entrega válida. Autorize em Meu plano → Extras ou responda exatamente: CONFIRMAR EXTRA '+q.id.slice(6)+'. Nenhuma geração foi iniciada.',409);}
-  try{const j=await queue(org,user,'creation',{request,...publicationAt?{publicationAt}:{},...conversationId?{conversationId}:{},...parentJobId?{parentJobId}:{}},null,key,{explicitCreation:true});await commerce?.().bind(unit,j.id);return get(org,j.id);}catch(e){await commerce?.().release(unit);throw e;}
+  if(unit?.quote){const q=unit.quote,money=n=>(n/100).toLocaleString('pt-BR',{style:'currency',currency:'BRL'});fail('Seu saldo não cobre este pedido. Extra: '+money(q.priceCents)+'. Previsão da próxima cobrança com mensalidade e extras autorizados: '+money(q.projectedCents)+'. Uma rodada de ajustes incluída; cobrança após aprovação da entrega. Autorize em Meu plano → Extras ou responda exatamente: CONFIRMAR EXTRA '+q.id.slice(6)+'. Nenhuma geração foi iniciada.',409);}
+  try{const j=await queue(org,user,'creation',{request,approvalRequired:!!unit,...publicationAt?{publicationAt}:{},...conversationId?{conversationId}:{},...parentJobId?{parentJobId}:{}},null,key,{explicitCreation:true});await commerce?.().bind(unit,j.id);return get(org,j.id);}catch(e){await commerce?.().release(unit);throw e;}
  }
  async function checkQuota(org,count){
   const policy=(await company(org)).policy,day=new Intl.DateTimeFormat('en-CA',{timeZone:policy.timeZone||'America/Sao_Paulo'}).format(new Date());
@@ -180,15 +180,22 @@ export function createCreations({creativeLibrary,commerce,db,company,integration
  async function review(org,user,id,input,{conversationId,parentJobId}={}){
   const item=await get(org,id);if(item.status!=='complete')fail('A prévia precisa estar concluída.');
   if(input.action==='approve'){
+    if(item.review==='approved')return item;
+    if(item.review==='changes_requested')fail('Aprove a versão ajustada mais recente.');
+    await db.exec('SAVEPOINT creation_approval');try{
     const children=await db.prepare("SELECT payload FROM jobs WHERE org_id=? AND json_extract(payload,'$.creationId')=? AND state='succeeded'").all(org,id);
     for(const child of children){const contentId=parse(child.payload).contentId;if(contentId)await systemUpdate(org,'content',contentId,{status:'approved'});}
-    await saveMetadata(org,'creation-review:'+id,{status:'approved',by:user,at:Date.now()});return get(org,id);
+    await saveMetadata(org,'creation-review:'+id,{status:'approved',by:user,at:Date.now(),approvedAt:Date.now()});await commerce?.().reconcile(org);
+    if(item.approvalRequired&&item.conversationId){const now=Date.now();await db.prepare('INSERT INTO conversation_messages VALUES(?,?,?,?,?,?,?,?) ON CONFLICT(id) DO NOTHING').run('approval:'+id,item.conversationId,org,'assistant','Conteúdo aprovado. Arquivo final liberado, sem marca de prévia. A entrega foi contabilizada no seu plano ou no extra autorizado.',JSON.stringify(item.assets.map(a=>a.id)),id,now);await db.prepare('UPDATE conversations SET updated_at=? WHERE id=? AND org_id=?').run(now,item.conversationId,org);}
+    await db.exec('RELEASE SAVEPOINT creation_approval');return get(org,id);
+    }catch(e){await db.exec('ROLLBACK TO SAVEPOINT creation_approval');await db.exec('RELEASE SAVEPOINT creation_approval');throw e;}
   }
   if(input.action==='save-style'){if(item.format!=='reels'){if(!creativeLibrary)fail('Biblioteca de estilos indisponível.');const previous=await db.prepare("SELECT external FROM jobs WHERE org_id=? AND id=? AND kind='creation'").get(org,id);return creativeLibrary.saveStyle(org,user,{name:input.name,creation:item,plan:parse(previous?.external).plan});}if(item.review!=='approved')fail('Aprove a prévia antes de guardar seu estilo.');const row=await db.prepare("SELECT payload FROM jobs WHERE org_id=? AND kind='video' AND json_extract(payload,'$.creationId')=?").get(org,id);const saved=await styles.save(org,user,{name:input.name,options:item.videoOptions||{},sourceCreationId:id,scenes:parse(row?.payload).scenes});if(creativeLibrary){const previous=await db.prepare("SELECT external FROM jobs WHERE org_id=? AND id=? AND kind='creation'").get(org,id);await creativeLibrary.saveStyle(org,user,{name:input.name,creation:item,plan:parse(previous?.external).plan});}return saved;}
   if(input.action==='revise'){
+    if(item.review==='changes_requested'){const review=await metadata(org,'creation-review:'+id),next=await db.prepare('SELECT id,idempotency_key FROM jobs WHERE org_id=? AND id=?').get(org,review.nextCreationId);const state=next?(await get(org,next.id)).status:null;if(next?.idempotency_key!=='creation:'+user+':'+input.requestId&&!['failed','blocked'].includes(state))fail('Já existe uma versão ajustada para este pedido. Abra a mais recente.');}
     const previous=await db.prepare("SELECT payload FROM jobs WHERE org_id=? AND id=? AND kind='creation'").get(org,id),payload=parse(previous.payload);
     const adjusted=await submit(org,user,{...payload.request,revisionOf:id,adjustment:input.adjustment,requestId:input.requestId,videoOptions:{...item.videoOptions,...input.videoOptions}},{conversationId:conversationId||payload.conversationId,parentJobId,videoOptionKeys:Object.keys(input.videoOptions||{})});
-    await saveMetadata(org,'creation-review:'+id,{status:'changes_requested',by:user,at:Date.now(),nextCreationId:adjusted.id});return adjusted;
+    await saveMetadata(org,'creation-review:'+id,{status:'changes_requested',by:user,at:Date.now(),approvedAt:item.approvedAt||null,nextCreationId:adjusted.id});return adjusted;
   }
   fail('Ação de revisão inválida.');
  }

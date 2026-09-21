@@ -17,7 +17,7 @@ export function whatsappPhone(value, {international = false} = {}) {
 const phoneKey = n => /^55\d{2}9\d{8}$/.test(n) ? n.slice(0,4) + n.slice(5) : n;
 export {phoneKey as whatsappPhoneKey};
 
-export function createWhatsAppChat({db, metadata, saveMetadata, conversation, assetPath, storeAsset, onInbound, onDelivery, env = process.env, fetcher = fetch, now = Date.now}) {
+export function createWhatsAppChat({db, metadata, saveMetadata, conversation, assetPath, storeAsset, resolveDeliveryAsset, onInbound, onDelivery, env = process.env, fetcher = fetch, now = Date.now}) {
   const officialPhone = env.HELPU_WHATSAPP_NUMBER ? whatsappPhone(env.HELPU_WHATSAPP_NUMBER, {international:true}) : '';
   const config = () => ({token: env.HELPU_WHATSAPP_ACCESS_TOKEN, phoneId: env.HELPU_WHATSAPP_PHONE_NUMBER_ID, secret: env.HELPU_WHATSAPP_APP_SECRET, verify: env.HELPU_WHATSAPP_VERIFY_TOKEN});
   const configured = () => !!officialPhone && Object.values(config()).every(Boolean);
@@ -133,7 +133,8 @@ export function createWhatsAppChat({db, metadata, saveMetadata, conversation, as
     if(Number(live.lastInboundAt)<now()-86400000)return 'waiting_window';
     const body={messaging_product:'whatsapp',to:live.phone};
     if(piece.assetId) {
-      const asset=await db.prepare('SELECT * FROM assets WHERE org_id=? AND id=?').get(link.org,piece.assetId);
+      let asset=await db.prepare('SELECT * FROM assets WHERE org_id=? AND id=?').get(link.org,piece.assetId);
+      if(asset&&resolveDeliveryAsset)asset=await resolveDeliveryAsset(asset);
       if(!asset)throw new Error('Arquivo não encontrado na empresa.');
       const maximum={'image/png':5,'image/jpeg':5,'video/mp4':16,'application/pdf':25}[asset.mime];
       if(!maximum||asset.size>maximum*1024*1024) {
