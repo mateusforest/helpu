@@ -1,5 +1,7 @@
 # F04 — boas-vindas no cadastro
 
+Atualização: a versão personalizada aprovada (nome e empresa) e a caixa administrativa estão descritas em [Atendimento WhatsApp](atendimento-whatsapp.md). As instruções abaixo documentam o modelo legado, preservado enquanto a nova variável não estiver configurada.
+
 O telefone é opcional e a autorização não vem marcada. Salvar o telefone não verifica sua posse, não cria vínculo de operação e não inscreve em campanhas. O cadastro continua funcionando sem telefone, sem autorização ou sem configuração do modelo Meta.
 
 O primeiro envio é uma mensagem genérica, sem nome, empresa, código de acesso ou dados privados. A confirmação de posse continua no fluxo separado **Conversa → Ativar WhatsApp → enviar a mensagem de confirmação**. Essa separação permite as boas-vindas logo após o cadastro sem conceder acesso a quem apenas recebeu a mensagem. A conta é efetivada pela transação de cadastro existente; não foi acrescentada verificação de e-mail.

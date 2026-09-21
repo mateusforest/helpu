@@ -17,7 +17,7 @@ export function whatsappPhone(value, {international = false} = {}) {
 const phoneKey = n => /^55\d{2}9\d{8}$/.test(n) ? n.slice(0,4) + n.slice(5) : n;
 export {phoneKey as whatsappPhoneKey};
 
-export function createWhatsAppChat({db, metadata, saveMetadata, conversation, assetPath, storeAsset, resolveDeliveryAsset, onInbound, onDelivery, env = process.env, fetcher = fetch, now = Date.now}) {
+export function createWhatsAppChat({db, metadata, saveMetadata, conversation, assetPath, storeAsset, resolveDeliveryAsset, onInbound, onDelivery, manualInbox, env = process.env, fetcher = fetch, now = Date.now}) {
   const officialPhone = env.HELPU_WHATSAPP_NUMBER ? whatsappPhone(env.HELPU_WHATSAPP_NUMBER, {international:true}) : '';
   const config = () => ({token: env.HELPU_WHATSAPP_ACCESS_TOKEN, phoneId: env.HELPU_WHATSAPP_PHONE_NUMBER_ID, secret: env.HELPU_WHATSAPP_APP_SECRET, verify: env.HELPU_WHATSAPP_VERIFY_TOKEN});
   const configured = () => !!officialPhone && Object.values(config()).every(Boolean);
@@ -94,6 +94,7 @@ export function createWhatsAppChat({db, metadata, saveMetadata, conversation, as
         continue;
       }
       const link = await getClaim(phone);
+      const handledManually=await manualInbox?.capture({phone,text,time,msg,name:value.contacts?.find(c=>c.wa_id===msg.from)?.profile?.name},link);
       if (!link?.enabled || !await member(link)) continue;
       // Window updates are atomic so a concurrent opt-out cannot be undone.
       await db.prepare("UPDATE records SET data=json_set(data,'$.lastInboundAt',?),updated_at=? WHERE id=? AND json_extract(data,'$.generation')=? AND json_extract(data,'$.enabled')=1").run(String(Math.max(time,Number(link.lastInboundAt)||0)),now(),link.recordId,link.generation);
@@ -101,6 +102,7 @@ export function createWhatsAppChat({db, metadata, saveMetadata, conversation, as
         await db.prepare("UPDATE records SET data=?,updated_at=? WHERE id=? AND json_extract(data,'$.generation')=?").run(JSON.stringify((({org,recordId,...rest})=>({...rest,enabled:false}))(link)),now(),link.recordId,link.generation);
         continue;
       }
+      if(handledManually)continue;
       const eventId = 'wa-in:' + hash(msg.id);
       const media=['image','video','document','audio'].includes(msg.type)&&msg[msg.type]?.id?{id:String(msg[msg.type].id),filename:msg[msg.type].filename,sha256:msg[msg.type].sha256}:null;
       const caption=String(msg[msg.type]?.caption||'').slice(0,16000);
@@ -128,6 +130,7 @@ export function createWhatsAppChat({db, metadata, saveMetadata, conversation, as
     return response.json();
   }
   async function sendPiece(link,piece) {
+    if(await manualInbox?.held(link.phone))return 'paused_manual';
     const live=await getClaim(link.phone);
     if(!live?.enabled||live.generation!==link.generation||live.org!==link.org||!await member(live))return 'canceled';
     if(Number(live.lastInboundAt)<now()-86400000)return 'waiting_window';
@@ -147,6 +150,7 @@ export function createWhatsAppChat({db, metadata, saveMetadata, conversation, as
       body[body.type]={id:media.id,...body.type==='document'?{filename:asset.name}:{}};
       const check=await getClaim(link.phone);if(!check?.enabled||check.generation!==link.generation)return 'canceled';
     }else{body.type='text';body.text={body:piece.text};}
+    if(await manualInbox?.held(link.phone))return 'paused_manual';
     const result=await graph(config().phoneId+'/messages',body);
     if(!result.messages?.[0]?.id)throw new Error('O WhatsApp não confirmou a mensagem.');
     return 'sent';
@@ -162,6 +166,7 @@ export function createWhatsAppChat({db, metadata, saveMetadata, conversation, as
     for(const row of queued){const event=parse(row),key=event.org+':'+event.generation+':'+event.threadId;if(!groups.has(key))groups.set(key,[]);groups.get(key).push(row);}
     for(const rows of groups.values()){
       const first=parse(rows[0]),link=await getClaim(first.phone);
+      if(await manualInbox?.held(first.phone))continue;
       if(!link?.enabled||link.org!==first.org||link.threadId!==first.threadId||link.generation!==first.generation||!await member(link)){
         for(const row of rows)await put(row.kind,row.id,row.org_id,{...parse(row),state:'canceled'});
         continue;
@@ -182,6 +187,7 @@ export function createWhatsAppChat({db, metadata, saveMetadata, conversation, as
     }
     for(const row of await db.prepare("SELECT * FROM records WHERE kind='whatsapp_chat_batch' AND json_extract(data,'$.state')='queued' ORDER BY created_at,id LIMIT 4").all()){
       const batch=parse(row),link=await getClaim(batch.phone);
+      if(await manualInbox?.held(batch.phone))continue;
       if(!link?.enabled||link.org!==batch.org||link.threadId!==batch.threadId||link.generation!==batch.generation||!await member(link)){await put(row.kind,row.id,row.org_id,{...batch,state:'canceled'});continue;}
       try{
         const submitted=await db.prepare('SELECT 1 FROM jobs WHERE org_id=? AND idempotency_key=?').get(link.org,row.id);
@@ -210,6 +216,7 @@ export function createWhatsAppChat({db, metadata, saveMetadata, conversation, as
             attachments.push(asset.id);
           }
         }
+        if(await manualInbox?.held(batch.phone))continue;
         const current=await getClaim(batch.phone);
         if(!current?.enabled||current.generation!==link.generation||!await member(current)){await put(row.kind,row.id,row.org_id,{...batch,state:'canceled'});continue;}
         if(!submitted&&batch.inboxIds.length<24&&await db.prepare("SELECT 1 FROM records WHERE org_id=? AND kind='whatsapp_chat_inbox' AND json_extract(data,'$.generation')=? AND json_extract(data,'$.threadId')=? AND json_extract(data,'$.state')='queued' LIMIT 1").get(link.org,link.generation,link.threadId))continue;
@@ -234,7 +241,7 @@ export function createWhatsAppChat({db, metadata, saveMetadata, conversation, as
       }
     }
     for(const row of await db.prepare("SELECT * FROM records WHERE kind='whatsapp_chat_link' AND json_extract(data,'$.enabled')=1").all()) {
-      const link=parse(row);if(!await member(link))continue;
+      const link=parse(row);if(!await member(link)||await manualInbox?.held(link.phone))continue;
       const donePrefix='wa-done:'+link.generation+':';
       const messages=await db.prepare("SELECT * FROM conversation_messages WHERE org_id=? AND conversation_id=? AND role='assistant' AND created_at>=? AND NOT EXISTS (SELECT 1 FROM records WHERE kind='whatsapp_chat_delivery' AND external_id=? || conversation_messages.id) ORDER BY created_at,rowid LIMIT 40").all(link.org,link.threadId,link.since,donePrefix);
       // Outside the service window only an explicitly configured, Meta-approved
@@ -244,6 +251,7 @@ export function createWhatsAppChat({db, metadata, saveMetadata, conversation, as
         const id='wa-notify:'+hash(link.generation+':'+link.lastInboundAt);
         const claimed=await db.prepare("INSERT INTO records(id,org_id,kind,data,external_id,created_at,updated_at) VALUES(?,?,'whatsapp_chat_notification',?,?,?,?) ON CONFLICT(id) DO NOTHING RETURNING id").get(id,link.org,JSON.stringify({state:'sending',generation:link.generation}),id,now(),now());
         if(claimed){
+          if(await manualInbox?.held(link.phone)){await db.prepare('DELETE FROM records WHERE id=?').run(id);continue;}
           const current=await getClaim(link.phone);
           if(!current?.enabled||current.generation!==link.generation||!await member(current)){await put('whatsapp_chat_notification',id,link.org,{state:'canceled'});continue;}
           try{const result=await graph(config().phoneId+'/messages',{messaging_product:'whatsapp',to:link.phone,type:'template',template:{name:template,language:{code:env.HELPU_WHATSAPP_TEMPLATE_LANGUAGE||'pt_BR'}}});if(!result.messages?.[0]?.id)throw new Error('Envio não confirmado');await put('whatsapp_chat_notification',id,link.org,{state:'sent',generation:link.generation});}
@@ -267,7 +275,7 @@ export function createWhatsAppChat({db, metadata, saveMetadata, conversation, as
           const claim=await db.prepare('INSERT INTO records(id,org_id,kind,data,external_id,created_at,updated_at) VALUES(?,?,?,?,?,?,?) ON CONFLICT(id) DO NOTHING RETURNING id').get(id,link.org,'whatsapp_chat_outbox',JSON.stringify({state:'sending',generation:link.generation}),id,now(),now());
           if(!claim)continue;
           sent++;dailyCount++;totalSent++;
-          try{const state=await sendPiece(link,pieces[i]);if(state==='waiting_window'){await db.prepare('DELETE FROM records WHERE id=?').run(id);return;}await put('whatsapp_chat_outbox',id,link.org,{state,generation:link.generation});}
+          try{const state=await sendPiece(link,pieces[i]);if(state==='waiting_window'||state==='paused_manual'){await db.prepare('DELETE FROM records WHERE id=?').run(id);return;}await put('whatsapp_chat_outbox',id,link.org,{state,generation:link.generation});}
           catch{await put('whatsapp_chat_outbox',id,link.org,{state:'uncertain',generation:link.generation});break;}
           if(totalSent>=3)return;
         }

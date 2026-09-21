@@ -1,3 +1,4 @@
+import {createManualWhatsApp} from './whatsapp-manual.mjs';
 import {createReviewPreview} from './review-preview.mjs';
 import {createTemplateCatalog} from './template-catalog.mjs';
 import {adminOverview} from './admin-overview.mjs';
@@ -173,6 +174,7 @@ export async function createPortal({db, dataDir, userFrom, json, safeOrigin, pro
     const a = await db.prepare('SELECT * FROM assets WHERE id=? AND org_id=?').get(id, org);
     if (!a) fail('Arquivo não encontrado.', 404);
     if(a.source_url==='helpu:finance'&&!financialDownload)fail('Use a área Financeiro para acessar este documento.',403);
+    if(a.source_url==='helpu:manual-whatsapp'&&!financialDownload)fail('Arquivo restrito ao atendimento da equipe Helpu.',403);
     if(privateStorage)return privateStorage.localPath(a);
     return path.join(storage, a.path);
   }
@@ -678,7 +680,7 @@ export async function createPortal({db, dataDir, userFrom, json, safeOrigin, pro
     return await storeAsset(org, name, Buffer.concat(chunks), url);
   }
   async function files(org) {
-    return (await db.prepare("SELECT id,name,mime,size,source_url AS sourceUrl,created_at AS createdAt FROM assets WHERE org_id=? AND (source_url IS NULL OR source_url NOT IN ('helpu:finance','helpu:review-preview')) ORDER BY created_at DESC").all(org)).map(a => ({
+    return (await db.prepare("SELECT id,name,mime,size,source_url AS sourceUrl,created_at AS createdAt FROM assets WHERE org_id=? AND (source_url IS NULL OR source_url NOT IN ('helpu:finance','helpu:review-preview','helpu:manual-whatsapp')) ORDER BY created_at DESC").all(org)).map(a => ({
       ...a,
       url: '/api/portal/files/' + a.id
     }));
@@ -837,8 +839,9 @@ export async function createPortal({db, dataDir, userFrom, json, safeOrigin, pro
   const templateCatalog=createTemplateCatalog({db,operator:assisted.operator,access,storeAsset,assetPath,creativeLibrary});
   const pricing=createPricing({db,operator:assisted.operator,now:assistedNow});
   const commercial=createCommercial({db,operator:assisted.operator,now:assistedNow,pricing});
+  const manualWhatsApp=createManualWhatsApp({db,operator:assisted.operator,storeAsset,assetPath,assetType,env:whatsappChatEnv,fetcher:whatsappChatFetch});
   const whatsappWelcome=createWhatsAppWelcome({db,env:whatsappChatEnv,fetcher:whatsappChatFetch});
-  const whatsappChat=createWhatsAppChat({db,metadata,saveMetadata,conversation,assetPath,storeAsset,resolveDeliveryAsset:reviewPreview.resolve,env:whatsappChatEnv,fetcher:whatsappChatFetch,onInbound:whatsappWelcome.receive,onDelivery:whatsappWelcome.delivery});
+  const whatsappChat=createWhatsAppChat({db,metadata,saveMetadata,conversation,assetPath,storeAsset,resolveDeliveryAsset:reviewPreview.resolve,env:whatsappChatEnv,fetcher:whatsappChatFetch,manualInbox:manualWhatsApp,onInbound:whatsappWelcome.receive,onDelivery:async statuses=>{await whatsappWelcome.delivery(statuses);await manualWhatsApp.delivery(statuses);}});
   const finance=createFinance({db,operator:assisted.operator,storeAsset,now:assistedNow,deliver:whatsappChat.financeReminder});
   const commerce=createCommerce({db,operator:assisted.operator,finance,creations,now:assistedNow});
   const aiManagement=createAIManagement({db,operator:assisted.operator,integration,now:assistedNow});
@@ -1412,6 +1415,7 @@ export async function createPortal({db, dataDir, userFrom, json, safeOrigin, pro
         }, null, 'daily-director:' + date);
       }
       await whatsappChat.tick();
+      await manualWhatsApp.tick();
       const job = await db.prepare("UPDATE jobs SET state='working',attempts=attempts+1,lease_until=?,updated_at=? WHERE id=(SELECT id FROM jobs WHERE state IN ('queued','waiting_provider') AND scheduled_at<=? ORDER BY scheduled_at LIMIT 1) AND state IN ('queued','waiting_provider') RETURNING *").get(Date.now() + 180000, Date.now(), Date.now());
       if (!job) return;
       try {
@@ -1702,6 +1706,15 @@ export async function createPortal({db, dataDir, userFrom, json, safeOrigin, pro
       const current=await company(target);
       json(res,200,{company:{id:current.id,name:current.name,updatedAt:current.updatedAt},policy:current.policy,usage:await usageSnapshot(db,target,current.policy)});return true;
     }
+    if(pathname==='/api/portal/whatsapp-manual'||pathname==='/api/portal/whatsapp-manual/files'){
+      if(!assisted.operator(user))fail('Acesso restrito à equipe Helpu.',403);
+      if(pathname.endsWith('/files')){
+        if(req.method!=='POST')fail('Método não permitido.',405);
+        json(res,201,await manualWhatsApp.upload(user,url.searchParams.get('phone')||'',decodeURIComponent(String(req.headers['x-file-name']||'arquivo')),await readRaw(req,3*1024*1024)));
+      }else if(req.method==='GET')json(res,200,await manualWhatsApp.listing(user,url.searchParams.get('phone')));
+      else if(req.method==='POST')json(res,200,await manualWhatsApp.action(user,await body(req)));
+      else fail('Método não permitido.',405);return true;
+    }
     if(pathname==='/api/portal/admin-overview'){
       if(!assisted.operator(user))fail('Acesso restrito à equipe autorizada.',403);
       if(req.method!=='GET')fail('Método não permitido.',405);
@@ -1751,7 +1764,8 @@ export async function createPortal({db, dataDir, userFrom, json, safeOrigin, pro
     if (pathname.startsWith('/api/portal/files/')) {
       const id = pathname.split('/').at(-1);let asset = await db.prepare('SELECT * FROM assets WHERE id=?').get(id);
       if (!asset) fail('Arquivo não encontrado.', 404);
-      if(asset.source_url==='helpu:finance')await finance.authorizeFile(user,asset);
+      if(asset.source_url==='helpu:manual-whatsapp'){if(!assisted.operator(user))fail('Arquivo restrito ao atendimento da equipe Helpu.',403);}
+      else if(asset.source_url==='helpu:finance')await finance.authorizeFile(user,asset);
       else if(!await templateCatalog.canReadAsset(user,asset)&&!await assisted.canReadAsset(user,asset)&&!await consultations.canReadAsset(user,asset)&&!await commercial.canReadAsset(user,asset))await access(asset.org_id, user);
       if (!['GET', 'HEAD'].includes(req.method)) fail('Método não permitido.', 405);
       asset=await reviewPreview.resolve(asset);

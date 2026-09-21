@@ -72,3 +72,4 @@ import './ai-routing-integration.test.mjs';
 
 import './video-recipes.test.mjs';
 import './customer-portal.test.mjs';
+import './whatsapp-manual.test.mjs';

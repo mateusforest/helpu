@@ -3,7 +3,8 @@ import {whatsappPhone, whatsappPhoneKey} from './whatsapp-chat.mjs';
 
 export const WELCOME_CONSENT_VERSION = 'signup-welcome-2026-09-19';
 export const WELCOME_CONSENT_TEXT = 'Quero receber uma mensagem de boas-vindas da Helpu neste WhatsApp. Isso não ativa a operação pelo WhatsApp nem me inscreve em campanhas.';
-export const WELCOME_TEMPLATE_TEXT = 'Boas-vindas à Helpu! Organize o marketing da sua empresa e crie conteúdos com apoio de inteligência artificial. Para pedir criações e receber arquivos por aqui, entre no portal, abra Conversa na tela inicial e selecione Ativar WhatsApp. Confirme o vínculo pelo seu telefone. Até concluir essa etapa, a operação por aqui permanece desativada. Se não solicitou esta mensagem ou não deseja recebê-la, responda SAIR.';
+export const LEGACY_WELCOME_TEMPLATE_TEXT = 'Boas-vindas à Helpu! Organize o marketing da sua empresa e crie conteúdos com apoio de inteligência artificial. Para pedir criações e receber arquivos por aqui, entre no portal, abra Conversa na tela inicial e selecione Ativar WhatsApp. Confirme o vínculo pelo seu telefone. Até concluir essa etapa, a operação por aqui permanece desativada. Se não solicitou esta mensagem ou não deseja recebê-la, responda SAIR.';
+export const WELCOME_TEMPLATE_TEXT = 'Olá, {{1}}! Seja bem-vindo à Helpu. 🧡\n\nObrigado por escolher a Helpu para esta nova fase da {{2}}.\n\nVamos construir um marketing mais claro, ágil e com a identidade do seu negócio — usando tecnologia para aproveitar melhor seu tempo e seu investimento.\n\nPara começar, acesse o portal e apresente sua empresa ao Astra.\n\nQuer pedir conteúdos e receber suas prévias por aqui? No portal, abra *Conversa → Expandir para WhatsApp* e conclua a ativação.\n\nQuando precisar de atendimento da nossa equipe, é só chamar.\n\nSeu marketing começa aqui.';
 const DAY = 86400000;
 const kind = 'signup_whatsapp_contact';
 const idFor = userId => 'signup-wa:' + userId;
@@ -28,9 +29,10 @@ export function signupWhatsAppInput(input, env = process.env) {
 
 export function createWhatsAppWelcome({db, env=process.env, fetcher=fetch, now=Date.now}) {
   function configuration() {
-    const template = env.HELPU_WHATSAPP_WELCOME_TEMPLATE || '';
+    const personalized=!!env.HELPU_WHATSAPP_WELCOME_TEMPLATE_V2;
+    const template = env.HELPU_WHATSAPP_WELCOME_TEMPLATE_V2 || env.HELPU_WHATSAPP_WELCOME_TEMPLATE || '';
     const language = env.HELPU_WHATSAPP_WELCOME_LANGUAGE || 'pt_BR';
-    return {template, language, ready:!!(env.HELPU_WHATSAPP_ACCESS_TOKEN && env.HELPU_WHATSAPP_PHONE_NUMBER_ID && env.HELPU_WHATSAPP_NUMBER && env.HELPU_WHATSAPP_APP_SECRET && env.HELPU_WHATSAPP_VERIFY_TOKEN && /^[a-z0-9_]{1,512}$/.test(template) && /^[a-z]{2}(?:_[A-Z]{2})?$/.test(language))};
+    return {template, language, personalized, ready:!!(env.HELPU_WHATSAPP_ACCESS_TOKEN && env.HELPU_WHATSAPP_PHONE_NUMBER_ID && env.HELPU_WHATSAPP_NUMBER && env.HELPU_WHATSAPP_APP_SECRET && env.HELPU_WHATSAPP_VERIFY_TOKEN && /^[a-z0-9_]{1,512}$/.test(template) && /^[a-z]{2}(?:_[A-Z]{2})?$/.test(language))};
   }
   const get = userId => db.prepare('SELECT * FROM records WHERE id=? AND kind=?').get(idFor(userId),kind);
   async function replace(row, data) {
@@ -38,8 +40,8 @@ export function createWhatsAppWelcome({db, env=process.env, fetcher=fetch, now=D
   }
   async function register(org, user, input) {
     if (!input.phone) return;
-    const time=now();
-    const data={userId:Number(user.id),phone:input.phone,phoneKey:whatsappPhoneKey(input.phone),phoneVerified:false,
+    const time=now(),company=await db.prepare('SELECT name FROM companies WHERE id=?').get(org);
+    const data={userId:Number(user.id),userName:String(user.name||'').trim().slice(0,100),companyName:String(company?.name||'sua empresa').slice(0,120),phone:input.phone,phoneKey:whatsappPhoneKey(input.phone),phoneVerified:false,
       consent:{granted:input.consent,version:WELCOME_CONSENT_VERSION,text:WELCOME_CONSENT_TEXT,source:'signup',at:time},
       state:input.consent?'queued':'not_requested',expiresAt:time+DAY};
     await db.prepare('INSERT INTO records(id,org_id,kind,data,external_id,created_at,updated_at) VALUES(?,?,?,?,?,?,?) ON CONFLICT(id) DO NOTHING').run(idFor(user.id),org,kind,JSON.stringify(data),idFor(user.id),time,time);
@@ -104,6 +106,8 @@ export function createWhatsAppWelcome({db, env=process.env, fetcher=fetch, now=D
       }
       if(data.expiresAt<=now()){await replace(row,{...data,state:'expired'});continue;}
       if(!conf.ready)continue;
+      const userName=String(data.userName||(await db.prepare('SELECT name FROM users WHERE id=?').get(data.userId))?.name||'cliente').replace(/[\r\n\t]/g,' ').slice(0,100);
+      const companyName=String(data.companyName||(await db.prepare('SELECT name FROM companies WHERE id=?').get(row.org_id))?.name||'sua empresa').replace(/[\r\n\t]/g,' ').slice(0,120);
       const sending={...data,state:'sending',attemptedAt:now(),template:conf.template,language:conf.language};
       if(!await replace(row,sending))continue;
       // One attempt per telephone per day across accounts and worker instances.
@@ -116,7 +120,7 @@ export function createWhatsAppWelcome({db, env=process.env, fetcher=fetch, now=D
         const version=/^v\d+\.\d+$/.test(env.HELPU_WHATSAPP_API_VERSION||'')?env.HELPU_WHATSAPP_API_VERSION:'v24.0';
         const response=await fetcher('https://graph.facebook.com/'+version+'/'+encodeURIComponent(env.HELPU_WHATSAPP_PHONE_NUMBER_ID)+'/messages',{
           method:'POST',headers:{Authorization:'Bearer '+env.HELPU_WHATSAPP_ACCESS_TOKEN,'Content-Type':'application/json'},
-          body:JSON.stringify({messaging_product:'whatsapp',to:data.phone,type:'template',template:{name:conf.template,language:{code:conf.language}}}),
+          body:JSON.stringify({messaging_product:'whatsapp',to:data.phone,type:'template',template:{name:conf.template,language:{code:conf.language},...conf.personalized?{components:[{type:'body',parameters:[{type:'text',text:userName},{type:'text',text:companyName}]}]}:{}}}),
           signal:AbortSignal.timeout(10000)
         });
         const result=await response.json();
