@@ -1,3 +1,5 @@
+import path from 'node:path';
+import {manualFileError} from '../dist/assets/whatsapp-manual-rules.js';
 import {createHash} from 'node:crypto';
 import fs from 'node:fs';
 import {whatsappPhone,whatsappPhoneKey} from './whatsapp-chat.mjs';
@@ -12,7 +14,7 @@ export function manualTemplates(env){
  return items.filter(t=>/^[a-z0-9_]{1,512}$/.test(t.name||'')&&/^[a-z]{2}(?:_[A-Z]{2})?$/.test(t.language||'')&&Number.isInteger(t.parameters)&&t.parameters>=0&&t.parameters<=5&&typeof t.text==='string'&&t.text.length<=4000).map(t=>({name:t.name,language:t.language,parameters:t.parameters,text:t.text,label:clean(t.label||t.name,100)}));
  }catch{return [];}
 }
-export function createManualWhatsApp({db,operator,storeAsset,assetPath,assetType,env=process.env,fetcher=fetch,now=Date.now}){
+export function createManualWhatsApp({db,operator,storeAsset,assetPath,assetType,privateStorage,env=process.env,fetcher=fetch,now=Date.now}){
  const get=async id=>parse(await db.prepare('SELECT * FROM records WHERE id=?').get(id));
  const config=()=>get(CONFIG);
  const contactId=phone=>'manual-contact:'+hash(whatsappPhoneKey(phone));
@@ -85,7 +87,7 @@ export function createManualWhatsApp({db,operator,storeAsset,assetPath,assetType
   }else{
    if(!inside)fail('Fora da janela de 24 horas, escolha um modelo aprovado. Aguardar uma resposta também reabre a janela.',409);
    if(!text&&!d.assetId)fail('Escreva uma mensagem ou anexe um arquivo.');
-   if(d.assetId){asset=await db.prepare("SELECT * FROM assets WHERE id=? AND org_id=? AND source_url='helpu:manual-whatsapp'").get(d.assetId,c.org);if(!asset)fail('Arquivo indisponível para este atendimento.',404);if(text.length>1024)fail('Use até 1.024 caracteres com anexo.');}
+   if(d.assetId){asset=await db.prepare("SELECT * FROM assets WHERE id=? AND org_id=? AND source_url='helpu:manual-whatsapp'").get(d.assetId,c.org);if(!asset)fail('Arquivo indisponível para este atendimento.',404);const sizeError=manualFileError(asset.mime,asset.size);if(sizeError)fail(sizeError);if(text.length>1024)fail('Use até 1.024 caracteres com anexo.');}
    else{body.type='text';body.text={body:text};}
   }
   const id='manual-out:'+hash(d.requestId),fingerprint=hash(JSON.stringify([c.id,text,d.template||'',d.language||'',d.parameters||[],asset?.id||'']));
@@ -100,7 +102,30 @@ export function createManualWhatsApp({db,operator,storeAsset,assetPath,assetType
    return put(c.org,MESSAGE,id,{...row,state:result.messages?.[0]?.id?'accepted':'uncertain',providerId:String(result.messages?.[0]?.id||'')},row.version);
   }catch(e){const row=await get(id);return put(c.org,MESSAGE,id,{...row,state:e.rejected?'failed':'uncertain',error:e.rejected?e.message:'Envio sem confirmação. Confira com o contato antes de tentar novamente.',providerCode:e.providerCode||null},row.version);}
  }
- async function upload(user,phone,name,bytes){access(user);const c=await ensure(whatsappPhone(phone,{international:true}));if(bytes.length>3*1024*1024)fail('Envie arquivo de até 3 MB.');if(!['image/png','image/jpeg','video/mp4','application/pdf'].includes(assetType(bytes)?.[0]))fail('Envie JPG, PNG, PDF ou MP4.');const a=await storeAsset(c.org,name,bytes,'helpu:manual-whatsapp');return {id:a.id,name:a.name,mime:a.mime};}
+ function validateFile(bytes){const type=assetType(bytes),error=manualFileError(type?.[0],bytes.length);if(error)fail(error);return type;}
+ async function upload(user,phone,name,bytes){access(user);const c=await ensure(whatsappPhone(phone,{international:true}));validateFile(bytes);const a=await storeAsset(c.org,name,bytes,'helpu:manual-whatsapp');return {id:a.id,name:a.name,mime:a.mime};}
+ async function prepareUpload(user,phone,input){
+  access(user);const c=await ensure(whatsappPhone(phone,{international:true})),extension=path.extname(clean(input.name,150)).toLowerCase(),mime={'.png':'image/png','.jpg':'image/jpeg','.jpeg':'image/jpeg','.mp4':'video/mp4','.pdf':'application/pdf'}[extension],error=manualFileError(mime,input.size);
+  if(error)fail(error);if(!/^[a-f0-9-]{36}$/i.test(input.uploadId||''))fail('Identificador de arquivo inválido.');
+  if(!privateStorage)return {mode:'local'};
+  const id='manual-upload:'+input.uploadId,previous=await get(id),value={uploadId:input.uploadId,contactId:c.id,actor:user.id,name:clean(input.name,150),mime,size:input.size,file:input.uploadId+(extension==='.jpeg'?'.jpg':extension),expiresAt:now()+30*60*1000};
+  if(!previous&&await db.prepare('SELECT 1 FROM assets WHERE id=?').get(input.uploadId))fail('Identificador de arquivo já utilizado.',409);
+  const ticket=previous||await put(c.org,'helpu_manual_upload',id,value);
+  if(ticket.actor!==user.id||ticket.contactId!==c.id||ticket.name!==value.name||ticket.size!==value.size||ticket.mime!==mime)fail('A autorização não corresponde a este envio.',409);
+  if(ticket.expiresAt<now())fail('Autorização expirada. Selecione o arquivo novamente.',409);
+  return {mode:'direct',uploadId:ticket.uploadId,url:await privateStorage.signUpload(c.org,ticket.file)};
+ }
+ async function completeUpload(user,phone,input){
+  access(user);if(!privateStorage)fail('Selecione o arquivo para envio local.');const c=await ensure(whatsappPhone(phone,{international:true})),ticket=await get('manual-upload:'+input.uploadId);
+  if(!ticket||ticket.actor!==user.id||ticket.contactId!==c.id)fail('Autorização de arquivo não encontrada.',404);
+  const existing=await db.prepare('SELECT id,name,mime,size,org_id,source_url FROM assets WHERE id=?').get(ticket.uploadId);
+  if(existing){if(existing.org_id!==c.org||existing.source_url!=='helpu:manual-whatsapp'||existing.size!==ticket.size||existing.mime!==ticket.mime)fail('Arquivo incompatível com este envio.',409);return {id:existing.id,name:existing.name,mime:existing.mime,size:existing.size};}
+  if(ticket.expiresAt<now())fail('Autorização expirada. Selecione o arquivo novamente.',409);
+  const bytes=await privateStorage.download(c.org,ticket.file,ticket.size),type=validateFile(bytes);
+  if(bytes.length!==ticket.size||type[0]!==ticket.mime||path.extname(ticket.file)!==type[1])fail('O conteúdo do arquivo não corresponde ao envio informado.');
+  await db.prepare('INSERT INTO assets(id,org_id,name,mime,size,path,source_url,created_at,storage_bucket,storage_path,sha256,storage_verified_at) VALUES(?,?,?,?,?,?,?,?,?,?,?,?) ON CONFLICT(id) DO NOTHING').run(ticket.uploadId,c.org,ticket.name,type[0],bytes.length,ticket.file,'helpu:manual-whatsapp',now(),'helpu-private',c.org+'/'+ticket.file,hash(bytes),new Date(now()).toISOString());
+  return {id:ticket.uploadId,name:ticket.name,mime:type[0],size:bytes.length};
+ }
  async function delivery(statuses){for(const status of statuses.slice(0,100)){if(!['sent','delivered','read','failed'].includes(status.status))continue;const row=parse(await db.prepare("SELECT * FROM records WHERE kind=? AND json_extract(data,'$.providerId')=?").get(MESSAGE,String(status.id||'')));if(!row||row.direction!=='outgoing')continue;const c=await get(row.contactId);if(status.recipient_id&&whatsappPhoneKey(String(status.recipient_id))!==c?.phoneKey)continue;const rank={sending:0,uncertain:0,accepted:1,sent:2,failed:3,delivered:4,read:5};if(rank[status.status]<=rank[row.state])continue;await put(row.org,MESSAGE,row.id,{...row,state:status.status},row.version);}}
  async function tick(){
   if(!(await config())?.enabled)return;
@@ -111,5 +136,5 @@ export function createManualWhatsApp({db,operator,storeAsset,assetPath,assetType
    catch{await mutate(m.id,v=>({...v,state:'media_failed',error:'Não foi possível baixar este anexo. Peça o reenvio ao contato.'}));}
   }
  }
- return {action,listing,capture,held,delivery,tick,upload};
+ return {action,listing,capture,held,delivery,tick,upload,prepareUpload,completeUpload};
 }

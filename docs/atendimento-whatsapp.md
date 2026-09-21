@@ -11,7 +11,7 @@
 - **Devolver ao Astra** exige vínculo ativo e confirmação. Não transforma a conversa manual em pedidos de geração.
 - Código `HELPU …` continua exclusivo do fluxo de confirmação e não aparece na caixa. Cadastro e boas-vindas não ativam o vínculo.
 - Contatos, mensagens e arquivos são administrativos. Anexos não entram na biblioteca de criação da empresa e não podem ser lidos por clientes.
-- Janela de 24h aberta: texto, PNG/JPG, PDF e MP4 até 3 MB. Anexos recebidos são baixados pelo worker; formatos suportados pelo receptor incluem áudio. A tela atualiza a cada 15 segundos preservando rascunhos.
+- Janela de 24h aberta: texto, PNG/JPG até 5 MB, MP4 até 16 MB e PDF até 25 MB. Na nuvem, o navegador envia diretamente ao armazenamento privado com autorização temporária; o servidor confirma tamanho, assinatura do formato, pessoa e contato antes de liberar o anexo. O limite de PDF é da Helpu; imagens e vídeos seguem os limites da API. Anexos recebidos são baixados pelo worker; formatos suportados pelo receptor incluem áudio. A tela atualiza a cada 15 segundos preservando rascunhos. O botão de envio se atualiza imediatamente ao assumir, digitar ou terminar o upload, sem depender dessa atualização periódica. Quando desabilitado, exibe o motivo.
 - Fora da janela: somente modelos previamente aprovados/configurados e autorização documentada do contato. A caixa não inclui campanhas nem disparo em massa.
 - `SAIR`, `PARAR`, `DESATIVAR`, `STOP` e `CANCELAR` bloqueiam novos envios manuais. Esta primeira versão não remove o bloqueio manualmente.
 - Cada envio tem identificador único; timeouts ficam **sem confirmação**, sem repetição automática. Confira antes de iniciar outra mensagem. “Aceita pela Meta” não é confirmação de entrega; recibos assinados atualizam entregue/lida.
@@ -63,3 +63,6 @@ Antes da abertura comercial, implementar o bloqueio de produção sem plano pago
 ## Validação e publicação
 
 Testes usam provedores simulados; nenhum destinatário real recebe mensagens. Cobrem SQLite e PostgreSQL, isolamento, janela, consentimento, deduplicação, timeout, recibos, anexos, pausa/retomada e boas-vindas personalizada/legada. Teste de navegador cobre desktop e telas de 390/320 px, envio e preservação do rascunho. Publicação e aprovação dos modelos são etapas distintas da implementação local.
+
+Referência dos limites de mídia: https://www.postman.com/meta/whatsapp-business-platform/folder/13382743-ecb27be5-4d27-4763-bbee-6a8002c04bf3
+Referência de autorização e primeira mensagem: https://whatsappbusiness.com/policy/

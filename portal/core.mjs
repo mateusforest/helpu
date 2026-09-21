@@ -839,7 +839,7 @@ export async function createPortal({db, dataDir, userFrom, json, safeOrigin, pro
   const templateCatalog=createTemplateCatalog({db,operator:assisted.operator,access,storeAsset,assetPath,creativeLibrary});
   const pricing=createPricing({db,operator:assisted.operator,now:assistedNow});
   const commercial=createCommercial({db,operator:assisted.operator,now:assistedNow,pricing});
-  const manualWhatsApp=createManualWhatsApp({db,operator:assisted.operator,storeAsset,assetPath,assetType,env:whatsappChatEnv,fetcher:whatsappChatFetch});
+  const manualWhatsApp=createManualWhatsApp({db,operator:assisted.operator,storeAsset,assetPath,assetType,privateStorage,env:whatsappChatEnv,fetcher:whatsappChatFetch});
   const whatsappWelcome=createWhatsAppWelcome({db,env:whatsappChatEnv,fetcher:whatsappChatFetch});
   const whatsappChat=createWhatsAppChat({db,metadata,saveMetadata,conversation,assetPath,storeAsset,resolveDeliveryAsset:reviewPreview.resolve,env:whatsappChatEnv,fetcher:whatsappChatFetch,manualInbox:manualWhatsApp,onInbound:whatsappWelcome.receive,onDelivery:async statuses=>{await whatsappWelcome.delivery(statuses);await manualWhatsApp.delivery(statuses);}});
   const finance=createFinance({db,operator:assisted.operator,storeAsset,now:assistedNow,deliver:whatsappChat.financeReminder});
@@ -1706,11 +1706,15 @@ export async function createPortal({db, dataDir, userFrom, json, safeOrigin, pro
       const current=await company(target);
       json(res,200,{company:{id:current.id,name:current.name,updatedAt:current.updatedAt},policy:current.policy,usage:await usageSnapshot(db,target,current.policy)});return true;
     }
-    if(pathname==='/api/portal/whatsapp-manual'||pathname==='/api/portal/whatsapp-manual/files'){
+    if(['/api/portal/whatsapp-manual','/api/portal/whatsapp-manual/files','/api/portal/whatsapp-manual/files/prepare','/api/portal/whatsapp-manual/files/complete'].includes(pathname)){
       if(!assisted.operator(user))fail('Acesso restrito à equipe Helpu.',403);
-      if(pathname.endsWith('/files')){
+      if(pathname.endsWith('/prepare')||pathname.endsWith('/complete')){
         if(req.method!=='POST')fail('Método não permitido.',405);
-        json(res,201,await manualWhatsApp.upload(user,url.searchParams.get('phone')||'',decodeURIComponent(String(req.headers['x-file-name']||'arquivo')),await readRaw(req,3*1024*1024)));
+        const method=pathname.endsWith('/prepare')?'prepareUpload':'completeUpload';
+        json(res,200,await manualWhatsApp[method](user,url.searchParams.get('phone')||'',await body(req)));
+      }else if(pathname.endsWith('/files')){
+        if(req.method!=='POST')fail('Método não permitido.',405);
+        json(res,201,await manualWhatsApp.upload(user,url.searchParams.get('phone')||'',decodeURIComponent(String(req.headers['x-file-name']||'arquivo')),await readRaw(req,(privateStorage?3:25)*1024*1024)));
       }else if(req.method==='GET')json(res,200,await manualWhatsApp.listing(user,url.searchParams.get('phone')));
       else if(req.method==='POST')json(res,200,await manualWhatsApp.action(user,await body(req)));
       else fail('Método não permitido.',405);return true;
