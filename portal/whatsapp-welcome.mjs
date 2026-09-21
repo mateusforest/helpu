@@ -3,6 +3,8 @@ import {whatsappPhone, whatsappPhoneKey} from './whatsapp-chat.mjs';
 
 export const WELCOME_CONSENT_VERSION = 'signup-welcome-2026-09-19';
 export const WELCOME_CONSENT_TEXT = 'Quero receber uma mensagem de boas-vindas da Helpu neste WhatsApp. Isso não ativa a operação pelo WhatsApp nem me inscreve em campanhas.';
+export const WELCOME_NOTICE_VERSION = 'signup-service-welcome-2026-09-21';
+export const WELCOME_NOTICE_TEXT = 'Ao criar sua conta, você receberá uma mensagem de boas-vindas e orientações de uso da Helpu neste WhatsApp. Essa mensagem faz parte do cadastro. Ela não ativa o atendimento pelo WhatsApp nem inscreve você em campanhas.';
 export const LEGACY_WELCOME_TEMPLATE_TEXT = 'Boas-vindas à Helpu! Organize o marketing da sua empresa e crie conteúdos com apoio de inteligência artificial. Para pedir criações e receber arquivos por aqui, entre no portal, abra Conversa na tela inicial e selecione Ativar WhatsApp. Confirme o vínculo pelo seu telefone. Até concluir essa etapa, a operação por aqui permanece desativada. Se não solicitou esta mensagem ou não deseja recebê-la, responda SAIR.';
 export const WELCOME_TEMPLATE_TEXT = 'Olá, {{1}}! Seja bem-vindo à Helpu. 🧡\n\nObrigado por escolher a Helpu para esta nova fase da {{2}}.\n\nVamos construir um marketing mais claro, ágil e com a identidade do seu negócio — usando tecnologia para aproveitar melhor seu tempo e seu investimento.\n\nPara começar, acesse o portal e apresente sua empresa ao Astra.\n\nQuer pedir conteúdos e receber suas prévias por aqui? No portal, abra *Conversa → Expandir para WhatsApp* e conclua a ativação.\n\nQuando precisar de atendimento da nossa equipe, é só chamar.\n\nSeu marketing começa aqui.';
 const DAY = 86400000;
@@ -12,19 +14,21 @@ const fail = message => {throw Object.assign(new Error(message), {status:400});}
 const hash = value => createHash('sha256').update(value).digest('hex');
 
 export function signupWhatsAppInput(input, env = process.env) {
-  const consent = input.whatsappWelcomeConsent === true;
+  const noticeAccepted = input.welcomeNoticeVersion === WELCOME_NOTICE_VERSION;
+  if (input.welcomeNoticeVersion !== undefined && !noticeAccepted) fail('Atualize a página de cadastro e tente novamente.');
+  const consent = noticeAccepted || input.whatsappWelcomeConsent === true;
   if (input.whatsappWelcomeConsent !== undefined && typeof input.whatsappWelcomeConsent !== 'boolean') fail('Confira a autorização para receber as boas-vindas.');
   if (input.phone !== undefined && typeof input.phone !== 'string') fail('Informe um telefone válido.');
   const raw = (input.phone || '').trim();
   if (!raw) {
-    if (consent) fail('Informe seu WhatsApp para receber as boas-vindas ou desmarque a autorização.');
+    if (consent) fail('Informe seu WhatsApp para receber as boas-vindas e as orientações de uso.');
     return {phone:'', consent:false};
   }
   if (raw.length > 32 || !/^\+?[\d\s().-]+$/.test(raw)) fail('Informe seu WhatsApp com DDD; para outros países, inclua + e o código do país.');
   let phone;
   try {phone = whatsappPhone(raw);} catch {fail('Informe seu WhatsApp com DDD; para outros países, inclua + e o código do país.');}
   if (env.HELPU_WHATSAPP_NUMBER && whatsappPhoneKey(phone) === whatsappPhoneKey(whatsappPhone(env.HELPU_WHATSAPP_NUMBER, {international:true}))) fail('Informe seu telefone de contato, não o número oficial da Helpu.');
-  return {phone, consent};
+  return {phone, consent,...noticeAccepted?{noticeAccepted:true}:{}};
 }
 
 export function createWhatsAppWelcome({db, env=process.env, fetcher=fetch, now=Date.now}) {
@@ -42,7 +46,7 @@ export function createWhatsAppWelcome({db, env=process.env, fetcher=fetch, now=D
     if (!input.phone) return;
     const time=now(),company=await db.prepare('SELECT name FROM companies WHERE id=?').get(org);
     const data={userId:Number(user.id),userName:String(user.name||'').trim().slice(0,100),companyName:String(company?.name||'sua empresa').slice(0,120),phone:input.phone,phoneKey:whatsappPhoneKey(input.phone),phoneVerified:false,
-      consent:{granted:input.consent,version:WELCOME_CONSENT_VERSION,text:WELCOME_CONSENT_TEXT,source:'signup',at:time},
+      consent:{granted:input.consent,version:input.noticeAccepted?WELCOME_NOTICE_VERSION:WELCOME_CONSENT_VERSION,text:input.noticeAccepted?WELCOME_NOTICE_TEXT:WELCOME_CONSENT_TEXT,source:'signup',...input.noticeAccepted?{acceptance:'create_account'}:{},at:time},
       state:input.consent?'queued':'not_requested',expiresAt:time+DAY};
     await db.prepare('INSERT INTO records(id,org_id,kind,data,external_id,created_at,updated_at) VALUES(?,?,?,?,?,?,?) ON CONFLICT(id) DO NOTHING').run(idFor(user.id),org,kind,JSON.stringify(data),idFor(user.id),time,time);
   }

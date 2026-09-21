@@ -7,13 +7,21 @@ import {createHmac} from 'node:crypto';
 import {PGlite} from '@electric-sql/pglite';
 import {createDatabase} from '../portal/database.mjs';
 import {createHelpuServer} from '../server.mjs';
-import {createWhatsAppWelcome,signupWhatsAppInput,WELCOME_CONSENT_VERSION} from '../portal/whatsapp-welcome.mjs';
+import {createWhatsAppWelcome,signupWhatsAppInput,WELCOME_CONSENT_VERSION,WELCOME_NOTICE_VERSION,WELCOME_NOTICE_TEXT} from '../portal/whatsapp-welcome.mjs';
 
 test('telefone opcional, normalização internacional e autorização explícita',()=>{
   assert.deepEqual(signupWhatsAppInput({}),{phone:'',consent:false});
   assert.equal(signupWhatsAppInput({phone:'(54) 99999-8888',whatsappWelcomeConsent:true}).phone,'5554999998888');
   assert.equal(signupWhatsAppInput({phone:'+351 912 345 678'}).phone,'351912345678');
   for(const input of [{phone:'texto1234567890'},{phone:'123'},{whatsappWelcomeConsent:true},{phone:1234},{whatsappWelcomeConsent:'on'}])assert.throws(()=>signupWhatsAppInput(input));
+});
+
+test('cadastro atual solicita boas-vindas sem checkbox e exige telefone e aviso válido',()=>{
+ assert.deepEqual(signupWhatsAppInput({phone:'54999998888',welcomeNoticeVersion:WELCOME_NOTICE_VERSION}),{phone:'5554999998888',consent:true,noticeAccepted:true});
+ assert.throws(()=>signupWhatsAppInput({welcomeNoticeVersion:WELCOME_NOTICE_VERSION}));
+ assert.throws(()=>signupWhatsAppInput({phone:'54999998888',welcomeNoticeVersion:'invalido'}));
+ assert.equal(signupWhatsAppInput({phone:'54999998888',whatsappWelcomeConsent:false}).consent,false);
+ const html=fs.readFileSync(new URL('../dist/cadastro.html',import.meta.url),'utf8');assert.ok(!html.includes('name="whatsappWelcomeConsent"'));assert.ok(html.includes(WELCOME_NOTICE_TEXT));assert.match(html,/<input id="phone"[^>]*required/);
 });
 
 for(const postgres of [false,true])test('F04/F05: cadastro, boas-vindas e guia em '+(postgres?'PostgreSQL':'SQLite'),async t=>{
@@ -61,13 +69,13 @@ for(const postgres of [false,true])test('F04/F05: cadastro, boas-vindas e guia e
       assert.equal((await db.prepare("SELECT COUNT(*) AS count FROM records WHERE kind='signup_whatsapp_contact'").get()).count,0);
     });
     const noConsent=await signup({phone:'11999990001'});
-    const opted=await signup({phone:'11999990002',whatsappWelcomeConsent:true});
+    const opted=await signup({phone:'11999990002',welcomeNoticeVersion:WELCOME_NOTICE_VERSION});
     await t.test('contato é salvo sem autorizar operação e configuração ausente não impede cadastro',async()=>{
       assert.equal((await api(noConsent,'whatsapp-welcome')).body.state,'not_requested');
       assert.equal((await api(opted,'whatsapp-welcome')).body.state,'waiting_configuration');
       const value=(await api(opted,'whatsapp-chat')).body;
       assert.equal(value.phone,'5511999990002');assert.equal(value.enabled,false);assert.equal(value.verified,false);assert.equal(value.pending,false);
-      const stored=await contact(opted);assert.equal(stored.consent.version,WELCOME_CONSENT_VERSION);assert.equal(stored.consent.source,'signup');assert.equal(stored.phoneVerified,false);
+      const stored=await contact(opted);assert.equal(stored.consent.version,WELCOME_NOTICE_VERSION);assert.equal(stored.consent.text,WELCOME_NOTICE_TEXT);assert.equal(stored.consent.acceptance,'create_account');assert.equal(stored.consent.source,'signup');assert.equal(stored.phoneVerified,false);
       await app.portal.dispatchSignupWelcome();assert.equal(sent.length,0);
     });
     await t.test('template aprovado configurado sai uma vez, sem texto livre nem dados privados',async()=>{
