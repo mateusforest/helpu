@@ -28,3 +28,11 @@ Revisar a oferta e autorizar publicação. Definir destino do atendimento e proc
 A revisão seguinte começa pela trajetória relatada pelos fundadores: Vacaria (2020), São Paulo, Fortaleza, Porto Alegre e retorno a Vacaria. São seis capítulos navegáveis, sem cronologia anual inventada. Métricas históricas estão identificadas como informadas pelos fundadores e separadas dos resultados da nova plataforma. Não foi produzido um filme nem inserido acervo fictício.
 
 `story-media.js` prepara fotos por capítulo e vídeo com capa e legendas. `PEDIDO-PARA-O-EDITOR.md` contém roteiro, direção e entregas para a outra conversa; `ACERVO-E-INTEGRACAO.md` orienta a seleção e o encaixe dos materiais. O leitor mantém controle da navegação, e o vídeo só terá CTA quando houver um arquivo configurado.
+
+## Curadoria do acervo real — versão curta
+
+O roteiro vigente é `ROTEIRO-68-SEGUNDOS.md`: sete passagens, 140 palavras e alvo de 68 segundos, substituindo a duração anterior de 90 segundos. `PEDIDO-PARA-O-EDITOR.md` foi atualizado para a seleção real.
+
+O catálogo privado, inventário de 132 fontes, mapa de arquivos, sugestões de cortes e cópias de 17 fontes principais e 20 alternativas ficam no workspace em `output/historia-helpu-acervo/`. O acervo pessoal e os metadados de origem não integram o repositório nem a página pública. Os originais foram preservados.
+
+Ano da obra do contêiner e imagens de Porto Alegre/retorno ainda precisam de identificação. O roteiro funciona com cartelas nessas duas últimas passagens. A duração é uma meta editorial, não a medição de uma narração já gravada. A apresentação continua preparada para receber o filme final; esta etapa não produziu um MP4.
