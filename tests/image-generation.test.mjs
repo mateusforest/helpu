@@ -147,12 +147,33 @@ test('imagens: formatos sociais, edição real por referência e validação ant
  }
  const png=testPng();await provider.generateImage({apiKey:'test-only'},{prompt:'Mantenha o produto, altere o fundo.',size:'1008x1792',images:[{mime:'image/png',bytes:png}]});
  const edit=calls.at(-1);assert.equal(edit.url,'https://api.openai.com/v1/images/edits');assert.ok(edit.options.body instanceof FormData);assert.equal(edit.options.headers['Content-Type'],undefined);
- assert.equal(edit.options.body.get('size'),'1008x1792');assert.equal(edit.options.body.get('input_fidelity'),'high');assert.deepEqual(Buffer.from(await edit.options.body.getAll('image[]')[0].arrayBuffer()),png);
+ assert.equal(edit.options.body.get('size'),'1008x1792');assert.equal(edit.options.body.has('input_fidelity'),false);assert.deepEqual(Buffer.from(await edit.options.body.getAll('image[]')[0].arrayBuffer()),png);
  const before=calls.length;
  for(const input of [{size:'1080x1920'},{images:[{mime:'video/mp4',bytes:png}]},{images:Array(7).fill({mime:'image/png',bytes:png})}])await assert.rejects(provider.generateImage({apiKey:'test-only'},{prompt:'Teste',...input}),e=>e.state==='blocked');
  assert.equal(calls.length,before);
  assert.throws(()=>imageLayout({imageLayout:'carousel',slideIndex:4,slideCount:3}),e=>e.state==='blocked');
  assert.throws(()=>imageLayout({imageLayout:'wide'}),e=>e.state==='blocked');
+});
+
+test('Sunburst: referências em feed, story e carrossel não enviam parâmetro legado recusado',async()=>{
+ let calls=0,measurements=0;
+ const reference=testPng(64,64);
+ const provider=createProviders(async(url,options)=>{
+  calls++;assert.equal(url,'https://api.openai.com/v1/images/edits');
+  const form=options.body;
+  if(form.has('input_fidelity'))return Response.json({error:{code:'invalid_input_fidelity_model',param:'input_fidelity',type:'image_generation_user_error'}},{status:400});
+  assert.deepEqual([...new Set(form.keys())].sort(),['model','prompt','n','size','quality','output_format','image[]'].sort());
+  assert.equal(form.get('model'),'gpt-image-2.5-sunburst');assert.equal(form.get('quality'),'medium');
+  assert.deepEqual(Buffer.from(await form.get('image[]').arrayBuffer()),reference);
+  const [width,height]=form.get('size').split('x').map(Number);
+  return Response.json({data:[{b64_json:testPng(width,height).toString('base64')}]},{headers:{'x-request-id':'reference-'+calls}});
+ });
+ for(const format of ['feed','story','carousel']){
+  const layout=imageLayout({imageLayout:format,slideIndex:1,slideCount:3});
+  const result=await provider.generateImage({apiKey:'test-only'},{prompt:'Use a referência como inspiração visual.',size:layout.size,images:[{mime:'image/png',bytes:reference}],onUsage:async()=>measurements++});
+  const image=decodeGeneratedPng(result.base64);assert.equal(image.width,layout.width);assert.equal(image.height,layout.height);
+ }
+ assert.equal(calls,3);assert.equal(measurements,3);
 });
 
 test('imagens: páginas ordenadas, referências privadas, reuso e formato incorreto cercado',async()=>{

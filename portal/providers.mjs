@@ -17,11 +17,14 @@ export function openAIError(response,data) {
  else if(response.status===429)message='A OpenAI recusou o pedido por um limite da API (429). Confira a cobrança e os limites do projeto OpenAI. Este bloqueio é externo à Helpu.';
  else if(response.status===401||response.status===403){message='A OpenAI recusou o acesso. A administração precisa conferir a chave e as permissões do projeto em Conexões.';state='blocked';}
  else if(code==='model_not_found'){message='O modelo configurado não está disponível para esta chave. Confira o modelo e o acesso do projeto OpenAI.';state='blocked';}
+ else if(code==='invalid_input_fidelity_model'){message='A configuração de edição da Helpu não é compatível com o modelo de imagem. A equipe precisa atualizar a integração. Seu pedido e suas referências foram preservados.';state='blocked';}
  else message='A OpenAI não concluiu a solicitação ('+response.status+'). O pedido e os passos realizados foram preservados.';
  const e=new ProviderError(message,state);
  e.code=quota?'openai_quota':temporary?'openai_rate_limit':'openai_error';
  e.providerRejected=response.status>=400&&response.status<500;
  e.providerDiagnostic={provider:'openai',status:response.status,code:/^[a-z0-9_]{1,80}$/.test(code)?code:null,type:typeof type==='string'&&/^[a-z0-9_]{1,80}$/.test(type)?type:null,requestId:response.headers?.get('x-request-id')?.slice(0,150)||null};
+ const safeParams=['input_fidelity','model','size','quality','image','image[]','output_format','background','n','prompt'];
+ if(safeParams.includes(data?.error?.param))e.providerDiagnostic.param=data.error.param;
  e.retryable=temporary;
  return e;
 }
@@ -75,7 +78,7 @@ export function createProviders(fetcher=fetch){
    let body={model:'gpt-image-2.5-sunburst',prompt,n:1,size,quality:'medium',output_format:'png'},headers=bearer(config.apiKey),endpoint='generations';
    if(images.length){
     const form=new FormData();for(const [key,value] of Object.entries(body))form.set(key,String(value));
-    form.set('input_fidelity','high');
+    // Sunburst rejects input_fidelity. Preserve references without this legacy option.
     images.forEach((image,index)=>form.append('image[]',new Blob([image.bytes],{type:image.mime}),'reference-'+(index+1)+({ 'image/png':'.png','image/jpeg':'.jpg','image/webp':'.webp'}[image.mime])));
     body=form;headers={Authorization:headers.Authorization};endpoint='edits';
    }

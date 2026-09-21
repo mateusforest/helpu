@@ -28,6 +28,17 @@ test('429: cota externa não é repetida, diagnóstico sanitizado e limite tempo
  await assert.rejects(createProviders(async()=>Response.json({error:{}},{status:500})).generateImage({apiKey:'test'},{prompt:'test'}),e=>e.state==='uncertain');
  const unknown=openAIError(new Response('',{status:429}),{error:{message:'private'}});assert.match(unknown.message,/externo/);assert.equal(unknown.retryable,false);
 });
+test('400 de edição identifica incompatibilidade sem repetir chamada nem expor resposta privada',async()=>{
+ let calls=0;
+ const provider=createProviders(async()=>{calls++;return Response.json({error:{code:'invalid_input_fidelity_model',type:'image_generation_user_error',param:'input_fidelity',message:'private prompt secret'}},{status:400,headers:{'x-request-id':'req-safe'}});});
+ await assert.rejects(provider.generateImage({apiKey:'test-only'},{prompt:'Teste'}),e=>{
+  assert.equal(e.state,'blocked');assert.equal(e.providerRejected,true);assert.equal(e.retryable,false);
+  assert.equal(e.providerDiagnostic.param,'input_fidelity');assert.equal(e.providerDiagnostic.requestId,'req-safe');
+  assert.match(e.message,/configuração.*não é compatível/);assert.doesNotMatch(JSON.stringify(e)+e.message,/private prompt secret/);return true;
+ });assert.equal(calls,1);
+ const unsafe=openAIError(new Response('',{status:400}),{error:{param:'private_customer_field',message:'private',code:'bad'}});
+ assert.equal(unsafe.providerDiagnostic.param,undefined);
+});
 for(const postgres of [false,true])test('cotas/reset por empresa, persistência e isolamento: '+(postgres?'PostgreSQL':'SQLite'),async t=>{
  const dataDir=fs.mkdtempSync(path.join(os.tmpdir(),'helpu-usage-'));let pg,database,rejectProvider=false;
  if(postgres){pg=await PGlite.create({parsers:{20:Number}});await pg.exec('CREATE ROLE anon; CREATE ROLE authenticated; CREATE ROLE service_role; CREATE SCHEMA storage; CREATE TABLE storage.buckets(id text PRIMARY KEY,name text,public boolean,file_size_limit bigint);');for(const f of ['20260913113000_preserve_helpu_data.sql','20260913140000_activate_cloud_runtime.sql'])await pg.exec(fs.readFileSync(new URL('../supabase/migrations/'+f,import.meta.url),'utf8'));await pg.exec('INSERT INTO helpu.portal_migrations VALUES(1,1),(2,1),(3,1),(4,1); SET ROLE helpu_runtime;');let queued=Promise.resolve();database=createDatabase({pool:{async connect(){const prior=queued;let release;queued=new Promise(r=>release=r);await prior;return {async query(sql,args){const r=await pg.query(sql,args);return {...r,rowCount:r.affectedRows};},release};},async end(){}}});}
