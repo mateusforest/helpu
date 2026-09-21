@@ -31,8 +31,14 @@ A revisão seguinte começa pela trajetória relatada pelos fundadores: Vacaria 
 
 ## Curadoria do acervo real — versão curta
 
-O roteiro vigente é `ROTEIRO-68-SEGUNDOS.md`: sete passagens, 140 palavras e alvo de 68 segundos, substituindo a duração anterior de 90 segundos. `PEDIDO-PARA-O-EDITOR.md` foi atualizado para a seleção real.
+A proposta anterior foi `ROTEIRO-68-SEGUNDOS.md`: sete passagens, 140 palavras e alvo de 68 segundos, substituindo a duração anterior de 90 segundos. `PEDIDO-PARA-O-EDITOR.md` foi atualizado para a seleção real.
 
 O catálogo privado, inventário de 132 fontes, mapa de arquivos, sugestões de cortes e cópias de 17 fontes principais e 20 alternativas ficam no workspace em `output/historia-helpu-acervo/`. O acervo pessoal e os metadados de origem não integram o repositório nem a página pública. Os originais foram preservados.
 
 Ano da obra do contêiner e imagens de Porto Alegre/retorno ainda precisam de identificação. O roteiro funciona com cartelas nessas duas últimas passagens. A duração é uma meta editorial, não a medição de uma narração já gravada. A apresentação continua preparada para receber o filme final; esta etapa não produziu um MP4.
+
+## Direção vigente: vídeos distribuídos pela página
+
+`PEDIDO-PARA-O-EDITOR.md` substitui o filme contínuo por três blocos independentes: origem (14–18s), trajetória (18–22s) e nova Helpu (10–14s), com edição elaborada e proposta de molduras para desktop/mobile. A saída de Vacaria rumo a São Paulo foi confirmada pelo fundador como meados de 2023; os anos seguintes não foram inferidos.
+
+O pacote local `output/historia-helpu-acervo/HELPU-EDITOR-VIDEOS-MODULARES.zip` contém 39 fontes, mapa portátil, briefing e cópia de referência da apresentação. A página de referência ainda usa o encaixe anterior; não é a implementação modular final. Nenhum vídeo foi renderizado ou enviado a outro editor nesta etapa.

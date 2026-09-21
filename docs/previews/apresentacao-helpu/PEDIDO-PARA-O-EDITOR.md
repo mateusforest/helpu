@@ -1,15 +1,27 @@
-# Pedido pronto para o editor — filme da história da Helpu
+# Helpu — três filmes curtos dentro da apresentação
 
-Produza um filme curto, emocional e profissional a partir deste acervo real. Use o documento ROTEIRO-68-SEGUNDOS.md como roteiro principal: ele substitui o briefing antigo de 90 segundos. Quero cerca de 68 segundos, no máximo 70, sem acelerar artificialmente a narração.
+Esta direção SUBSTITUI o filme único de 68 segundos, a narração contínua e a antiga lista de cortes. Quero uma experiência audiovisual distribuída pela apresentação: três vídeos independentes, cada um com contexto, começo e fechamento próprios. O visitante deve sentir vontade de continuar explorando.
 
-Abra com a transformação do nosso primeiro escritório: terreno, preparação, concretagem, guindaste e contêiner pronto. Mostre depois o trabalho com clientes, a passagem por São Paulo, o crescimento profissional e familiar em Fortaleza, a preparação em Porto Alegre e o retorno a Vacaria com a nova Helpu. A ideia central é: “A tecnologia é nova. A experiência vem de longe.”
+## 1. Tudo começou fazendo · 14–18s
+No topo, ao lado da frase principal. Abrir com a construção do primeiro escritório em contêiner: terreno, base, guindaste e fachada pronta. Entrar nos bastidores e trabalhos de clientes com cortes rápidos e composição de múltiplos quadros. A Helpu começou em Vacaria em 2020; o ano exato da obra não foi confirmado. Fontes principais e alternativas estão no MAPA-DOS-ARQUIVOS.csv e em MODULOS.json.
 
-Siga a narração e as sete cenas do roteiro. Há 17 fontes principais e 20 alternativas copiadas na pasta selecao-editor; os IDs estão relacionados aos nomes originais no MAPA-DOS-ARQUIVOS.csv. O CORTES-SUGERIDOS.csv contém pontos iniciais de montagem, ainda sujeitos à revisão do vídeo completo e da voz. O catálogo visual permite ver todo o acervo e comparar opções.
+## 2. Sair mudou o nosso olhar · 18–22s
+Mais abaixo, junto à trajetória. Saímos de Vacaria rumo a São Paulo em MEADOS DE 2023. Depois vieram Fortaleza, Porto Alegre e o retorno a Vacaria. Mostrar trabalho, tecnologia, aprendizado e um momento breve de família. Uma linha gráfica laranja pode conectar os lugares e virar a divisão dos quadros. Não inventar os anos seguintes, nem apresentar viagens de lazer como trabalho. Onde falta imagem identificada, compor a passagem com tipografia e percurso, sem fabricar registros.
 
-Não use tudo. Priorize o contêiner, os bastidores de criação, o trabalho com tecnologia e um momento breve de família. Turismo e imagens de outros países ficam fora desta versão. Não mostrar conversas particulares, telefones ou QR de credencial. Não associar eventos sem data à fase Porto Alegre. Onde falta imagem confirmada, usar as cartelas previstas; não fabricar lembranças, clientes ou acontecimentos.
+## 3. A experiência ganhou uma nova forma · 10–14s
+Na transição para a apresentação do produto. Fazer uma revelação da marca atual a partir da antiga, com tipografia cinética e painéis. Usar apenas telas reais disponíveis, sem simular resultados, geração instantânea ou funções inexistentes. Fechar com: “A tecnologia é nova. A experiência vem de longe.”
 
-Direção visual: premium, humana e limpa, com as cores da Helpu, títulos curtos e respiro. Abrir com cortes ágeis, dar 2–3 segundos à emoção familiar e fechar com confiança. Compor os vídeos verticais em quadros sobre fundo da marca quando necessário. Não perder qualidade esticando arquivos pequenos.
+## Linguagem de edição
+Quero direção de arte e motion design elaborados, profissionais e refinados. Cortes de 0,5–1,5s nos trechos de energia; pequenas pausas de 2–3s nos momentos importantes. Explorar match cuts por forma e movimento, máscaras que revelam a próxima cena, tela dividida com hierarquia, profundidade discreta, textos com movimento coordenado e speed ramps somente nas tomadas com duração e qualidade suficientes. Não aplicar todos os efeitos em todo corte: construir uma linguagem consistente. Evitar depender apenas de fades e zooms em fotografias.
 
-Grave ou receba a narração antes de fechar a duração. Prefira minha voz se eu a fornecer; caso contrário, use uma voz brasileira natural, sem imitar minha voz. Revise os áudios originais e utilize música licenciada. Sem prometer retorno financeiro garantido ou transformar dados da operação antiga em resultados da nova plataforma.
+Preservar pessoas, fatos e a qualidade do acervo. Compor fontes pequenas ou verticais em painéis sobre fundo da marca; não esticar. Remover interface de gravação quando possível, sem cortar conteúdo importante. Não usar conversas particulares, telefones ou QR de credenciais. Os números históricos são relato dos fundadores sobre a operação anterior: +15 mil conteúdos, +78 empresas e +15 milhões de pessoas alcançadas; não são resultados da nova plataforma.
 
-Entregue MP4 horizontal 1920 × 1080 para a apresentação, versão vertical 1080 × 1920 com reenquadramento próprio, legendas SRT/WebVTT, versões limpa e legendada, capa e projeto editável. Mostre uma primeira montagem completa para revisão antes do acabamento final.
+## A moldura faz parte da experiência
+Projetar também como cada vídeo aparece na página: moldura com profundidade discreta, cantos suaves, recorte bem composto e detalhe laranja que acompanha uma revelação. Alternar texto de um lado e vídeo do outro; permitir uma composição interna com quadro menor sobreposto quando ajudar a contar a história. Evitar três players grandes empilhados ou vídeos presos somente a um modal.
+
+Entregar uma proposta visual de encaixe para computador e celular. No celular, recompor em uma coluna. Animação de entrada curta, com alternativa estática para movimento reduzido. A moldura externa deve pertencer ao layout, não ficar gravada permanentemente no MP4. Os efeitos internos da edição pertencem ao vídeo. Cada bloco funciona sem áudio; reprodução no viewport pode ser silenciosa e deve pausar fora dele, com controle de pausa. Som somente por escolha do visitante, nunca em três vídeos simultâneos.
+
+## Entregas
+Três MP4s separados, 16:9 em 1920×1080, nomes 01-origem.mp4, 02-trajetoria.mp4 e 03-nova-helpu.mp4. Versões 4:5 em 1080×1350 recompostas para o encaixe mobile, sem corte central automático. Uma capa por bloco e projeto editável. Entregar versão com trilha/sound design licenciado e versão silenciosa. Narração é opcional e curta por bloco; não reaproveitar o texto contínuo de 68s.
+
+Além dos vídeos, entregar a proposta de molduras e composição desktop/mobile (HTML/CSS se o editor também trabalhar com interface; caso contrário, imagens de layout com medidas). A pasta referencia-apresentacao mostra a página atual apenas como contexto de marca e encaixe: a estrutura antiga de filme único deve ser substituída por esta direção. Não publicar nada. Apresentar uma primeira versão dos três blocos e de seu encaixe para revisão.

@@ -1,3 +1,5 @@
+> SUBSTITUÍDO: a direção vigente usa três vídeos independentes ao longo da página. Consulte PEDIDO-PARA-O-EDITOR.md. A saída de Vacaria rumo a São Paulo ocorreu em meados de 2023. Este roteiro permanece apenas como histórico.
+
 # Helpu — A experiência vem de longe
 
 Roteiro de origem • proposta de montagem de 68 segundos • revisão com acervo real
