@@ -1,0 +1,19 @@
+// Original editing recipes derived from visual analysis, never copies of reference media.
+export const VIDEO_FONTS={
+ sans:{name:'Sans natural',family:'DejaVu Sans',file:'DejaVuSans.ttf'},
+ serif:{name:'Editorial serifada',family:'DejaVu Serif',file:'DejaVuSerif.ttf'},
+ condensed:{name:'Sans condensada',family:'DejaVu Sans',file:'DejaVuSans.ttf',scale:80},
+ bold:{name:'Sans de impacto',family:'DejaVu Sans',file:'DejaVuSans-Bold.ttf',bold:true},
+ 'serif-italic':{name:'Editorial itálica',family:'DejaVu Serif',file:'DejaVuSerif-Italic.ttf',italic:true},
+ 'serif-bold':{name:'Editorial forte',family:'DejaVu Serif',file:'DejaVuSerif-Bold.ttf',bold:true},
+ mono:{name:'Monoespaçada',family:'DejaVu Sans Mono',file:'DejaVuSansMono.ttf'}
+};
+export const VIDEO_RECIPES=[
+ {id:'teaser',name:'Teaser de lançamento',description:'Frases curtas, contraste e revelação final.',font:'bold',motion:'none',textAnimation:'pop',transition:'cut',accent:'#ff5318',fontSize:88,position:'center',highlight:'last',textBox:'none',shares:[.2,.2,.25,.35],direction:'Uma ideia por cena. Abrir com curiosidade, desenvolver e revelar a oferta real. Não inventar promoção.'},
+ {id:'gastronomy',name:'Gastronomia sensorial',description:'Detalhes do produto, ritmo elegante e texto discreto.',font:'serif-italic',motion:'none',textAnimation:'fade',transition:'fade',accent:'#d4b88a',fontSize:48,position:'bottom',highlight:'none',textBox:'outline',shares:[.18,.22,.25,.35],direction:'Plano de ambiente, detalhe, preparo e produto final. Preservar o movimento filmado. Usar pouco texto; não simular movimento de câmera 3D.'},
+ {id:'architecture',name:'Arquitetura editorial',description:'Ambientes e detalhes com títulos serifados.',font:'serif',motion:'none',textAnimation:'rise',transition:'fade',accent:'#c0a27c',fontSize:52,position:'bottom',highlight:'none',textBox:'outline',shares:[.3,.25,.25,.2],direction:'Apresentar ambiente, circulação, detalhe e fechamento. Evitar zoom adicional sobre tours já filmados. Respeitar linhas e enquadramento.'},
+ {id:'before-after',name:'Antes e depois',description:'Comparação em sequência com identificação clara.',font:'serif-bold',motion:'none',textAnimation:'fade',transition:'cut',accent:'#ff5318',fontSize:62,position:'top',highlight:'none',textBox:'outline',shares:[.5,.5],direction:'Usar somente o antes e depois fornecidos e identificados pelo cliente. Não inventar transformação. Comparação sequencial; sem tela dividida automática.'},
+ {id:'expert',name:'Especialista em cena',description:'Gravação em destaque e títulos curtos legíveis.',font:'sans',motion:'none',textAnimation:'fade',transition:'cut',accent:'#16804a',fontSize:52,position:'bottom',highlight:'none',textBox:'outline',shares:[.34,.33,.33],direction:'Preservar gravação e fala original. Títulos não são transcrição. Para legenda sincronizada usar SRT fornecido; não inventar palavras faladas.'},
+ {id:'kinetic',name:'Palavras de impacto',description:'Entrada por palavras e tipografia forte.',font:'bold',motion:'none',textAnimation:'words',transition:'cut',accent:'#ff5318',fontSize:80,position:'center',highlight:'last',textBox:'outline',shares:[.2,.25,.25,.3],direction:'Até sete palavras por cena, hierarquia clara e uma cor de ênfase da marca. Animação gráfica, sem alegar sincronização com fala.'}
+].map(r=>({...r,version:1}));
+export const VIDEO_REFERENCE_LIMITS='Referências orientam linguagem visual; não copiar marcas, pessoas, textos ou música. Fontes originais não confirmadas. Mosaicos, tracking, recortes de pessoas, colagens 3D e transcrição automática ainda não estão no renderizador.';

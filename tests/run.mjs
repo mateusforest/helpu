@@ -67,3 +67,5 @@ import './finance-stripe.test.mjs';
 import './commerce.test.mjs';
 import './ai-management.test.mjs';
 import './ai-routing-integration.test.mjs';
+
+import './video-recipes.test.mjs';

@@ -45,6 +45,7 @@ for(const postgres of [false,true])test('Criações: Feed, Story, Carrossel e Re
    value.videoStyle=Object.fromEntries(['font','fontSize','accent','motion','textAnimation','transition','fit'].map(k=>[k,options[k]]));
    if(input.adjustment){value.videoStyle.fontSize=88;value.videoStyle.accent='#ab2211';}
    value.slides.forEach((s,i)=>Object.assign(s,{sourceAssetId:visual[i%visual.length]?.id||null,in:0,duration:input.request.prompt==='Tour horizontal'?[12,2,1][i]:input.request.duration/count,position:input.adjustment?'top':'center'}));
+   if(input.request.prompt==='Receita tipográfica')value.slides.forEach((s,i)=>s.typography={font:i?'bold':'serif-italic',fontSize:i?70:48,textAnimation:'rise',accent:'#b54131',highlight:'none',textBox:'outline'});
    if(omitRequired)value.slides.forEach(s=>s.sourceAssetId=null);
    if(visual.length)assert.ok(body.input[0].content.some(p=>p.type==='input_image'));
   }
@@ -126,6 +127,14 @@ for(const postgres of [false,true])test('Criações: Feed, Story, Carrossel e Re
    assert.equal(final.videoOptions.fontSize,88);assert.ok(videos.at(-1).scenes.every(s=>s.position==='top'));
    assert.equal((await api(one,'creations/'+id)).body.creation.review,'changes_requested');assert.ok(plans.at(-1).previousPlan);assert.equal(plans.at(-1).adjustment,adjustment.adjustment);
    assert.notEqual(final.assets[0].id,ready.assets[0].id);
+  });
+  await t.test('receita tipográfica salva só estilo e SRT não passa para o próximo cliente/pedido',async()=>{
+   const made=await api(one,'creations','POST',{prompt:'Receita tipográfica',format:'reels',duration:15,requestId:'recipe-type-001',videoOptions:{preset:'teaser',subtitlesSrt:'1\n00:00:00,000 --> 00:00:02,000\nTexto privado do pedido'}});assert.equal(made.status,201,JSON.stringify(made.body));const id=made.body.creation.id;await finish(one,id);
+   assert.equal(videos.at(-1).scenes.length,4);assert.equal(videos.at(-1).scenes[0].typography.font,'serif-italic');
+   await api(one,'creations/'+id,'POST',{action:'approve'});const saved=(await api(one,'creations/'+id,'POST',{action:'save-style',name:'Receita F03'})).body.creation;
+   assert.equal(saved.options.subtitlesSrt,'');assert.equal(saved.options.musicAssetId,null);assert.equal(saved.recipe[0].typography.font,'serif-italic');assert.ok(!JSON.stringify(saved).includes('Texto privado'));
+   const reuse=await api(one,'creations','POST',{prompt:'Nova peça',format:'reels',duration:15,requestId:'recipe-type-002',styleId:saved.id,videoOptions:saved.options});assert.equal(reuse.status,201);await finish(one,reuse.body.creation.id);assert.equal(videos.at(-1).scenes[0].typography.font,'serif-italic');assert.equal(videos.at(-1).scenes[1].typography.font,'bold');
+   const invalid=await api(one,'creations','POST',{prompt:'SRT fora de tempo',format:'reels',duration:15,requestId:'recipe-type-003',videoOptions:{subtitlesSrt:'1\n00:00:00,000 --> 00:00:20,000\nTeste'}});assert.equal(invalid.status,400);
   });
   await t.test('música enviada segue como trilha e referência de estilo não vira gravação-base',async()=>{
    const wav=Buffer.alloc(100);wav.write('RIFF',0);wav.write('WAVE',8);const music=await upload(one,'trilha.wav',wav);

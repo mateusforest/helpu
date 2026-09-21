@@ -21,7 +21,7 @@
   "functions": {
     "api/**/*.mjs": {
       "maxDuration": 300,
-      "includeFiles": "{portal/migrations/**,node_modules/{ffmpeg-static/{ffmpeg*,package.json},@ffprobe-installer/linux-x64/{ffprobe,package.json,README.md},dejavu-fonts-ttf/{package.json,LICENSE,ttf/DejaVu{Sans,Sans-Bold,Serif}.ttf}}}",
+      "includeFiles": "{portal/migrations/**,node_modules/{ffmpeg-static/{ffmpeg*,package.json},@ffprobe-installer/linux-x64/{ffprobe,package.json,README.md},dejavu-fonts-ttf/{package.json,LICENSE,ttf/*.ttf}}}",
       "excludeFiles": "{services/**,deploy/**,runtime-data/**,.local-data/**,.superdesign/**,.git/**,.vercel/**,.env*,supabase/**,tests/**,**/*.sqlite*,**/integration.key,**/browser-profiles/**}"
     }
   },

@@ -1,4 +1,6 @@
-import {normalizeVideoOptions,dimensions} from './video-styles.mjs';
+import {VIDEO_FONTS} from './video-recipes.mjs';
+import {parseVideoSubtitles} from './video-subtitles.mjs';
+import {normalizeVideoOptions,normalizeSceneTypography,dimensions} from './video-styles.mjs';
 import fs from 'node:fs/promises';
 import { existsSync } from 'node:fs';
 import path from 'node:path';
@@ -29,7 +31,7 @@ export function normalizeReelScenes(input) {
     const position = value.position || 'center';
     if (!['top', 'center', 'bottom'].includes(position)) throw error('Posição de texto inválida.');
     total += duration;
-    return { duration: round(duration), text, background: cleanColor(value.background, '#ffffff'), textColor: cleanColor(value.textColor, value.sourceAssetId ? '#ffffff' : '#202020'), position, fade: value.fade !== false, sourceAssetId: value.sourceAssetId ? String(value.sourceAssetId) : null, in: start, loopSource: value.loopSource === true };
+    return { typography:normalizeSceneTypography(value.typography),duration: round(duration), text, background: cleanColor(value.background, '#ffffff'), textColor: cleanColor(value.textColor, value.sourceAssetId ? '#ffffff' : '#202020'), position, fade: value.fade !== false, sourceAssetId: value.sourceAssetId ? String(value.sourceAssetId) : null, in: start, loopSource: value.loopSource === true };
   });
   if (total > 30.01) throw error('O Reels pode ter até 30 segundos.');
   return scenes;
@@ -48,7 +50,7 @@ function wrap(text,columns=26) {
 
 export function reelCaptions(scene, hasMedia = false, rawOptions = {}) {
   const opts=normalizeVideoOptions(rawOptions),{width,height}=dimensions(opts);
-  const family={sans:'DejaVu Sans',serif:'DejaVu Serif',condensed:'DejaVu Sans'}[opts.font];
+  const face=VIDEO_FONTS[opts.font],family=face.family;
   const end = `0:00:${scene.duration.toFixed(2).padStart(5, '0')}`;
   const color = scene.textColor.slice(1).match(/../g).reverse().join('');
   // User text must not become ASS override tags or line-control sequences.
@@ -61,13 +63,13 @@ export function reelCaptions(scene, hasMedia = false, rawOptions = {}) {
   const accent=opts.accent.slice(1).match(/../g).reverse().join('');
   const rgb=scene.textColor.slice(1).match(/../g).map(x=>parseInt(x,16));
   const backing=rgb[0]*0.2126+rgb[1]*0.7152+rgb[2]*0.0722<140?'&H30FFFFFF':'&H40000000';
-  const colored=text.replace(/(\S+)$/,`{\\c&H${accent}&}$1`);
+  const colored=opts.highlight==='none'?text:text.replace(/(\S+)$/,`{\\c&H${accent}&}$1`);
   let events=`Dialogue: 0,0:00:00.00,${end},Default,,0,0,0,,${fade}${entrance}${colored}`;
   if(opts.textAnimation==='words'){
     const words=text.split(/\s+|\\N/).filter(Boolean),step=Math.min(0.32,scene.duration/Math.max(2,words.length+2));
     events=words.map((_,i)=>{
       const at=(i*step).toFixed(2).padStart(5,'0'),until=i===words.length-1?scene.duration:(i+1)*step;
-      const line=wrap(words.slice(0,i+1).join(' '),columns).replaceAll('\n','\\N').replace(/(\S+)$/,`{\\c&H${accent}&}$1{\\c&H${color}&}`);
+      const plain=wrap(words.slice(0,i+1).join(' '),columns).replaceAll('\n','\\N');const line=opts.highlight==='none'?plain:plain.replace(/(\S+)$/,`{\\c&H${accent}&}$1{\\c&H${color}&}`);
       return `Dialogue: 0,0:00:${at},0:00:${until.toFixed(2).padStart(5,'0')},Default,,0,0,0,,${line}`;
     }).join('\n');
   }
@@ -78,7 +80,7 @@ PlayResY: ${height}
 WrapStyle: 2
 [V4+ Styles]
 Format: Name, Fontname, Fontsize, PrimaryColour, SecondaryColour, OutlineColour, BackColour, Bold, Italic, Underline, StrikeOut, ScaleX, ScaleY, Spacing, Angle, BorderStyle, Outline, Shadow, Alignment, MarginL, MarginR, MarginV, Encoding
-Style: Default,${family},${opts.fontSize},&H00${color},&H00${color},${backing},${backing},0,0,0,0,${opts.font==='condensed'?80:100},100,0,0,${hasMedia ? 3 : 1},${hasMedia ? 12 : 0},0,${alignment},70,70,${height===1080?110:scene.position === 'bottom' ? 320 : 240},1
+Style: Default,${family},${opts.fontSize},&H00${color},&H00${color},${backing},${backing},${face.bold?-1:0},${face.italic?-1:0},0,0,${face.scale||100},100,0,0,${hasMedia&&opts.textBox==='auto' ? 3 : 1},${opts.textBox==='none'?0:hasMedia?(opts.textBox==='outline'?3:12):0},0,${alignment},70,70,${height===1080?110:scene.position === 'bottom' ? 320 : 240},1
 [Events]
 Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
 ${events}
@@ -170,13 +172,13 @@ export function createReelsRenderer({ env = process.env, ffmpegPath, ffprobePath
         return result;
       } finally { await fs.rm(work, { recursive: true, force: true }); }
     },
-    async sampleReferences({assets=[]}={}){
+    async sampleReferences({assets=[],referenceOnlyIds=[]}={}){
       const byId=validateAssets(assets),work=await fs.mkdtemp(path.join(os.tmpdir(),'helpu-reference-')),signal=AbortSignal.timeout(45000),result=[];
       try{
         for(const [id,asset] of byId){
           if(asset.mime.startsWith('audio/'))continue;
           const file=path.join(work,`input-${result.length}`),meta=await inspectAsset(asset,file,signal,work);
-          const times=asset.mime==='video/mp4'?[Math.min(0.5,meta.duration/4),meta.duration*0.55]:[0];
+          const times=asset.mime==='video/mp4'?(referenceOnlyIds.includes(id)?[.03,.18,.35,.52,.7,.9].map(f=>meta.duration*f):[Math.min(.5,meta.duration/4),meta.duration*.55]):[0];
           for(const time of times){const out=path.join(work,`frame-${result.length}.jpg`);await run(ffmpeg,['-v','error','-y','-protocol_whitelist','file,pipe','-ss',String(time),'-i',file,'-frames:v','1','-vf','scale=512:512:force_original_aspect_ratio=decrease','-q:v','4',out],{signal,cwd:work});result.push({id,time,duration:meta.duration||null,image:'data:image/jpeg;base64,'+(await fs.readFile(out)).toString('base64')});}
         }
         return result;
@@ -185,6 +187,7 @@ export function createReelsRenderer({ env = process.env, ffmpegPath, ffprobePath
     async render({ scenes: input, assets = [], name = 'Reels', options } = {}) {
       const opts=normalizeVideoOptions(options||{transition:'cut'}),{width,height}=dimensions(opts);
       const scenes = normalizeReelScenes(input);
+      const subtitles=parseVideoSubtitles(opts.subtitlesSrt,scenes.reduce((n,s)=>n+s.duration,0));
       const expected = round(scenes.reduce((sum, scene) => sum + scene.duration, 0));
       const overlap=opts.transition==='cut'?0:Math.min(0.35,...scenes.map(s=>s.duration/2));
       if (!configured()) throw error('O processamento de vídeo não foi incluído nesta versão do servidor. Atualize a implantação da Helpu.');
@@ -200,7 +203,7 @@ export function createReelsRenderer({ env = process.env, ffmpegPath, ffprobePath
           imported.set(id, { ...meta, file, mime: asset.mime });
         }
         await fs.mkdir(path.join(work,'fonts'),{recursive:true});
-        for(const file of ['DejaVuSans.ttf','DejaVuSerif.ttf','DejaVuSans-Bold.ttf']){const source=packageFile('dejavu-fonts-ttf','ttf/'+file);if(source&&existsSync(source))await fs.copyFile(source,path.join(work,'fonts',file));}
+        for(const file of new Set(Object.values(VIDEO_FONTS).map(f=>f.file))){const source=packageFile('dejavu-fonts-ttf','ttf/'+file);if(source&&existsSync(source))await fs.copyFile(source,path.join(work,'fonts',file));}
         const parts = [], loopedSourceIds = new Set();
         for (const [index, scene] of scenes.entries()) {
           signal.throwIfAborted();
@@ -234,7 +237,7 @@ export function createReelsRenderer({ env = process.env, ffmpegPath, ffprobePath
             args.push('-f', 'lavfi', '-i', `color=c=${scene.background.replace('#', '0x')}:s=${width}x${height}:r=30:d=${partDuration}`, '-f', 'lavfi', '-i', 'anullsrc=r=48000:cl=stereo');
           }
           if (scene.text) {
-            await fs.writeFile(path.join(work, `captions-${index}.ass`), reelCaptions({...scene,duration:partDuration}, !!asset,opts), { mode: 0o600 });
+            await fs.writeFile(path.join(work, `captions-${index}.ass`), reelCaptions({...scene,duration:partDuration}, !!asset,{...opts,...scene.typography}), { mode: 0o600 });
             await fs.mkdir(path.join(work, 'fonts'), { recursive: true });
             await fs.copyFile(font, path.join(work, 'fonts', 'DejaVuSans.ttf'));
             filters.push(`ass=filename=captions-${index}.ass:fontsdir=fonts`);
@@ -262,6 +265,11 @@ export function createReelsRenderer({ env = process.env, ffmpegPath, ffprobePath
           args.push('-filter_complex',filters.join(';'),'-map',`[${video}]`,'-map',`[${audio}]`,'-r','30','-fps_mode','cfr','-t',String(expected),'-c:v','libx264','-preset','ultrafast','-crf',opts.quality==='high'?'18':'23','-threads','2','-pix_fmt','yuv420p','-c:a','aac','-b:a','192k','-movflags','+faststart',output);
           await run(ffmpeg,args,{signal,cwd:work});
         }else await run(ffmpeg, ['-hide_banner', '-loglevel', 'error', '-nostdin', '-y', '-f', 'concat', '-safe', '1', '-i', 'concat.txt', '-c', 'copy', '-t', String(expected), '-map_metadata', '-1', '-movflags', '+faststart', output], { signal, cwd: work });
+        if(subtitles.length){
+          const ass=timedVideoCaptions(subtitles,opts);await fs.writeFile(path.join(work,'speech.ass'),ass);
+          const captioned=path.join(work,'captioned.mp4');
+          await run(ffmpeg,['-v','error','-y','-i',output,'-vf','ass=filename=speech.ass:fontsdir=fonts','-c:v','libx264','-preset','ultrafast','-crf',opts.quality==='high'?'18':'23','-threads','2','-c:a','copy','-movflags','+faststart',captioned],{signal,cwd:work});output=captioned;
+        }
         if(opts.soundEffects==='subtle'&&scenes.length>1){
           const filters=[],labels=[];let at=0;
           for(let i=0;i<scenes.length-1;i++){
@@ -282,6 +290,7 @@ export function createReelsRenderer({ env = process.env, ffmpegPath, ffprobePath
           console.error('helpu_reels_validation_failed', {expected:{width,height,duration:expected},actual:{codec:metadata.codec_name,width:metadata.width,height:metadata.height,duration:metadata.duration}});
           throw error('O MP4 gerado não corresponde ao Reels solicitado.');
         }
+        await run(ffmpeg,['-v','error','-xerror','-i',output,'-map','0:v:0','-map','0:a:0','-f','null','-'],{signal,cwd:work});
         const stat = await fs.stat(output);
         if (stat.size < 24 || stat.size > MAX_OUTPUT) throw error('O arquivo gerado ultrapassou o tamanho permitido.');
         const bytes = await fs.readFile(output);
@@ -303,4 +312,11 @@ export function createReelsRenderer({ env = process.env, ffmpegPath, ffprobePath
       }
     },
   };
+}
+
+export function timedVideoCaptions(entries,options={}){
+ const stamp=t=>{const cs=Math.round(t*100),sec=Math.floor(cs/100);return Math.floor(sec/3600)+':'+String(Math.floor(sec/60)%60).padStart(2,'0')+':'+String(sec%60).padStart(2,'0')+'.'+String(cs%100).padStart(2,'0');};
+ const opts={...options,fontSize:Math.min(options.fontSize||52,56),textAnimation:'fade',highlight:'none',textBox:options.textBox||'outline'};
+ const base=reelCaptions({duration:1,text:'',textColor:'#ffffff',position:'bottom',fade:false},true,opts);
+ return base.slice(0,base.indexOf('Dialogue:'))+entries.map(e=>{const ass=reelCaptions({duration:e.end-e.start,text:e.text,textColor:'#ffffff',position:'bottom',fade:false},true,opts);return ass.slice(ass.indexOf('Dialogue:')).trim().replace(/^Dialogue: 0,[^,]*,[^,]*,/, 'Dialogue: 0,'+stamp(e.start)+','+stamp(e.end)+',');}).join('\n')+'\n';
 }

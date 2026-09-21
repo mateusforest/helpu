@@ -1,3 +1,4 @@
+import {VIDEO_FONTS} from '../portal/video-recipes.mjs';
 import fs from 'node:fs';
 import path from 'node:path';
 import assert from 'node:assert/strict';
@@ -13,7 +14,7 @@ if(process.platform==='linux'){
     assert.ok(fs.existsSync(file),'Missing Reels binary: '+binary);fs.chmodSync(file,0o755);
   }
 }
-for(const font of ['DejaVuSans.ttf','DejaVuSans-Bold.ttf','DejaVuSerif.ttf'])assert.ok(fs.existsSync(path.join(path.dirname(require.resolve('dejavu-fonts-ttf/package.json')),'ttf',font)),'Missing Reels font: '+font);
+for(const font of new Set(Object.values(VIDEO_FONTS).map(f=>f.file)))assert.ok(fs.existsSync(path.join(path.dirname(require.resolve('dejavu-fonts-ttf/package.json')),'ttf',font)),'Missing Reels font: '+font);
 if(process.platform==='linux'){
   const renderer=createReelsRenderer({env:{}});
   const sample=await renderer.render({scenes:[{duration:0.5,text:'Helpu · verificação de vídeo',fade:false}]});
