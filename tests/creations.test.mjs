@@ -1,3 +1,4 @@
+import {videoSceneCount} from '../portal/video-direction.mjs';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
@@ -38,7 +39,7 @@ for(const postgres of [false,true])test('Criações: Feed, Story, Carrossel e Re
 
  const server=await createHelpuServer({dataDir,database,portalOptions: {operatorEnv:{HELPU_OPERATOR_USER_IDS:'1,3,4'},startScheduler:false,conversationRespond:async(config,body)=>{conversationBodies.push(body);return conversationReplies.shift()||({status:'completed',output:[{type:'message',content:[{type:'output_text',text:'Pedido registrado.'}]}]});},openaiEnv:{OPENAI_API_KEY:'fake-creation-key'},creationRespond:async(config,body)=>{
   assert.equal(config.apiKey,'fake-creation-key');const input=JSON.parse(typeof body.input==='string'?body.input:body.input[0].content[0].text);plans.push(input);
-  const isVideo=input.request.format==='reels',count=isVideo?Math.max(input.request.requiredSourceAssetIds?.length||0,input.request.styleRecipe?.length||(input.request.duration===30?6:3)):input.request.slideCount;
+  const isVideo=input.request.format==='reels',count=isVideo?videoSceneCount(input.request):input.request.slideCount;
   const value={caption:'Legenda da campanha, pronta para copiar.',slides:Array.from({length:count},(_,i)=>({title:'Página '+(i+1),text:'Mensagem '+(i+1),visualPrompt:'Fundo branco e verde. Texto na arte: Mensagem '+(i+1),background:'#ffffff',textColor:'#002200'}))};
   if(isVideo){
    const options=input.request.videoOptions,visual=input.references.filter(a=>!a.mime.startsWith('audio/')&&!input.request.referenceOnlyIds?.includes(a.id));
@@ -47,6 +48,7 @@ for(const postgres of [false,true])test('Criações: Feed, Story, Carrossel e Re
    value.slides.forEach((s,i)=>Object.assign(s,{sourceAssetId:visual[i%visual.length]?.id||null,in:0,duration:input.request.prompt==='Tour horizontal'?[12,2,1][i]:input.request.duration/count,position:input.adjustment?'top':'center'}));
    if(input.request.prompt==='Receita tipográfica')value.slides.forEach((s,i)=>s.typography={font:i?'bold':'serif-italic',fontSize:i?70:48,textAnimation:'rise',accent:'#b54131',highlight:'none',textBox:'outline'});
    if(omitRequired)value.slides.forEach(s=>s.sourceAssetId=null);
+   if(input.request.prompt==='Repetição persistente'||input.request.prompt==='Teste de revisão editorial'&&!input.editorialReview)value.slides.forEach(s=>s.text='O escritório ganha forma');
    if(visual.length)assert.ok(body.input[0].content.some(p=>p.type==='input_image'));
   }
   return {status:'completed',output:[{type:'message',content:[{type:'output_text',text:JSON.stringify(value)}]}]};
@@ -98,7 +100,7 @@ for(const postgres of [false,true])test('Criações: Feed, Story, Carrossel e Re
    const source=await upload(one,'gravacao.mp4',fakeMP4());
    const deniedImage=await api(one,'creations','POST',{...payload,requestId:'creation-image-video-ref',attachments:[source.id]});assert.equal(deniedImage.status,400);
    const posted=await api(one,'creations','POST',{...payload,format:'reels',duration:15,requestId:'creation-reels-001',attachments:[source.id,owned.id]});assert.equal(posted.status,201,JSON.stringify(posted.body));
-   const ready=await finish(one,posted.body.creation.id);assert.equal(ready.assets.length,1,JSON.stringify(ready));assert.equal(ready.assets[0].mime,'video/mp4');assert.equal(ready.assets[0].width,1080);assert.equal(ready.assets[0].height,1920);assert.equal(videos.length,1);assert.equal(videos[0].scenes.length,3);
+   const ready=await finish(one,posted.body.creation.id);assert.equal(ready.assets.length,1,JSON.stringify(ready));assert.equal(ready.assets[0].mime,'video/mp4');assert.equal(ready.assets[0].width,1080);assert.equal(ready.assets[0].height,1920);assert.equal(videos.length,1);assert.equal(videos[0].scenes.length,5);
    assert.equal(videos[0].scenes.reduce((n,s)=>n+s.duration,0),15);assert.deepEqual(videos[0].assets.map(a=>a.id),[source.id,owned.id]);assert.deepEqual(videos[0].assets[0].bytes,fakeMP4());
    assert.equal(images.length,5);assert.equal(plans.length,4);assert.ok(plans.at(-1).references.every(r=>r.id));
    const downloaded=await fetch(origin+ready.assets[0].url,{headers:{Cookie:one.cookie}});assert.deepEqual(Buffer.from(await downloaded.arrayBuffer()),fakeMP4());
@@ -231,6 +233,29 @@ for(const postgres of [false,true])test('Criações: Feed, Story, Carrossel e Re
    assert.equal(state.enabled,false);assert.ok(state.lastCreationId);
    await finish(one,state.lastCreationId);assert.equal(videos.length,prior+1);assert.equal(videos.at(-1).options.aspectRatio,'16:9');assert.equal(videos.at(-1).options.quality,'standard');
    await server.portal.tick();assert.equal(videos.length,prior+1);
+  });
+  await t.test('revisão editorial corrige uma vez antes de renderizar e interrompe repetição persistente',async()=>{
+   const beforePlans=plans.length,beforeVideos=videos.length;
+   const made=await api(one,'creations','POST',{prompt:'Teste de revisão editorial',format:'reels',duration:15,requestId:'editorial-repair-once',attachments:[owned.id],videoOptions:{preset:'construction'}});
+   assert.equal(made.status,201,JSON.stringify(made.body));await finish(one,made.body.creation.id);
+   assert.equal(plans.length,beforePlans+2);assert.equal(videos.length,beforeVideos+1);
+   assert.match(plans.at(-1).editorialReview.issues.join(' '),/repetido/);
+   assert.equal(videos.at(-1).options.preset,'construction');assert.equal(videos.at(-1).options.fit,'blur');
+   assert.equal(new Set(videos.at(-1).scenes.map(s=>s.text)).size,5);
+   const bad=await api(one,'creations','POST',{prompt:'Repetição persistente',format:'reels',duration:15,requestId:'editorial-repair-bounded',attachments:[owned.id],videoOptions:{preset:'construction'}});
+   assert.equal(bad.status,201);await server.portal.tick();
+   const result=(await api(one,'creations/'+bad.body.creation.id)).body.creation;
+   assert.equal(result.status,'failed');assert.equal(plans.length,beforePlans+4);assert.equal(videos.length,beforeVideos+1);
+  });
+  await t.test('estilo salvo é aplicado automaticamente sem importar textos e legendas antigos',async()=>{
+   const made=await api(one,'creations','POST',{prompt:'Modelo para guardar',format:'reels',duration:15,requestId:'automatic-style-source',attachments:[owned.id],videoOptions:{preset:'kinetic',accent:'#2244aa',subtitlesSrt:'1\n00:00:00,000 --> 00:00:02,000\nLegenda anterior'}});
+   assert.equal(made.status,201);const id=made.body.creation.id;await finish(one,id);
+   await api(one,'creations/'+id,'POST',{action:'approve'});
+   assert.equal((await api(one,'creations/'+id,'POST',{action:'save-style',name:'Direção aprovada'})).status,200);
+   const next=await api(one,'creations','POST',{prompt:'Um novo assunto',format:'reels',duration:15,requestId:'automatic-style-next',attachments:[owned.id]});assert.equal(next.status,201);
+   const result=await finish(one,next.body.creation.id);
+   assert.equal(plans.at(-1).request.directionSource,'saved-style');assert.equal(result.videoOptions.preset,'kinetic');assert.equal(result.videoOptions.accent,'#2244aa');assert.equal(result.videoOptions.subtitlesSrt,'');assert.equal(result.videoOptions.musicAssetId,null);
+   assert.equal(videos.at(-1).scenes.length,4);assert.equal(videos.at(-1).scenes.reduce((n,s)=>n+s.duration,0),15);
   });
   await t.test('indisponibilidade do renderizador aparece antes de cobrar pela preparação',async()=>{
    rendererAvailable=false;const before=plans.length;

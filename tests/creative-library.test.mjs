@@ -86,5 +86,14 @@ test('biblioteca criativa: pausa, retomada, identidade, referência e revisão i
    const all=(await api(two,'creations')).body.creations;assert.equal(all.length,1);assert.match(all[0].prompt,/divulgar a empresa/);
    assert.equal(l.references[0].role,'reference');
   });
+  await t.test('marca e estilo de imagem não pulam pergunta de vídeo; empresa e materiais ficam claros',async()=>{
+   for(let n=0;n<12;n++)await tick();
+   const state=(await api(one,'creative-library')).body;assert.equal(state.defined,true);assert.equal(state.videoDefined,false);
+   const tid=await thread(one),before=inputs.length;
+   await api(one,'conversations/'+tid+'/messages','POST',{text:'Crie um vídeo da evolução da obra com transições suaves',attachments:[a.id],idempotencyKey:'video-direction-missing'});await tick();
+   const messages=(await api(one,'conversations/'+tid)).body.messages;
+   assert.match(messages.at(-1).text,/Empresa desta conversa: Empresa/);assert.match(messages.at(-1).text,/edição, o ritmo e os textos/);
+   assert.equal(inputs.length,before);assert.deepEqual((await server.portal.conversation.waitingForReference(one.org,tid)).request.attachments,[a.id]);
+  });
  }finally{await server.portal.close();await new Promise(r=>server.close(r));fs.rmSync(dataDir,{recursive:true,force:true});}
 });

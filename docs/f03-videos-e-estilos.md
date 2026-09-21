@@ -53,3 +53,14 @@ Direção recomendada: montagem e texto devem servir ao material. Gastronomia e 
 Testes de criação em SQLite e PostgreSQL, isolamento por empresa, salvar/reusar estilo sem transferir legenda/música, tempos SRT inválidos, neutralização de comandos em texto, fontes distribuídas e seleção de receita. Testes de MP4 real com fontes, legendas, imagens, vídeo, trilha, efeitos, transições, orientação e decodificação completa. Interface verificada em desktop, 390 e 320 pixels, incluindo cartões da biblioteca abertos.
 
 As prévias técnicas ficam em `output/f03-referencias/validacao`, fora do Git. Nenhuma geração paga ou envio a cliente foi executado nesta frente.
+
+## Refinamento da direção de vídeo — setembro de 2026
+
+- Chat e WhatsApp verificam direção de vídeo separadamente da identidade de imagens. Cores, logo e um estilo de feed não dispensam a pergunta sobre referência de edição. A pergunta identifica a empresa da conversa e preserva briefing e anexos; “pode sugerir” permite seguir.
+- A criação sugere uma receita a partir do assunto e reutiliza automaticamente um estilo de vídeo salvo pela própria empresa, quando não houver outra escolha explícita. Não reutiliza legendas SRT nem trilha do pedido anterior. A biblioteca passa a oferecer sete receitas, incluindo “Evolução da obra”.
+- O planejamento recebe orientação para analisar etapas reais, variar cenas, evitar frases repetidas, usar títulos curtos e não acrescentar assinatura de marca sem solicitação. A seleção cronológica depende da leitura do material pelo modelo; não é inferida apenas da ordem dos anexos.
+- Verificações locais identificam repetição literal normalizada, títulos com mais de 14 palavras, ausência completa dos materiais fornecidos e um padrão de assinatura automática. Há uma única tentativa adicional de planejamento quando necessário. Ela é registrada como revisão contextual no consumo do provedor. Persistindo a falha, a renderização não começa. Estas verificações não equivalem a uma avaliação estética completa do MP4.
+- O renderizador aceita fundo desfocado para preservar a imagem inteira, além de revelações lateral e circular. O editor oferece essas opções. Mosaicos, recorte de pessoas e tracking continuam fora do escopo.
+- A identificação da empresa na pergunta e a orientação contra assinatura indevida não alteram o vínculo de uma conta do WhatsApp. O vínculo em produção do caso relatado não foi auditado nesta entrega.
+
+Validação local: fluxos de criação em SQLite e PostgreSQL, referência pendente, uso do provedor, revisão antes de renderizar, reutilização de estilo, MP4 real com foto e vídeo, áudio, duração e novos efeitos; editor em desktop e larguras de 390 e 320 pixels. Prévia técnica de 15 segundos com fotos fornecidas, produzida diretamente pelo renderizador, fora do Git. Nenhum envio pelo WhatsApp, geração paga ou deploy foi executado.

@@ -17,6 +17,15 @@ const packageFile = (name, file) => { try { return path.join(path.dirname(requir
 const cleanColor = (value, fallback) => { if (value === undefined) return fallback; if (!/^#[a-f0-9]{6}$/i.test(value)) throw error('Use uma cor hexadecimal válida.'); return value; };
 const round = value => Number(Number(value).toFixed(4));
 
+export function reelLayoutFilter(options,background='#202020') {
+ const opts=normalizeVideoOptions(options),{width,height}=dimensions(opts);
+ if(opts.fit==='blur'){
+  const w=Math.round(width/4),h=Math.round(height/4);
+  return `split=2[blurbase][foreground];[blurbase]scale=${w}:${h}:force_original_aspect_ratio=increase,crop=${w}:${h},boxblur=10:1,scale=${width}:${height},eq=brightness=-0.18[backdrop];[foreground]scale=${width}:${height}:force_original_aspect_ratio=decrease:force_divisible_by=2[front];[backdrop][front]overlay=(W-w)/2:(H-h)/2:shortest=1`;
+ }
+ return opts.fit==='contain'?`scale=${width}:${height}:force_original_aspect_ratio=decrease,pad=${width}:${height}:(ow-iw)/2:(oh-ih)/2:color=${cleanColor(background,'#202020').replace('#','0x')}`:`scale=${width}:${height}:force_original_aspect_ratio=increase,crop=${width}:${height}`;
+}
+
 export function normalizeReelScenes(input) {
   if (!Array.isArray(input) || !input.length || input.length > 8) throw error('Use de uma a oito cenas para o Reels.');
   let total = 0;
@@ -230,7 +239,7 @@ export function createReelsRenderer({ env = process.env, ffmpegPath, ffprobePath
               args.push('-stream_loop', '-1'); loopedSourceIds.add(scene.sourceAssetId);
             }
             args.push('-protocol_whitelist', 'file,pipe', '-ss', String(scene.in), '-t', String(scene.duration), '-i', asset.file);
-            filters.push(`${opts.fit==='cover'?`scale=${width}:${height}:force_original_aspect_ratio=increase,crop=${width}:${height}`:`scale=${width}:${height}:force_original_aspect_ratio=decrease,pad=${width}:${height}:(ow-iw)/2:(oh-ih)/2:color=${scene.background.replace('#','0x')}`},setsar=1,fps=30,setpts=PTS-STARTPTS,tpad=stop_mode=clone:stop_duration=${extra}`);
+            filters.push(`${reelLayoutFilter(opts,scene.background)},setsar=1,fps=30,setpts=PTS-STARTPTS,tpad=stop_mode=clone:stop_duration=${extra}`);
             if(opts.motion!=='none'){
               const p=`min(1,on/${Math.max(1,Math.round(partDuration*30)-1)})`,e=`(${p})*(${p})*(3-2*(${p}))`;
               const z=opts.motion==='pan'?'1.10':opts.motion==='zoom-out'?`1.10-0.10*(${e})`:`1+0.10*(${e})`;
@@ -242,7 +251,7 @@ export function createReelsRenderer({ env = process.env, ffmpegPath, ffprobePath
             const progress=`min(1,on/${Math.max(1,Math.round(partDuration*30)-1)})`,ease=`(${progress})*(${progress})*(3-2*(${progress}))`;
             const zoom=opts.motion==='none'?'1':opts.motion==='pan'?'1.12':opts.motion==='zoom-out'?`1.10-0.10*(${ease})`:`1+0.10*(${ease})`;
             const x=opts.motion==='pan'?`(iw-iw/zoom)*(${ease})`:'iw/2-iw/zoom/2';
-            const layout=opts.fit==='contain'?`scale=${width}:${height}:force_original_aspect_ratio=decrease,pad=${width}:${height}:(ow-iw)/2:(oh-ih)/2:color=${scene.background.replace('#','0x')}`:`scale=${width}:${height}:force_original_aspect_ratio=increase,crop=${width}:${height}`;
+            const layout=reelLayoutFilter(opts,scene.background);
             filters.push(`${layout},zoompan=z='${zoom}':x='${x}':y='ih/2-ih/zoom/2':d=1:s=${width}x${height}:fps=30,setsar=1`);
           } else {
             args.push('-f', 'lavfi', '-i', `color=c=${scene.background.replace('#', '0x')}:s=${width}x${height}:r=30:d=${partDuration}`, '-f', 'lavfi', '-i', 'anullsrc=r=48000:cl=stereo');

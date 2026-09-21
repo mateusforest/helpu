@@ -1,6 +1,8 @@
 import {VIDEO_FONTS,VIDEO_RECIPES} from './video-recipes.mjs';
 import {parseVideoSubtitles} from './video-subtitles.mjs';
 import {createHash} from 'node:crypto';
+export const VIDEO_TRANSITIONS=['cut','fade','smoothleft','wipeleft','circleopen'];
+export const VIDEO_FITS=['contain','cover','blur'];
 
 export const VIDEO_PRESETS = [
   {id:'clean',name:'Claro e natural',description:'Texto limpo, aproximação discreta e cortes suaves.',font:'sans',motion:'zoom-in',textAnimation:'fade',transition:'fade',accent:'#16804a',fontSize:60},
@@ -12,7 +14,8 @@ export const VIDEO_PRESETS = [
 VIDEO_PRESETS.push(...VIDEO_RECIPES);
 export const VIDEO_TECHNIQUES = [
   {name:'Zoom, pan e reenquadramento',status:'available',detail:'Movimentos programados; sem rastreamento automático do assunto.'},
-  {name:'Transições suaves',status:'available',detail:'Dissolução e deslocamento suave, ou corte direto.'},
+  {name:'Transições suaves',status:'available',detail:'Dissolução, deslocamento, revelação lateral ou circular e corte direto.'},
+  {name:'Fundo desfocado',status:'available',detail:'Preserva a imagem inteira com fundo derivado do próprio material.'},
   {name:'Texto animado',status:'available',detail:'Entrada suave, subida, escala e palavras em sequência; fontes sans, serifada e condensada.'},
   {name:'Cor nas palavras',status:'available',detail:'Destaque configurável, tamanho e posição por cena.'},
   {name:'Música e áudio enviado',status:'available',detail:'Faixa de fundo com volume e fades; áudio da gravação pode ser preservado ou silenciado.'},
@@ -34,8 +37,8 @@ export function normalizeVideoOptions(raw={}){
     font:choose(raw.font,Object.keys(VIDEO_FONTS),preset.font),fontSize,accent,
     motion:choose(raw.motion,['none','zoom-in','zoom-out','pan'],preset.motion),
     textAnimation:choose(raw.textAnimation,['fade','rise','pop','words'],preset.textAnimation),
-    transition:choose(raw.transition,['cut','fade','smoothleft'],preset.transition),
-    fit:choose(raw.fit,['contain','cover'],preset.fit||'cover'),sourceAudio:raw.sourceAudio!==false,musicVolume,
+    transition:choose(raw.transition,VIDEO_TRANSITIONS,preset.transition),
+    fit:choose(raw.fit,VIDEO_FITS,preset.fit||'cover'),sourceAudio:raw.sourceAudio!==false,musicVolume,
     soundEffects:choose(raw.soundEffects,['none','subtle'],'none'),
     musicAssetId:raw.musicAssetId?String(raw.musicAssetId):null};
 }
