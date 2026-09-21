@@ -23,7 +23,7 @@ export function applyMediaContext(args,context,assets){
   const allImages=requestsAllImages(correction);
   const explicit=args.attachments;
   let attachments=[...new Set(Array.isArray(explicit)?explicit:context.referenceIds)];
-  if(args.format!=='reels')return {...args,attachments:explicit??attachments.filter(id=>assets.find(a=>a.id===id)?.mime.startsWith('image/'))};
+  if(args.format!=='reels'){const selected=(explicit??attachments).filter(id=>assets.find(a=>a.id===id)?.mime.startsWith('image/'));return {...args,attachments:selected,referenceOnlyIds:(args.referenceOnlyIds||[]).filter(id=>selected.includes(id))};}
   const referenceOnlyIds=args.referenceOnlyIds??[];
   if(!Array.isArray(referenceOnlyIds)||referenceOnlyIds.some(id=>!assets.some(a=>a.id===id&&(a.mime.startsWith('image/')||a.mime==='video/mp4'))))fail('A referência de estilo não está disponível neste pedido. Envie o arquivo novamente.');
   attachments=[...new Set([...attachments,...referenceOnlyIds])];

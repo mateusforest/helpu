@@ -1,0 +1,34 @@
+import assert from 'node:assert/strict';
+import fs from 'node:fs';
+import os from 'node:os';
+import path from 'node:path';
+import {chromium} from 'playwright-core';
+import {createHelpuServer} from '../server.mjs';
+import {findBrowser} from '../scripts/runtime.mjs';
+import {testPng} from './image-fixture.mjs';
+const dataDir=fs.mkdtempSync(path.join(os.tmpdir(),'helpu-creative-visual-'));
+const output=path.resolve('../output/creative-library-qa');fs.mkdirSync(output,{recursive:true});
+const app=await createHelpuServer({dataDir,portalOptions:{startScheduler:false,conversationRespond:async()=>{throw Error('Nenhuma IA real neste teste');}}});
+await new Promise(r=>app.listen(0,'127.0.0.1',r));const origin='http://127.0.0.1:'+app.address().port;let browser;
+try{
+ browser=await chromium.launch({executablePath:findBrowser(),headless:true});const ctx=await browser.newContext({viewport:{width:1440,height:1050},locale:'pt-BR',reducedMotion:'reduce'});
+ await ctx.route('**/*',r=>new URL(r.request().url()).origin===origin?r.continue():r.abort());
+ const signup=await ctx.request.post(origin+'/api/auth/signup',{headers:{Origin:origin},data:{name:'Teste',company:'Empresa de teste',email:'creative-ui@example.test',password:'test-only-password'}});assert.ok(signup.ok());
+ const boot=await (await ctx.request.get(origin+'/api/portal/bootstrap')).json(),org=boot.companies[0].id,base=origin+'/api/portal/'+org+'/';
+ const uploaded=await ctx.request.post(base+'files',{headers:{Origin:origin,'X-File-Name':'Foto de produto.png','Content-Type':'application/octet-stream'},data:testPng()});assert.ok(uploaded.ok());
+ const page=await ctx.newPage(),errors=[];page.on('pageerror',e=>errors.push(e.message));
+ await page.goto(origin+'/portal.html#/studio');await page.locator('.creative-library').waitFor();
+ assert.equal(await page.locator('.creative-library-group').count(),6);assert.equal(await page.locator('.creative-library-group[open]').count(),0);
+ await page.screenshot({path:path.join(output,'desktop.png'),fullPage:true});
+ const refs=page.locator('details').filter({has:page.locator('summary strong',{hasText:'Referências e inspirações'})});
+ await refs.locator('summary').click();await refs.locator('input[type=file]').setInputFiles({name:'Inspiracao.png',mimeType:'image/png',buffer:testPng()});
+ await page.waitForFunction(()=>document.querySelector('.creative-library')?.textContent.includes('Inspiracao.png'));
+ await refs.locator('summary').click();await refs.locator('textarea').fill('Títulos curtos e bastante espaço em branco');await refs.locator('[data-library-save]').click();
+ await page.waitForFunction(()=>document.querySelector('.creative-library')?.textContent.includes('Títulos curtos e bastante espaço em branco'));
+ const library=await (await ctx.request.get(base+'creative-library')).json();assert.equal(library.references.length,1);assert.match(library.references[0].notes,/Títulos curtos/);
+ const direction=page.locator('details').filter({has:page.locator('summary strong',{hasText:'Direção para próximas criações'})});await direction.locator('summary').click();await page.locator('#creative-direction').fill('Premium, minimalista e legível');await page.locator('[data-library-direction]').click();
+ await page.waitForFunction(()=>document.querySelector('#creative-direction')?.textContent==='Premium, minimalista e legível');
+ await page.setViewportSize({width:390,height:844});await page.screenshot({path:path.join(output,'mobile.png'),fullPage:true});
+ assert.ok(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth+1),'Sem transbordamento horizontal');
+ assert.deepEqual(errors,[]);console.log(JSON.stringify({groups:6,upload:true,notes:true,direction:true,mobile:true,errors,output}));
+}finally{await browser?.close();await app.portal.shutdown();await new Promise(r=>app.close(r));const target=path.resolve(dataDir);assert.ok(target.startsWith(path.resolve(os.tmpdir())+path.sep+'helpu-creative-visual-'));fs.rmSync(target,{recursive:true,force:true});}

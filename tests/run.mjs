@@ -38,6 +38,7 @@ import './whatsapp-chat.test.mjs';
 import './delivery-mode.test.mjs';
 
 import './creations.test.mjs';
+import './creative-library.test.mjs';
 
 import './creation-ui.test.mjs';
 

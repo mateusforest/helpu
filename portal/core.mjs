@@ -8,6 +8,7 @@ import {createConsultations} from './consultations.mjs';
 import {createAssistedPublishing} from './assisted-publishing.mjs';
 import {unlimited,parseUsageLimit,usageCount,usageSnapshot} from './usage.mjs';
 import {recordProviderUsage} from './provider-usage.mjs';
+import {createCreativeLibrary} from './creative-library.mjs';
 import {createCreations,inlineVideoHash} from './creations.mjs';
 import {createCreationSchedules} from './creation-schedules.mjs';
 import {createReelsRenderer} from './reels-renderer.mjs';
@@ -50,7 +51,7 @@ const str = (v, max = 10000) => typeof v === 'string' ? v.trim().slice(0, max) :
 const finite = (v, min = 0, max = 1e12) => Number.isFinite(Number(v)) ? Math.max(min, Math.min(max, Number(v))) : 0;
 const fields = {
   campaigns: ['name', 'objective', 'audience', 'offer', 'budget', 'startDate', 'endDate', 'channels', 'status', 'notes'],
-  content: ['imageLayout','slideIndex','slideCount','carouselOutline','referenceAssetIds','title', 'caption', 'visualPrompt', 'format', 'channel', 'campaignId', 'assetId', 'mediaUrl', 'mediaType', 'carouselUrls', 'scheduledAt', 'status', 'notes'],
+  content: ['previousImageAssetId','referenceOnlyIds','imageLayout','slideIndex','slideCount','carouselOutline','referenceAssetIds','title', 'caption', 'visualPrompt', 'format', 'channel', 'campaignId', 'assetId', 'mediaUrl', 'mediaType', 'carouselUrls', 'scheduledAt', 'status', 'notes'],
   leads: ['name', 'email', 'phone', 'company', 'source', 'stage', 'value', 'consent', 'optOut', 'notes', 'nextAction', 'nextDate', 'campaignId'],
   messages: ['leadId', 'text', 'channel', 'direction', 'template', 'language', 'parameters', 'status'],
   tasks: ['title', 'description', 'dueDate', 'priority', 'status', 'campaignId'],
@@ -337,13 +338,14 @@ export async function createPortal({db, dataDir, userFrom, json, safeOrigin, pro
           if (!Number.isFinite(Number(v)) || Number(v) < 0) fail('Os valores numéricos precisam ser positivos.');
           v = finite(v);
         }
-      } else if (['consent', 'optOut', 'active'].includes(field)) v = v === true; else if (['channels', 'parameters', 'carouselUrls','referenceAssetIds'].includes(field)) v = Array.isArray(v) ? v.slice(0, 12).map(x => str(x, 500)) : []; else v = str(v, field === 'text' || field === 'caption' || field === 'visualPrompt' || field === 'description' || field === 'notes' || field === 'carouselOutline' ? 20000 : 500);
+      } else if (['consent', 'optOut', 'active'].includes(field)) v = v === true; else if (['channels', 'parameters', 'carouselUrls','referenceAssetIds','referenceOnlyIds'].includes(field)) v = Array.isArray(v) ? v.slice(0, 12).map(x => str(x, 500)) : []; else v = str(v, field === 'text' || field === 'caption' || field === 'visualPrompt' || field === 'description' || field === 'notes' || field === 'carouselOutline' ? 20000 : 500);
       result[field] = v;
     }
     if (!internal && statuses[kind] && result.status && !statuses[kind].includes(result.status)) fail('Essa situação depende da confirmação do serviço.');
     if (kind === 'content') {
       if(result.imageLayout&&!['feed','story','carousel'].includes(result.imageLayout))fail('Formato de imagem inválido.');
-      if(result.referenceAssetIds){if(result.referenceAssetIds.length>6)fail('Use até seis referências.');for(const assetId of result.referenceAssetIds)if(!await db.prepare('SELECT 1 FROM assets WHERE org_id=? AND id=?').get(org,assetId))fail('Referência não encontrada nesta empresa.',404);}
+      if(result.previousImageAssetId&&!await db.prepare('SELECT 1 FROM assets WHERE org_id=? AND id=?').get(org,result.previousImageAssetId))fail('Prévia anterior não encontrada nesta empresa.',404);
+      if(result.referenceAssetIds){if(result.referenceAssetIds.length>(result.format==='video'?8:6))fail('Quantidade de referências excedida.');for(const assetId of result.referenceAssetIds)if(!await db.prepare('SELECT 1 FROM assets WHERE org_id=? AND id=?').get(org,assetId))fail('Referência não encontrada nesta empresa.',404);}
       result.format = result.format || 'image';
       result.channel = result.channel || 'instagram';
       if (!CONTENT_FORMATS.includes(result.format) || !CHANNELS.includes(result.channel)) fail('Formato ou canal inválido.');
@@ -703,6 +705,7 @@ export async function createPortal({db, dataDir, userFrom, json, safeOrigin, pro
       usage: await usageSnapshot(db,org,(await company(org)).policy),
       routine: await routinePriority(org),
       brandMaterials: await metadata(org, 'brand:production'),
+      creativeLibrary: await creativeLibrary.context(org),
       production: await mapAsync(await filterAsync(all.content, async c => (await metadata(org, 'studio:' + c.id)).version), async c => await studio.inspect(org, c.id)),
       records: all,
       operations: await kernel.list(org),
@@ -769,7 +772,8 @@ export async function createPortal({db, dataDir, userFrom, json, safeOrigin, pro
   });
   const imageWorkflow=createImageWorkflow({db,record,company,metadata,saveMetadata,studio,integration,providers,storeAsset,assetPath,systemUpdate,setJob,beforeMutation});
   const reels=reelsRenderer||createReelsRenderer();
-  const creations=createCreations({commerce:()=>commerce,db,company,integration,queue,saveRecord,record,assetPath,storeAsset,systemUpdate,setJob,beforeMutation,renderer:reels,respond:creationRespond,metadata,saveMetadata});
+  const creativeLibrary=createCreativeLibrary({db,metadata,saveMetadata,company});
+  const creations=createCreations({creativeLibrary,commerce:()=>commerce,db,company,integration,queue,saveRecord,record,assetPath,storeAsset,systemUpdate,setJob,beforeMutation,renderer:reels,respond:creationRespond,metadata,saveMetadata});
   const creationSchedules=createCreationSchedules({db,creations,company});
   const runtimeTools=createRuntimeTools({runtime:cloudRuntime,db,assetPath,storeAsset,saveRecord,record,metadata,saveMetadata,queue,systemUpdate,setJob,beforeMutation});
   publication = await createPublicationWorkflow({
@@ -805,7 +809,7 @@ export async function createPortal({db, dataDir, userFrom, json, safeOrigin, pro
   });
   const conversation = await createConversation({
     financeReply:async(org,user,text)=>await commerce.chat(org,user,text)||await finance.chat(org,user,text),
-    deliveryOnly,creations,creationSchedules,
+    deliveryOnly,creations,creationSchedules,creativeLibrary,
     db,
     dataDir,
     kernel,
@@ -1738,7 +1742,13 @@ export async function createPortal({db, dataDir, userFrom, json, safeOrigin, pro
     }
     const parts = pathname.split('/').filter(Boolean), org = parts[2], section = parts[3], kind = parts[4], id = parts[5];
     await access(org, user);
+    if(section==='creative-library'){
+      if(req.method==='GET')json(res,200,await creativeLibrary.context(org));
+      else if(req.method==='POST'){const d=await body(req);if(d.action==='classify')json(res,200,await creativeLibrary.classify(org,user.id,d));else if(d.action==='direction')json(res,200,await creativeLibrary.direction(org,user.id,d.direction));else fail('Ação inválida.',400);}else fail('Método não permitido.',405);
+      return true;
+    }
     if(section==='consultations'){
+
       if(req.method==='GET')json(res,200,await consultations.listing(org,user));
       else if(req.method==='POST')json(res,200,await consultations.action(org,user,await body(req)));
       else fail('Método não permitido.',405);

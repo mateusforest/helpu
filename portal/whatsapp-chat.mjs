@@ -217,6 +217,8 @@ export function createWhatsAppChat({db, metadata, saveMetadata, conversation, as
           await conversation.receiveReferences(link.org,link.threadId,{key:row.id,attachments,text,reply:'Recebi os arquivos. Para esta edição, escolha até oito referências e envie um pedido de até 16 mil caracteres. O material permanece na conversa.'});
         }else if(text){
           await conversation.submitMessage(link.org,link.threadId,{id:link.userId},{text,mode:plan?'plan':'execute',idempotencyKey:row.id,attachments});
+        }else if(attachments.length&&(await conversation.waitingForReference?.(link.org,link.threadId))?.request){
+          await conversation.submitMessage(link.org,link.threadId,{id:link.userId},{text:'Use esta referência no pedido que ficou salvo.',mode:plan?'plan':'execute',idempotencyKey:row.id,attachments,attachmentRole:'reference'});
         }else if(attachments.length){
           await conversation.receiveReferences(link.org,link.threadId,{key:row.id,attachments,reply:attachments.length===1?'Arquivo recebido e salvo nesta conversa.':'Recebi '+attachments.length+' arquivos e salvei nesta conversa.'});
         }else if(unsupported){

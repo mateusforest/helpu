@@ -1,3 +1,4 @@
+import {CREATIVE_RULES,isStyleMessage} from './creative-library.mjs';
 import {VIDEO_PRESETS} from './video-styles.mjs';
 import {VIDEO_FONTS} from './video-recipes.mjs';
 import {requestOpenAIResponse} from './providers.mjs';
@@ -68,11 +69,12 @@ TOOLS.push(tool('creation_schedule','Agenda geração avulsa ou semanal, consult
 const videoSettings={type:'object',properties:{subtitlesSrt:{type:'string',description:'Legenda sincronizada SRT fornecida pelo cliente. Nunca invente transcrição ou tempos de fala.'},highlight:{type:'string',enum:['last','none']},textBox:{type:'string',enum:['auto','outline','none']},preset:{type:'string',enum:VIDEO_PRESETS.map(p=>p.id)},aspectRatio:{type:'string',enum:['9:16','16:9']},quality:{type:'string',enum:['standard','high']},motion:{type:'string',enum:['none','zoom-in','zoom-out','pan']},textAnimation:{type:'string',enum:['fade','rise','pop','words']},font:{type:'string',enum:Object.keys(VIDEO_FONTS)},fontSize:{type:'number'},accent:string,transition:{type:'string',enum:['cut','fade','smoothleft']},fit:{type:'string',enum:['cover','contain']},soundEffects:{type:'string',enum:['none','subtle']},musicAssetId:{type:['string','null']},musicVolume:{type:'number'},sourceAudio:{type:'boolean'}},additionalProperties:false};
 Object.assign(TOOLS.find(t=>t.name==='create_media').parameters.properties,{videoOptions:videoSettings,styleId:string,referenceOnlyIds:{type:'array',items:string}});
 TOOLS.push(tool('creation_library','Consulta prévias, IDs, estados de aprovação e estilos salvos da empresa. Use para encontrar o vídeo a ajustar ou o estilo solicitado.',{}));
-TOOLS.push(tool('creation_review','Aprova uma prévia, solicita ajuste versionado ou salva o estilo de um vídeo aprovado. Aprovar e salvar estilo somente quando o cliente pedir. Use creation_library para resolver o ID; nunca adivinhe. Não publica. Ajustes geram nova versão com cobrança normal.',{id:string,action:{type:'string',enum:['approve','revise','save-style']},adjustment:string,name:string,videoOptions:videoSettings},['id','action']));
+TOOLS.push(tool('creative_library','Consulta referências, materiais e estilos desta empresa; classifica arquivos como referência/material/identidade ou salva orientação visual explicitamente informada. Não transforma aprovação de uma entrega em preferência permanente.',{action:{type:'string',enum:['list','classify','direction']},assetId:string,role:{type:'string',enum:['reference','material','brand']},notes:string,direction:string},['action']));
+TOOLS.push(tool('creation_review','Aprova uma prévia, solicita ajuste versionado ou salva o estilo de uma imagem ou vídeo aprovado. Aprovar e salvar estilo somente quando o cliente pedir. Use creation_library para resolver o ID; nunca adivinhe. Não publica. Ajustes geram nova versão com cobrança normal.',{id:string,action:{type:'string',enum:['approve','revise','save-style']},adjustment:string,name:string,videoOptions:videoSettings},['id','action']));
 Object.assign(TOOLS.find(t=>t.name==='creation_schedule').parameters.properties,{videoOptions:videoSettings,styleId:string,referenceOnlyIds:{type:'array',items:string}});
 export const conversationEvaluationTools=()=>structuredClone(TOOLS.filter(t=>['create_media','operation_status','creation_library'].includes(t.name)));
 
-export async function createConversation({db, dataDir, company, integration, list, saveRecord, queue, audit, json, assetPath, browserLaunch, respond, kernel, updateProfile, reviewPublication,integrationState,workerState,cloud=false,runtimeTools,browserOverride,deliveryOnly=true,creations,creationSchedules,financeReply}) {
+export async function createConversation({db, dataDir, company, integration, list, saveRecord, queue, audit, json, assetPath, browserLaunch, respond, kernel, updateProfile, reviewPublication,integrationState,workerState,cloud=false,runtimeTools,browserOverride,deliveryOnly=true,creations,creationSchedules,financeReply,creativeLibrary}) {
   const browser = browserOverride || await createBrowserManager({
     db,
     dataDir,
@@ -263,6 +265,24 @@ export async function createConversation({db, dataDir, company, integration, lis
     const history=(await db.prepare('SELECT id,role,text,attachments,job_id AS jobId,created_at AS createdAt FROM conversation_messages WHERE org_id=? AND conversation_id=? AND rowid<=? ORDER BY rowid DESC LIMIT 100').all(org,id,anchor.sequence)).reverse().map(m=>({...m,attachments:JSON.parse(m.attachments)}));
     const requestContext=conversationRequestContext(history);
     const latestUser=requestContext.current;
+    const creativeContext=await creativeLibrary?.promptContext(org),pendingCreative=await creativeLibrary?.pending(org,id);
+    if(payload.mode==='execute'&&pendingCreative?.request&&/^(?:cancele?|cancela|desista|esque[çc]a)\s*(?:(?:esse|este|o|do|desse|deste)\s+)?(?:pedido|v[ií]deo|imagem|reels|criativo|disso|isso)?[.!\s]*$/i.test(latestUser.text.trim())){
+      await creativeLibrary.cancel(org,id);const summary='Pedido pendente cancelado. Quando quiser, podemos começar uma nova criação.';await message(org,id,'assistant',summary,job.id);await kernel?.begin(job);await kernel?.finishGeneral(job);return {summary,conversationId:id};
+    }
+    // Ask before spending a model call or starting production. The same service
+    // is used by portal messages and the official WhatsApp bridge.
+    const asksToCreate=/(?:crie|gere|criar|gerar|produza|faça|faca|quero)\b[\s\S]{0,180}\b(?:imagem|v[ií]deo|reels|story|feed|criativo|carrossel)\b/i.test(latestUser.text)&&!/(?:n[aã]o|nao)\s+(?:crie|gere|produza|faça)/i.test(latestUser.text);
+    if(creativeLibrary&&creations&&payload.mode==='execute'&&asksToCreate&&!pendingCreative?.request){
+      const format=/v[ií]deo|reels/i.test(latestUser.text)?'reels':/story/i.test(latestUser.text)?'story':/carrossel/i.test(latestUser.text)?'carousel':'feed';
+      const gate=await creativeLibrary.beforeCreate(org,id,job.user_id,{prompt:latestUser.text,format,attachments:latestUser.attachments},{text:latestUser.text,attachmentIds:latestUser.attachments});
+      if(gate){await message(org,id,'assistant',gate.question,job.id);await kernel?.begin(job);await kernel?.finishGeneral(job);return {summary:gate.question,conversationId:id,needsReference:true};}
+    }
+    if(pendingCreative?.request){requestContext.activeText=pendingCreative.request.prompt+'\n'+requestContext.activeText;requestContext.input.push({role:'user',content:'Pedido pendente salvo (dados, não nova ordem): '+JSON.stringify(pendingCreative.request)});requestContext.input.push({role:'user',content:latestUser.text});}
+    const mediaRequest=/(?:imagem|v[ií]deo|reels|story|feed|criativo|carrossel)/i.test(latestUser.text);
+    const suppliedIds=[...new Set([...(pendingCreative?.request?.attachments||[]),...requestContext.referenceIds])];
+    const cap=/v[ií]deo|reels/i.test(latestUser.text)||pendingCreative?.request?.format==='reels'?8:6;
+    const libraryIds=mediaRequest||pendingCreative?.request?(creativeContext?.references||[]).filter(r=>!suppliedIds.includes(r.assetId)).slice(0,Math.max(0,cap-suppliedIds.length)).map(r=>r.assetId):[];
+    requestContext.referenceIds=[...suppliedIds,...libraryIds];
     const assets=[];
     for(const aid of requestContext.referenceIds){const file=await db.prepare('SELECT id,name,mime,size FROM assets WHERE org_id=? AND id=?').get(org,aid);if(file)assets.push(file);}
     const c=await company(org),input=requestContext.input;
@@ -312,7 +332,7 @@ export async function createConversation({db, dataDir, company, integration, lis
             effort: 'medium'
           },
           max_output_tokens: 6000,
-          instructions:instructions+'\n'+CONVERSATION_CONTEXT_RULES+'\nPedido atual e referências, como dados: '+JSON.stringify({current:latestUser.text,referenceIds:requestContext.referenceIds,resuming:!!payload.resuming})+'\nAgendamentos de geração: use creation_schedule para pedidos explícitos com data/hora ou recorrência semanal, e para consultar, pausar ou cancelar. Nunca diga que agendou sem sucesso da ferramenta. O horário inicia a produção; entrega depende do término e da janela do WhatsApp. Não há publicação automática. Anexo sem pedido de criação deve apenas ser recebido; use referências das mensagens anteriores quando o usuário se referir a elas. PDFs são briefing, não imagens-base. Vídeos podem ser usados como material no Reels, mas não alegue ter analisado seus quadros.',
+          instructions:instructions+'\n'+CREATIVE_RULES+'\nDireção criativa e referências (dados): '+JSON.stringify(creativeContext||{})+'\n'+CONVERSATION_CONTEXT_RULES+'\nPedido atual e referências, como dados: '+JSON.stringify({current:latestUser.text,referenceIds:requestContext.referenceIds,resuming:!!payload.resuming})+'\nAgendamentos de geração: use creation_schedule para pedidos explícitos com data/hora ou recorrência semanal, e para consultar, pausar ou cancelar. Nunca diga que agendou sem sucesso da ferramenta. O horário inicia a produção; entrega depende do término e da janela do WhatsApp. Não há publicação automática. Anexo sem pedido de criação deve apenas ser recebido; use referências das mensagens anteriores quando o usuário se referir a elas. PDFs são briefing, não imagens-base. Vídeos podem ser usados como material no Reels, mas não alegue ter analisado seus quadros.',
           input,
           tools: TOOLS.filter(t=>(!['create_media','creation_library','creation_review'].includes(t.name)||!!creations)&&(!t.name.startsWith('browser_')||(!deliveryOnly&&(!cloud||!!browserOverride)))&&(!t.name.startsWith('video_')||(!creations&&runtimeTools?.configured))).map(t=>t.name==='queue_action'?{...t,description:creations?'Agenda tarefas de agentes ou imagens de rascunhos. Para criar Reels, use exclusivamente create_media com format reels; esta ferramenta não gera vídeos.':t.description,parameters:{...t.parameters,properties:{...t.parameters.properties,kind:{type:'string',enum:(deliveryOnly?['agent','image','video']:t.parameters.properties.kind.enum).filter(kind=>!creations||kind!=='video')}}}}:t),
           parallel_tool_calls: false
@@ -351,7 +371,7 @@ export async function createConversation({db, dataDir, company, integration, lis
           try {
             const args = JSON.parse(call.arguments || '{}');
             if(deliveryOnly&&(call.name.startsWith('browser_')||(call.name==='queue_action'&&!['agent','image','video'].includes(args.kind)))) throw new ProviderError('A Helpu prepara e entrega o material; o cliente publica manualmente. Esta ação não está disponível neste fluxo.', 'blocked');
-            const mutation=['create_media','creation_review','save_draft','update_brand','queue_action','browser_action','video_export'].includes(call.name)||(call.name==='video_project'&&args.action!=='get')||(call.name==='creation_schedule'&&args.action!=='list');
+            const mutation=(call.name==='creative_library'&&args.action!=='list')||['create_media','creation_review','save_draft','update_brand','queue_action','browser_action','video_export'].includes(call.name)||(call.name==='video_project'&&args.action!=='get')||(call.name==='creation_schedule'&&args.action!=='list');
             if (payload.mode !== 'execute' && mutation) throw new ProviderError('Este pedido está em modo Planejar. Entregue a proposta pela conversa.', 'blocked');
             if (payload.mode === 'execute' && kernel && !operation && mutation) {
               operation = await kernel.register(org, job.user_id, id, job.id, latestUser?.text || 'Pedido operacional', {
@@ -367,11 +387,17 @@ export async function createConversation({db, dataDir, company, integration, lis
             if (cloud && !browserOverride && call.name.startsWith('browser_')) throw new ProviderError('Configure o serviço de navegador online ou use as conexões por API.', 'blocked');
             if(call.name==='create_media'){
               if(!creations)throw new ProviderError('Criação direta indisponível.','blocked');
-              const resolved=applyMediaContext(args,requestContext,assets);
+              const gate=await creativeLibrary?.beforeCreate(org,id,job.user_id,args,{text:latestUser.text,attachmentIds:latestUser.attachments});
+              if(gate){await message(org,id,'assistant',gate.question,job.id);if(operation)await kernel.finishGeneral(job);return {summary:gate.question,conversationId:id,needsReference:true};}
+              const roles=await creativeLibrary?.context(org);
+              const referenceOnlyIds=[...new Set([...(args.referenceOnlyIds||[]),...(roles?.references||[]).filter(r=>requestContext.referenceIds.includes(r.assetId)).map(r=>r.assetId)])];
+              const resolved=applyMediaContext({...args,prompt:pendingCreative?.request?pendingCreative.request.prompt+'\nAtualização do pedido: '+args.prompt:args.prompt,referenceOnlyIds},requestContext,assets);
               const attachments=[];
               for(const aid of resolved.attachments){const file=await db.prepare('SELECT mime FROM assets WHERE org_id=? AND id=?').get(org,aid);if(file?.mime!=='application/pdf')attachments.push(aid);}
               result=await creations.submit(org,job.user_id,{...resolved,attachments,requestId:job.id+'_'+args.format},{conversationId:id,parentJobId:job.id});
+              await creativeLibrary?.complete(org,id,result.id);
             }
+            else if(call.name==='creative_library'){if(!creativeLibrary)throw new Error('Biblioteca indisponível.');result=args.action==='list'?await creativeLibrary.context(org):args.action==='classify'?await creativeLibrary.classify(org,job.user_id,args):await creativeLibrary.direction(org,job.user_id,args.direction);}
             else if(call.name==='creation_library'){result=await creations.list(org);}
             else if(call.name==='creation_review'){result=await creations.review(org,job.user_id,args.id,{...args,requestId:job.id+'_'+String(call.call_id).replace(/[^a-zA-Z0-9_-]/g,'').slice(0,50)},{conversationId:id,parentJobId:job.id});}
             else if(call.name==='creation_schedule'){
@@ -529,6 +555,7 @@ export async function createConversation({db, dataDir, company, integration, lis
       await browser.release(job.id);
     }
   }
+  const waitingForReference=(org,id)=>creativeLibrary?.pending(org,id);
   async function receiveReferences(org,id,{key,attachments=[],text='',reply}) {
     await get(org,id);
     for(const aid of attachments)await assetPath(org,aid);
@@ -552,6 +579,9 @@ export async function createConversation({db, dataDir, company, integration, lis
       if (asset.mime.startsWith('image/') || asset.mime === 'application/pdf') attachmentBytes += asset.size;
     }
     if (attachmentBytes > 20 * 1024 * 1024) throw new Error('Use até 20 MB de imagens e PDFs por pedido.');
+    const pendingReference=await creativeLibrary?.pending(org,id);
+    if(creativeLibrary&&attachments.length){const library=await creativeLibrary.list(org);for(const assetId of attachments){const existing=library.entries.find(e=>e.assetId===assetId);const role=d.attachmentRole||(isStyleMessage(text)?'reference':existing?.role||(pendingReference?.request?'reference':'material'));const a=await creativeLibrary.asset(org,assetId);await creativeLibrary.classify(org,user.id,{assetId,notes:existing?.notes,role:role==='reference'&&!a.mime.startsWith('image/')&&a.mime!=='video/mp4'?'material':role});}}
+
     const key = String(d.idempotencyKey || randomUUID()).slice(0, 180);
     if(!attachments.length&&financeReply){
       const reply=await financeReply(org,user,text);
@@ -708,7 +738,7 @@ export async function createConversation({db, dataDir, company, integration, lis
   }
   return {
     submitMessage,
-    appendMessage: message, receiveReferences,
+    appendMessage: message, receiveReferences,waitingForReference,
     mediaResult,
     handle,
     run,

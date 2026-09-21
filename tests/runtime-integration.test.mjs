@@ -92,7 +92,7 @@ test('Astra online: chat, fila, vídeo na Biblioteca e proteção de permissões
   try {
     const signup = await request('/api/auth/signup', 'POST', { name: 'Teste', company: 'Vídeo QA', email: 'runtime@example.test', password: 'local-test-only-password' });
     assert.equal(signup.status, 201); cookie = signup.headers.get('set-cookie').split(';')[0]; org = (await request('/api/portal/bootstrap')).body.companies[0].id;
-    await api('company', 'PATCH', { profile: { description: 'Empresa sintética de testes' }, policy: { autoMedia: false, dailyMedia: 30, dailyRuns: 30 } });
+    await api('company', 'PATCH', { profile: { description: 'Empresa sintética de testes', visualIdentity: 'Fundo branco e tipografia escura' }, policy: { autoMedia: false, dailyMedia: 30, dailyRuns: 30 } });
     await api('integrations/openai', 'PUT', { apiKey: 'openai-local-test-secret' });
 
     await t.test('pedido explícito no chat cria projeto e exporta sem exigir autoMedia', async () => {
@@ -200,6 +200,7 @@ test('sem runtime configurado o chat não anuncia ferramentas de vídeo nem exec
   try {
     const signup = await request('/api/auth/signup', 'POST', { name: 'Teste', company: 'Sem runtime', email: 'runtime-missing@example.test', password: 'local-test-only-password' }); cookie = signup.headers.get('set-cookie').split(';')[0];
     const org = (await request('/api/portal/bootstrap')).body.companies[0].id;
+    await request('/api/portal/' + org + '/company', 'PATCH', {profile:{visualIdentity:'Fundo branco e tipografia escura'}});
     await request('/api/portal/' + org + '/integrations/openai', 'PUT', { apiKey: 'openai-local-test-secret' });
     const thread = (await request('/api/portal/' + org + '/conversations', 'POST', { title: 'Sem editor' })).body;
     await request('/api/portal/' + org + '/conversations/' + thread.id + '/messages', 'POST', { text: 'Crie um vídeo.', mode: 'execute' }); await server.portal.tick();
