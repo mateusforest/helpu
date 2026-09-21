@@ -51,3 +51,34 @@
 .chat-image figcaption,.generated-image-preview figcaption{font-size:13px;line-height:1.6;color:#77717b;margin:10px 0;overflow-wrap:anywhere}
 .chat-image a,.generated-image-preview a{color:#ad481f}
 .chat-media-working{display:flex;align-items:center;gap:10px;margin:18px 0;font-size:14px;color:#77717b}
+/* A small planning companion keeps the conversation as the primary workspace. */
+.conversation-layout{display:grid;grid-template-columns:290px minmax(0,1fr);gap:36px;max-width:1400px;margin:auto;align-items:start}
+.conversation-layout .conversation-page{width:100%;max-width:960px;min-width:0}
+.conversation-layout .conversation-page.has-messages{max-width:820px}
+.conversation-layout .conversation-welcome h1{font-size:clamp(30px,3.1vw,46px);max-width:740px;margin:32px auto 20px;text-wrap:balance}
+.conversation-layout .conversation-welcome p{font-size:16px;max-width:620px;margin:auto;text-wrap:balance}
+.conversation-programming{margin-top:150px;border:1px solid #e9e9eb;border-radius:14px;background:#fff;min-width:0}
+.conversation-programming summary{display:flex;align-items:center;justify-content:space-between;padding:16px;font-size:16px;font-weight:600;cursor:pointer;list-style:none}
+.conversation-programming summary::-webkit-details-marker{display:none}
+.conversation-programming summary>span{font-size:15px;font-weight:400;transform:rotate(180deg)}
+.conversation-programming details:not([open]) summary>span{transform:none}
+.program-body{padding:0 14px 12px}.program-table{width:100%;table-layout:fixed;border-collapse:collapse;font-size:11px;text-align:left;color:#45434b}
+.program-table th{font-size:10px;font-weight:400;color:#817d87;padding:7px 2px;border-top:1px solid #eeeef0}
+.program-table td{padding:8px 2px;border-top:1px solid #eeeef0;vertical-align:middle}
+.program-table th:first-child{width:40%}.program-table th:nth-child(2){width:34%}
+.program-table td button{display:block;max-width:100%;text-align:left;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font:inherit;background:none;border:0;padding:3px 0;color:inherit;cursor:pointer}
+.program-table td button:hover{color:#ce4615;text-decoration:underline}
+.program-table small{display:block;font-size:10px;color:#87828d;line-height:1.5}
+.program-status{display:inline-block;border-radius:7px;padding:4px;background:#f1f1f3;color:#696670;font-size:10px}
+.program-status.ready{background:#eaf7ef;color:#287543}.program-status.review{background:#fff4e4;color:#97600d}
+.program-actions{display:flex;align-items:center;justify-content:space-between;gap:8px;border-top:1px solid #eeeef0;padding-top:12px}
+.program-actions .p-button{min-height:34px;padding:7px 10px;border-radius:8px;font-size:11px}.program-actions .quiet-button{min-height:34px;font-size:10px;white-space:nowrap}
+.program-empty{font-size:12px;line-height:1.6;color:#87828d;margin:0 0 14px}
+.program-list{max-height:55vh;overflow:auto;margin-bottom:18px}.program-list .program-table{font-size:14px}.program-list .program-table small,.program-list .program-status{font-size:12px}
+body[data-view="conversation"] .conversation-layout .conversation-composer{position:relative;bottom:auto;padding-top:53px}
+.composer-whatsapp{position:absolute;top:12px;right:20px;display:flex;align-items:center;gap:6px;background:none;border:0;color:#23884e;min-height:32px;font-size:12px;cursor:pointer}
+.composer-whatsapp svg{width:22px;height:22px}.composer-whatsapp:focus-visible{outline:2px solid #23884e;outline-offset:3px;border-radius:5px}
+#quick-program-form .p-field{margin:16px 0}#quick-program-form [hidden]{display:none}
+@media(max-width:1100px){.conversation-layout{grid-template-columns:260px minmax(0,1fr);gap:24px}.program-body{padding-inline:10px}.program-actions{gap:4px}}
+@media(max-width:1000px){.conversation-layout{display:flex;flex-direction:column;gap:24px}.conversation-programming{width:100%;max-width:600px;margin:0 auto}.conversation-layout .conversation-page{max-width:820px}.conversation-layout .conversation-welcome{padding-top:24px}.program-table th,.program-table small,.program-status{font-size:12px}.program-table{font-size:13px}.program-actions .quiet-button,.program-actions .p-button{font-size:12px;min-height:40px}}
+@media(max-width:400px){.program-table{font-size:11px}.program-table th,.program-table small,.program-status{font-size:10px}.program-actions .quiet-button,.program-actions .p-button{font-size:11px}}

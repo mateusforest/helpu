@@ -27,7 +27,35 @@ try{
  const posted=[];
  await context.route(base+'/'+thread.id,r=>r.fulfill({json:snapshot}));
  await context.route(base+'/'+thread.id+'/messages',async r=>{posted.push(r.request().postDataJSON());await r.fulfill({status:201,json:{}});});
+ const contentTitles=['Nossa história','Destaque da semana','Nossa equipe','Oferta especial'];
+ for(let i=0;i<4;i++){const response=await context.request.post(origin+'/api/portal/'+org+'/records/content',{headers:{Origin:origin},data:{title:contentTitles[i],format:i===0?'video':'image',channel:'instagram',status:'review',scheduledAt:new Date(Date.now()+(i+2)*86400000).toISOString()}});assert.equal(response.status(),201);}
  await page.goto(origin+'/portal.html');await page.locator('#conversation-prompt').waitFor();
+ await page.getByRole('heading',{name:'Sua marca merece mais do que mais um post.'}).waitFor();
+ assert.equal(await page.locator('.composer-hint,.chat-whatsapp-card').count(),0);
+ assert.equal(await page.locator('.conversation-programming tbody tr').count(),3);
+ assert.deepEqual(await page.locator('.conversation-programming td button').allTextContents(),contentTitles.slice(0,3));
+ const panelSize=await page.locator('.conversation-programming').boundingBox();assert.ok(panelSize.width<=300&&panelSize.height<380,JSON.stringify(panelSize));
+ const whatsappInside=async()=>{const outer=await page.locator('.conversation-composer').boundingBox(),inner=await page.locator('.composer-whatsapp').boundingBox();assert.ok(inner.x>=outer.x&&inner.y>=outer.y&&inner.x+inner.width<=outer.x+outer.width&&inner.y+inner.height<=outer.y+outer.height,'WhatsApp deve ficar dentro do campo');};
+ await whatsappInside();
+ await page.locator('[data-guide="skip"]').click();await page.locator('.first-access-panel').waitFor({state:'hidden'});await whatsappInside();
+ await page.screenshot({path:path.join(output,'conversa-programacao-desktop.png'),fullPage:true});
+ await page.locator('#conversation-programming summary').click();await page.waitForTimeout(4200);assert.equal(await page.locator('#conversation-programming').evaluate(el=>el.open),false);
+ await page.locator('#conversation-programming summary').click();
+ await page.locator('[data-chat="program-all"]').click();assert.equal(await page.locator('#dialog-body tbody tr').count(),4);await page.locator('#dialog-close').click();
+ await page.locator('[data-chat="program-create"]').click();
+ await page.locator('#quick-program-form [name="brief"]').fill('Apresentar nossa equipe');
+ await page.locator('#quick-program-form [name="when"]').selectOption('later');
+ await page.locator('#quick-program-form [name="generateAt"]').fill('2099-10-01T09:00');
+ await page.locator('#quick-program-form [name="postAt"]').fill('2099-10-02T18:00');
+ await page.waitForTimeout(4200);assert.equal(await page.locator('#quick-program-form [name="brief"]').inputValue(),'Apresentar nossa equipe');
+ await page.locator('#quick-program-form [type="submit"]').click();
+ assert.match(await page.locator('#conversation-prompt').inputValue(),/Apresentar nossa equipe.*Agende a geração.*Data prevista para postagem/s);assert.equal(posted.length,0);
+ await page.locator('#conversation-prompt').fill('Rascunho preservado.');
+ await page.locator('[data-chat="program-idea"]').click();await page.locator('#quick-program-form [type="submit"]').click();
+ assert.match(await page.locator('#conversation-prompt').inputValue(),/^Rascunho preservado..*Sugira três ideias/s);assert.equal(await page.locator('#conversation-mode').inputValue(),'plan');
+ await page.locator('[data-chat="whatsapp"]').click();await page.locator('#whatsapp-chat-form').waitFor();assert.equal(await page.locator('#whatsapp-chat-form').getByRole('button',{name:'Ativar WhatsApp',exact:true}).count(),1);await page.locator('#dialog-close').click();
+ for(const width of [390,320]){await page.setViewportSize({width,height:844});await page.reload();await page.locator('#conversation-prompt').waitFor();assert.equal(await page.locator('#conversation-programming').evaluate(el=>el.open),false);assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth>innerWidth),false);await page.locator('#conversation-programming summary').click();assert.equal(await page.locator('.conversation-programming tbody tr').count(),3);await page.screenshot({path:path.join(output,'conversa-programacao-'+width+'.png'),fullPage:true});}
+ await page.setViewportSize({width:1440,height:1000});await page.reload();await page.locator('#conversation-prompt').waitFor();
  await page.locator('[data-chat="history"]').click();await page.locator('[data-chat="choose-thread"][data-id="'+thread.id+'"]').click();
  await page.getByText('Entendendo seu pedido',{exact:true}).first().waitFor();
  assert.equal(await page.locator('.operation-context').isVisible(),false);

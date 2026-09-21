@@ -1,3 +1,4 @@
+import {programmingItems,programmingRows} from '../dist/assets/conversation-programming.js';
 import {readableTerm} from '../dist/assets/labels.js';
 import test from 'node:test';
 import assert from 'node:assert/strict';
@@ -21,7 +22,7 @@ function fixture(overrides={},stateOverrides={}){
   return {...snapshot(id),...overrides};
  };
  const snapshot=id=>({messages:[{id,role:'assistant',text:'VISUAL '+id,attachments:[],createdAt:1}],events:[],jobs:[],operations:[]});
- const context=vm.createContext({readableTerm,renderChatText,eventLabel,operationLabel,document,console,Date,JSON,Promise,uploadFile,setInterval:fn=>{intervals.push(fn);return 1;},crypto:{randomUUID:()=> 'key'},__deps:{api,endpoint:tail=>'/api/portal/org/'+tail,getState:()=>state,esc:v=>String(v??''),toast(){},refresh:async()=>{},openDialog(){},closeDialog(){}}});
+ const context=vm.createContext({programmingItems,programmingRows,readableTerm,renderChatText,eventLabel,operationLabel,document,console,Date,JSON,Promise,uploadFile,setInterval:fn=>{intervals.push(fn);return 1;},crypto:{randomUUID:()=> 'key'},__deps:{api,endpoint:tail=>'/api/portal/org/'+tail,getState:()=>state,esc:v=>String(v??''),toast(){},refresh:async()=>{},openDialog(){},closeDialog(){}}});
  vm.runInContext(fs.readFileSync(new URL('../dist/assets/conversation-ui.js',import.meta.url),'utf8').replace(/^import[^\n]*\n/gm,'').replace('export function','function')+'\nglobalThis.ui=createConversationUI(__deps);',context);
  const ui=context.ui;
  const click=(action,id)=>events.click({target:{closest:()=>({dataset:{chat:action,id},disabled:false})}});
@@ -82,4 +83,10 @@ test('imagem gerada aparece na conversa com download e acompanhamento da fila',a
  assert.match(html,/<img src="\/api\/portal\/files\/asset-1"/);assert.match(html,/Baixar imagem/);assert.match(html,/Preparando sua imagem/);assert.doesNotMatch(html,/external.invalid|fora-da-empresa/);
 });
 
-test('chat inicial oferece WhatsApp como extensão e não como canal de clientes',()=>{const f=fixture();const html=f.ui.chat();assert.match(html,/Ativar WhatsApp/);assert.match(html,/data-chat="whatsapp"/);assert.match(html,/Leve o Astra para o WhatsApp/);});
+test('chat inicial oferece WhatsApp como extensão e não como canal de clientes',()=>{const f=fixture();const html=f.ui.chat();assert.match(html,/Ativar WhatsApp/);assert.match(html,/data-chat="whatsapp"/);assert.match(html,/class="composer-whatsapp"/);assert.doesNotMatch(html,/Enter para enviar|chat-whatsapp-card/);assert.match(html,/Sua marca merece mais do que mais um post/);});
+
+test('programação ordena datas e distingue gerar de postar sem repetir execuções encerradas',()=>{
+ const now=Date.now(),state={company:{policy:{schedulesEnabled:true}},records:{content:[{id:'later',title:'Depois',format:'image',scheduledAt:new Date(now+20000).toISOString(),status:'review'},{id:'done',scheduledAt:new Date(now).toISOString(),status:'published'},{id:'invalid',scheduledAt:'invalid'},{id:'draft',status:'draft'}]}};
+ const schedules=[{id:'first',enabled:true,nextAt:now+10000,request:{prompt:'Criar vídeo',format:'reels'}},{id:'ran',enabled:false,lastRunAt:now,nextAt:now-10},{id:'cancel',enabled:false,canceled:true,nextAt:now+1}];
+ const items=programmingItems(state,schedules,now);assert.deepEqual(items.map(c=>c.id),['first','later']);assert.equal(items[0].kind,'generation');assert.equal(items[1].kind,'content');assert.equal(items[0].label,'A gerar');state.company.policy.schedulesEnabled=false;assert.equal(programmingItems(state,schedules,now)[0].label,'Pausada');
+});
