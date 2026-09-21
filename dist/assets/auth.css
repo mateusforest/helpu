@@ -4,3 +4,5 @@
 .auth-aside:after{content:"";position:absolute;inset:0;background:linear-gradient(180deg,transparent 15%,rgba(21,21,21,.25)40%,rgba(21,21,21,.92)87%);z-index:1;pointer-events:none}
 
 .signup-consent{display:flex;gap:10px;align-items:flex-start;font-size:13px;line-height:1.6}.signup-consent input{flex:0 0 auto;width:20px;height:20px;margin-top:2px;accent-color:#ff571f}.signup-consent span{min-width:0}
+
+@media(max-width:760px){.auth-layout{grid-template-rows:auto 1fr}.auth-aside:after{display:none}.auth-main{padding-bottom:max(25px,env(safe-area-inset-bottom))}.auth-back,.auth-switch>a{min-height:44px;align-items:center}.auth-switch>a{display:inline-flex}.password-toggle{min-width:54px}}
