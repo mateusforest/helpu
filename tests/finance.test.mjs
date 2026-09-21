@@ -40,7 +40,7 @@ for(const postgres of [false,true])test('F12 financeiro privado em '+(postgres?'
   assert.equal((await act('amend',{description:'Inválido',amountCents:1,dueDate:r.dueDate,terms:r.terms})).status,409);
   assert.equal((await fetch(origin+file,{headers:{Cookie:other.cookie}})).status,403);assert.equal((await fetch(origin+file,{headers:{Cookie:client.cookie}})).status,200);assert.equal((await fetch(origin+file,{headers:{Cookie:operator.cookie}})).status,200);
   const state=await ok(request('/api/portal/'+client.org+'/state',client));assert.ok(!state.assets.some(a=>a.id===r.instrument.asset.id));
-  r=await ok(upload(client,false));assert.equal(r.state,'pending');assert.equal(r.payments.length,0);assert.equal((await act('paid',{amountCents:r.amountCents,paidDate:'2026-09-21'})).status,400);
+  r=await ok(upload(client,false));assert.equal(r.instrument.bankReference,undefined);assert.equal(r.proofs[0].actor,undefined);assert.ok(r.history.every(h=>!('detail' in h)&&!('actor' in h)));assert.equal(r.state,'pending');assert.equal(r.payments.length,0);assert.equal((await act('paid',{amountCents:r.amountCents,paidDate:'2026-09-21'})).status,400);
   r=await ok(act('reject_proof'));assert.equal(r.state,'open');assert.equal(r.proofs.length,1);
  });
  await t.test('reedição preserva dívida e documento antigo fica indisponível ao cliente',async()=>{
@@ -58,8 +58,17 @@ for(const postgres of [false,true])test('F12 financeiro privado em '+(postgres?'
   const endpoint='/api/portal/'+client.org+'/conversations/'+conversation+'/messages';const input={text:'Meu boleto',idempotencyKey:randomUUID()};assert.equal((await request(endpoint,client,input)).body.direct,true);assert.equal((await request(endpoint,client,input)).status,200);assert.equal((await db.prepare('SELECT count(*) AS n FROM jobs').get()).n,0);
   assert.equal((await request(endpoint,client,{text:'Leia este PDF',attachments:[r.instrument.asset.id]})).status,403);
  });
+ await t.test('cliente recebe somente seus dados financeiros, sem notas internas ou ações administrativas',async()=>{
+  const own=await ok(request(url(client.org,false),client));assert.equal(own.receivables.length,1);assert.deepEqual(own.clients,[]);assert.deepEqual(own.reminders,[]);
+  const publicRow=own.receivables[0];assert.equal(publicRow.instrument.bankReference,undefined);assert.equal(publicRow.instruments,undefined);assert.equal(publicRow.history.some(h=>h.event==='before_amend'),false);assert.ok(publicRow.history.every(h=>!('detail' in h)&&!('actor' in h)));
+  assert.ok(!JSON.stringify(own).includes('Conferência fictícia'));assert.ok(!JSON.stringify(own).includes('boleto-teste'));
+  for(const action of ['create','amend','paid','cancel_request','cancel_confirm','reissue','reject_proof'])assert.equal((await request(url(client.org,false),client,{id:r.id,version:r.version,action})).status,403);
+  assert.deepEqual((await ok(request(url(other.org,false),other))).receivables,[]);
+  assert.deepEqual((await ok(request(url(operator.org,false),operator))).receivables,[]);
+  const internal=await ok(request(url(),operator));assert.ok(internal.receivables[0].history.some(h=>h.detail==='Conferência fictícia no banco'));assert.equal(internal.receivables[0].instrument.bankReference,'boleto-teste');
+ });
  await t.test('liquidação exige banco, repetições não duplicam pagamento e cancelamento é em duas etapas',async()=>{
-  const oldVersion=r.version;r=await ok(act('paid',{amountCents:r.amountCents,paidDate:'2026-09-21',bankConfirmed:true}));assert.equal(r.state,'paid');assert.equal(r.payments.length,1);assert.equal((await act('paid',{version:oldVersion,amountCents:r.amountCents,paidDate:'2026-09-21',bankConfirmed:true})).status,409);
+  const oldVersion=r.version;r=await ok(act('paid',{amountCents:r.amountCents,paidDate:'2026-09-21',bankConfirmed:true}));assert.equal(r.state,'paid');assert.equal(r.payments.length,1);const visible=(await ok(request(url(client.org,false),client))).receivables[0];assert.deepEqual(visible.payments,[{amountCents:r.amountCents,date:'2026-09-21'}]);assert.ok(visible.history.every(h=>!('detail' in h)&&!('actor' in h)));assert.equal((await act('paid',{version:oldVersion,amountCents:r.amountCents,paidDate:'2026-09-21',bankConfirmed:true})).status,409);
   r=await ok(create());r=await ok(act('cancel_request'));assert.equal(r.state,'cancel_pending');assert.equal((await act('cancel_confirm')).status,409);r=await ok(act('cancel_confirm',{bankConfirmed:true}));assert.equal(r.state,'canceled');
  });
  await t.test('confirmação Stripe é única por objeto e testes não aparecem ao cliente',async()=>{

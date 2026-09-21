@@ -21,13 +21,28 @@ try{
  assert.equal(await page.locator('.creative-library-group').count(),7);assert.equal(await page.locator('.creative-library-group[open]').count(),0);
  await page.screenshot({path:path.join(output,'desktop.png'),fullPage:true});
  const refs=page.locator('details').filter({has:page.locator('summary strong',{hasText:'Referências e inspirações'})});
- await refs.locator('summary').click();await refs.locator('input[type=file]').setInputFiles({name:'Inspiracao.png',mimeType:'image/png',buffer:testPng()});
+ await refs.locator('summary').click();
+ // Polling must preserve open sections before, during and after the native picker.
+ await page.clock.install();await page.clock.runFor(16000);await page.waitForTimeout(100);
+ assert.equal(await refs.getAttribute('open'),'');
+ const chooserPromise=page.waitForEvent('filechooser');await refs.locator('label.p-button').click();const chooser=await chooserPromise;
+ await page.clock.runFor(16000);assert.ok(await chooser.element().evaluate(el=>el.isConnected),'File input stays attached while choosing');
+ let releaseUpload;const uploadGate=new Promise(r=>releaseUpload=r);let beganUpload;const uploading=new Promise(r=>beganUpload=r);
+ await page.route('**/files/prepare',async route=>{beganUpload();await uploadGate;await route.continue();});
+ await chooser.setFiles({name:'Inspiracao.png',mimeType:'image/png',buffer:testPng()});await uploading;
+ await page.clock.runFor(16000);assert.equal(await refs.getAttribute('open'),'');assert.ok(await chooser.element().evaluate(el=>el.isConnected));
+ releaseUpload();
  await page.waitForFunction(()=>document.querySelector('.creative-library')?.textContent.includes('Inspiracao.png'));
- await refs.locator('summary').click();await refs.locator('textarea').fill('Títulos curtos e bastante espaço em branco');await refs.locator('[data-library-save]').click();
+ assert.equal(await refs.getAttribute('open'),'');await refs.locator('textarea').fill('Títulos curtos e bastante espaço em branco');await refs.locator('summary').focus();await page.clock.runFor(16000);assert.equal(await refs.locator('textarea').inputValue(),'Títulos curtos e bastante espaço em branco');await refs.locator('[data-library-save]').click();
  await page.waitForFunction(()=>document.querySelector('.creative-library')?.textContent.includes('Títulos curtos e bastante espaço em branco'));
- const library=await (await ctx.request.get(base+'creative-library')).json();assert.equal(library.references.length,1);assert.match(library.references[0].notes,/Títulos curtos/);
+ await page.waitForFunction(()=>document.querySelector('[data-library-save]')?.disabled===false);const library=await (await ctx.request.get(base+'creative-library')).json();assert.equal(library.references.length,1);assert.match(library.references[0].notes,/Títulos curtos/);
  const direction=page.locator('details').filter({has:page.locator('summary strong',{hasText:'Direção para próximas criações'})});await direction.locator('summary').click();await page.locator('#creative-direction').fill('Premium, minimalista e legível');await page.locator('[data-library-direction]').click();
  await page.waitForFunction(()=>document.querySelector('#creative-direction')?.textContent==='Premium, minimalista e legível');
+ await page.locator('#refresh').click();await page.waitForTimeout(100);assert.equal(await refs.getAttribute('open'),'');
+ await refs.locator('summary').click();await page.clock.runFor(16000);await page.waitForTimeout(100);assert.equal(await refs.getAttribute('open'),null);
+ await page.locator('#portal-nav a[href="#/company"]').click();await page.waitForFunction(()=>document.body.dataset.view==='company');
+ // Returning within the application retains disclosure choices in this company.
+ await page.locator('#portal-nav a[href="#/studio"]').click();await page.locator('.creative-library').waitFor();assert.equal(await direction.getAttribute('open'),'');assert.equal(await refs.getAttribute('open'),null);
  await page.setViewportSize({width:390,height:844});await page.screenshot({path:path.join(output,'mobile.png'),fullPage:true});
  assert.ok(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth+1),'Sem transbordamento horizontal');
  operatorEnv.HELPU_OPERATOR_USER_IDS=String(boot.user.id);await page.setViewportSize({width:1440,height:1050});await page.goto(origin+'/admin.html#/templates');await page.locator('[data-template="new"]').waitFor();await page.locator('[data-template="new"]').click();

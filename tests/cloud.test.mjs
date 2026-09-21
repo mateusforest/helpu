@@ -83,6 +83,7 @@ test('PostgreSQL runtime: private schema, sessions, tenants, files, jobs and res
    const prepared=await request('/api/portal/'+org+'/files/prepare','POST',{uploadId,name:'direct-test.png',size:bytes.length});assert.equal(prepared.status,200,JSON.stringify(failures));assert.equal(prepared.body.mode,'direct');assert.ok(!prepared.body.url.includes('TEST-ONLY-KEY'));
    const object=new URL(prepared.body.url).pathname.replace('/upload/sign/','/');objects.set(object,bytes);
    const completed=await request('/api/portal/'+org+'/files/complete','POST',{uploadId});assert.equal(completed.status,201,JSON.stringify(failures));
+   const classified=await request('/api/portal/'+org+'/creative-library','POST',{action:'classify',assetId:completed.body.id,role:'reference'});assert.equal(classified.status,200,JSON.stringify(failures));assert.ok((await request('/api/portal/'+org+'/creative-library')).body.references.some(r=>r.assetId===completed.body.id));
    const repeated=await request('/api/portal/'+org+'/files/complete','POST',{uploadId});assert.equal(repeated.status,200);assert.equal(completed.body.id,repeated.body.id);
    assert.equal((await request('/api/portal/'+org+'/files/complete','POST',{uploadId:randomUUID()})).status,404);
   });
