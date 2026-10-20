@@ -9,7 +9,8 @@ export function createStorage({url, key, directory, fetcher=fetch}) {
   fs.mkdirSync(directory,{recursive:true});
   const bucket='helpu-private';
   const objectKey=(org,file)=>{
-    if(!/^[a-f\d-]{36}$/.test(org)||!/^[-\w]+\.[a-z\d]+$/i.test(file))throw new Error('Invalid private file identity');
+    // Local assets belong to the reserved directory organization rather than a UUID company.
+    if((org!=='helpu-local-directory'&&!/^[a-f\d-]{36}$/.test(org))||!/^[-\w]+\.[a-z\d]+$/i.test(file))throw new Error('Invalid private file identity');
     return org+'/'+file;
   };
   async function request(object,options={}) {

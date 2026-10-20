@@ -11,6 +11,7 @@ const scrypt = promisify(scryptCallback);
 const project = path.dirname(fileURLToPath(import.meta.url));
 const MIME = {
   '.html': 'text/html; charset=utf-8',
+  '.webmanifest': 'application/manifest+json; charset=utf-8',
   '.css': 'text/css; charset=utf-8',
   '.js': 'text/javascript; charset=utf-8',
   '.svg': 'image/svg+xml',
@@ -271,7 +272,8 @@ export async function createHelpuServer({dataDir = process.env.HELPU_DATA_DIR ||
         return;
       }
       const resolvedRoot = path.resolve(root);
-      const target = path.resolve(resolvedRoot, '.' + (pathname === '/' ? '/index.html' : pathname));
+      const publicPath = pathname === '/' ? '/index.html' : ['/local', '/local/'].includes(pathname) ? '/local/index.html' : pathname;
+      const target = path.resolve(resolvedRoot, '.' + publicPath);
       if (!target.startsWith(resolvedRoot + path.sep) || pathname.includes('\\')) {
         res.writeHead(403).end();
         return;

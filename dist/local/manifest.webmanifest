@@ -1,0 +1,13 @@
+{
+  "id": "/local",
+  "name": "Helpu Local",
+  "short_name": "Helpu Local",
+  "description": "Negócios, serviços e eventos em Vacaria.",
+  "lang": "pt-BR",
+  "start_url": "/local",
+  "scope": "/local",
+  "display": "standalone",
+  "background_color": "#f7f5ef",
+  "theme_color": "#f7f5ef",
+  "icons": [{"src": "/local/assets/helpu-local-icon-dark.png", "sizes": "any", "type": "image/png", "purpose": "any"}]
+}

@@ -6,6 +6,14 @@
   "outputDirectory": "dist",
   "rewrites": [
     {
+      "source": "/local",
+      "destination": "/local/index.html"
+    },
+    {
+      "source": "/local/",
+      "destination": "/local/index.html"
+    },
+    {
       "source": "/apresenta%C3%A7%C3%A3o",
       "destination": "/apresentacao-publica/index.html"
     },

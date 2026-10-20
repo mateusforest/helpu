@@ -11,3 +11,5 @@
 .ui-icon{display:inline-block;width:1.25em;height:1.25em;vertical-align:middle;flex:0 0 auto}.button span,.text-link span,.step-arrow,.service-icon,.art-topline>span:last-child{display:inline-flex;align-items:center;justify-content:center;flex-shrink:0}.service-icon .ui-icon{width:1em;height:1em}.footer-bottom>a{display:inline-flex;align-items:center;gap:6px}.motion-toggle{width:44px;height:44px}.motion-toggle .ui-icon{width:18px;height:18px}html{-webkit-text-size-adjust:100%;text-size-adjust:100%}
 @media(max-width:800px){.button-small,.menu-toggle{min-height:44px}.menu-toggle{min-width:44px}.site-footer{padding-bottom:max(24px,env(safe-area-inset-bottom))}.footer-top>.text-link,.footer-bottom>a{min-height:44px}}
 @media(max-width:360px){.header-inner{gap:8px}.header-inner .wordmark{width:86px}.header-inner .button-small{font-size:11px;padding:12px 10px;gap:6px}.header-actions{gap:0}.hero .eyebrow{flex-wrap:wrap}.cta-inner h2{font-size:40px}}
+
+.site-header .wordmark{width:170px;aspect-ratio:2098/750}@media(max-width:700px){.site-header .wordmark{width:140px}}@media(max-width:360px){.site-header .wordmark{width:115px}}

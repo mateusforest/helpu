@@ -1,3 +1,7 @@
+import {createLocalProducts} from './local-products.mjs';
+import {createLocalLaunch} from './local-launch.mjs';
+import {createLocalCustomer} from './local-customer.mjs';
+import {createLocalMarketplace} from './local-marketplace.mjs';
 import {createAdminClients,clientControl} from './admin-clients.mjs';
 import {createInternalMarketing} from './internal-marketing.mjs';
 import {createManualWhatsApp} from './whatsapp-manual.mjs';
@@ -851,6 +855,13 @@ export async function createPortal({db, dataDir, userFrom, json, safeOrigin, pro
   const whatsappChat=createWhatsAppChat({db,metadata,saveMetadata,conversation,assetPath,storeAsset,resolveDeliveryAsset:reviewPreview.resolve,env:whatsappChatEnv,fetcher:whatsappChatFetch,manualInbox:manualWhatsApp,onInbound:whatsappWelcome.receive,onDelivery:async statuses=>{await whatsappWelcome.delivery(statuses);await manualWhatsApp.delivery(statuses);}});
   const finance=createFinance({db,operator:assisted.operator,storeAsset,now:assistedNow,deliver:whatsappChat.financeReminder});
   const commerce=createCommerce({db,operator:assisted.operator,finance,creations,now:assistedNow});
+  const localLaunch=createLocalLaunch({db,operator:assisted.operator});
+  const localMarketplace=createLocalMarketplace({db,operator:assisted.operator,access});
+  const localCustomer=createLocalCustomer({db,operator:assisted.operator,marketplace:localMarketplace,storeAsset,assetType,manualWhatsApp,assist:async({business,brief,guidance,request,mode})=>{
+    const org='helpu-local-directory',config=await integration(org,'openai');
+    if(!config.apiKey)fail('A ajuda por IA está indisponível no momento. A equipe Helpu precisa ativar a conexão.',503);
+    return providers.text(config,{agent:mode==='reply'?'relationship':'strategy',company:business,brief:brief+' Orientações do responsável: '+guidance,records:request?[request]:[],onUsage:response=>recordProviderUsage(db,{org_id:org,operationId:randomUUID()},response,{operation:'agent',model:response.configuredModel})});
+  }});
   const adminClients=createAdminClients({db,operator:assisted.operator,now:assistedNow});
   const internalMarketing=createInternalMarketing({db,operator:assisted.operator,access,adminClients,creations,integration,providers,privateStorage,assetPath,storeAsset,queue,setJob,audit,now:assistedNow});
   const aiManagement=createAIManagement({db,operator:assisted.operator,integration,now:assistedNow});
@@ -1578,6 +1589,66 @@ export async function createPortal({db, dataDir, userFrom, json, safeOrigin, pro
   }
   async function handle(req, res, pathname) {
     const url = new URL(req.url, 'http://localhost');
+    const localProducts=createLocalProducts({db,customer:localCustomer,operator:assisted.operator});
+    if(pathname.startsWith('/api/local/customer/')){
+      res.setHeader('Cache-Control','no-store');
+      const token=(req.headers.cookie||'').split(';').map(s=>s.trim()).find(s=>s.startsWith('helpu_local='))?.slice(12)||'';
+      const action=pathname.split('/').at(-1),address=cloud?String(req.headers['x-forwarded-for']||req.socket.remoteAddress).split(',')[0]:req.socket.remoteAddress;
+      if(req.method==='GET'&&action==='photo'){const a=await localCustomer.photo(token,url.searchParams.get('id')),file=await assetPath(a.org_id,a.id),stat=fs.statSync(file);res.writeHead(200,{'Content-Type':a.mime,'Content-Length':stat.size,'Cache-Control':'no-store','X-Content-Type-Options':'nosniff'});fs.createReadStream(file).on('error',()=>res.destroy()).pipe(res);return true;}
+      if(req.method==='GET'&&action==='products'){json(res,200,await localProducts.listing(token));return true;}
+      if(req.method==='GET'&&action==='me'){const d=await localCustomer.dashboard(token);json(res,200,{...d,billing:d.business.productsOnly?null:await localLaunch.billing(d.business.id)});return true;}
+      if(req.method!=='POST')fail('Método não permitido.',405);
+      if(!safeOrigin(req))fail('Origem não permitida.',403);
+      if(action==='photo'&&req.method==='POST'){json(res,201,await localCustomer.upload(token,decodeURIComponent(String(req.headers['x-file-name']||'foto.jpg')),await readRaw(req,3*1024*1024)));return true;}
+      const d=await body(req);let result;
+      if(action==='activate'||action==='login'||action==='register'){
+        result=action==='register'?await localCustomer.register(d,address):action==='activate'?await localCustomer.activate(d):await localCustomer.login(d,address);
+        res.setHeader('Set-Cookie','helpu_local='+result.token+'; HttpOnly; SameSite=Strict; Path=/api/local/customer; Max-Age=604800'+(cloud?'; Secure':''));result={ok:true};
+      }else if(action==='products')result=await localProducts.edit(token,d);
+      else if(action==='product-state')result=await localProducts.transition(token,d);
+      else if(action==='profile')result=await localCustomer.edit(token,d);
+      else if(action==='assistant')result=await localCustomer.assistant(token,d);
+      else if(action==='lead')result=await localCustomer.leadState(token,d);
+      else if(action==='password')result=await localCustomer.changePassword(token,d);
+      else if(action==='logout'){result=await localCustomer.logout(token);res.setHeader('Set-Cookie','helpu_local=; HttpOnly; SameSite=Strict; Path=/api/local/customer; Max-Age=0'+(cloud?'; Secure':''));}
+      else fail('Recurso não encontrado.',404);
+      json(res,200,result);return true;
+    }
+    if(pathname==='/api/local/products'&&req.method==='GET'){
+      res.setHeader('Cache-Control','no-store');
+      const launch=await localLaunch.status(await userFrom(req),url.searchParams.get('preview')==='1');
+      json(res,200,{...(launch.locked?{products:[]}:await localProducts.publicList()),launch});return true;
+    }
+    if(pathname==='/api/local/product-photo'&&req.method==='GET'){
+      const user=await userFrom(req),launch=await localLaunch.status(user,url.searchParams.get('preview')==='1');
+      if(launch.locked&&!assisted.operator(user))fail('A Helpu Local está em pré-lançamento.',423);
+      const a=await localProducts.photo(url.searchParams.get('product'),url.searchParams.get('id'),user),file=await assetPath(a.org_id,a.id),stat=fs.statSync(file);
+      res.writeHead(200,{'Content-Type':a.mime,'Content-Length':stat.size,'Cache-Control':'no-store','X-Content-Type-Options':'nosniff'});fs.createReadStream(file).on('error',()=>res.destroy()).pipe(res);return true;
+    }
+    if(pathname==='/api/local/launch'&&req.method==='GET'){res.setHeader('Cache-Control','no-store');json(res,200,await localLaunch.status(await userFrom(req),url.searchParams.get('preview')==='1'));return true;}
+    if(['/api/local/lead','/api/local/metric'].includes(pathname)){
+      const launch=await localLaunch.status(await userFrom(req),url.searchParams.get('preview')==='1');if(launch.locked)fail('A Helpu Local está em pré-lançamento.',423);if(launch.preview){json(res,200,{ok:true,preview:true,summary:'Prévia administrativa. Nenhuma solicitação foi enviada.'});return true;}
+      if(req.method!=='POST')fail('Método não permitido.',405);
+      if(!safeOrigin(req))fail('Origem não permitida.',403);
+      if(pathname.endsWith('/lead')&&!captureAllowed(req))fail('Aguarde alguns minutos.',429);
+      const d=await body(req),address=cloud?String(req.headers['x-forwarded-for']||req.socket.remoteAddress).split(',')[0]:req.socket.remoteAddress;
+      json(res,200,pathname.endsWith('/lead')?await localCustomer.publicLead(d,address):await localCustomer.metric(d,address));return true;
+    }
+    if(pathname.startsWith('/api/local/media/')){
+      const restricted=(await localLaunch.status(await userFrom(req),url.searchParams.get('preview')==='1')).locked;if(restricted&&url.searchParams.get('teaser')!=='1')fail('Conteúdo disponível após o lançamento.',423);
+      if(!['GET','HEAD'].includes(req.method))fail('Método não permitido.',405);
+      const parts=pathname.split('/');if(parts.length!==6)fail('Foto indisponível.',404);
+      const a=await (restricted?localMarketplace.teaserMedia(parts[4],parts[5]):localMarketplace.media(parts[4],parts[5])),file=await assetPath(a.org_id,a.id),stat=fs.statSync(file);
+      res.writeHead(200,{'Content-Type':a.mime,'Content-Length':stat.size,'Cache-Control':'no-store','X-Content-Type-Options':'nosniff'});
+      if(req.method==='HEAD')res.end();else fs.createReadStream(file).on('error',()=>res.destroy()).pipe(res);return true;
+    }
+    if(pathname==='/api/local/businesses'&&req.method==='GET'){res.setHeader('Cache-Control','no-store');const launch=await localLaunch.status(await userFrom(req),url.searchParams.get('preview')==='1');const content=launch.locked?{businesses:[],teasers:await localMarketplace.teasers()}:await localMarketplace.published();if(launch.preview){for(const b of content.businesses){const previewMedia=v=>v?v+'?preview=1':v;b.photos=b.photos.map(previewMedia);b.logo=previewMedia(b.logo);for(const x of [...b.catalog,...b.events])x.image=previewMedia(x.image);}}json(res,200,{...content,launch});return true;}
+    if(pathname==='/api/local/apply'){
+      if(req.method!=='POST')fail('Método não permitido.',405);
+      if(!safeOrigin(req))fail('Origem não permitida.',403);
+      if(!captureAllowed(req))fail('Aguarde alguns minutos antes de tentar novamente.',429);
+      json(res,201,await localMarketplace.submit(await body(req)));return true;
+    }
     if(pathname.startsWith('/api/presentations/')){
       const match=/^\/api\/presentations\/([a-f\d-]{36})(?:\/(interest|media)(?:\/(\d))?)?$/.exec(pathname);
       if(!match)fail('Apresentação indisponível.',404);
@@ -1649,6 +1720,20 @@ export async function createPortal({db, dataDir, userFrom, json, safeOrigin, pro
     const user = await userFrom(req);
     if (!user) fail('Entre para acessar o portal.', 401);
     if (!['GET', 'HEAD'].includes(req.method) && !safeOrigin(req)) fail('Origem não permitida.', 403);
+    if(pathname==='/api/portal/local-admin-photo'&&req.method==='GET'){const a=await localMarketplace.adminPhoto(user,url.searchParams.get('business'),url.searchParams.get('id')),file=await assetPath(a.org_id,a.id),stat=fs.statSync(file);res.writeHead(200,{'Content-Type':a.mime,'Content-Length':stat.size,'Cache-Control':'no-store','X-Content-Type-Options':'nosniff'});fs.createReadStream(file).on('error',()=>res.destroy()).pipe(res);return true;}
+    if(pathname==='/api/portal/local-launch'){if(!assisted.operator(user))fail('Acesso restrito à equipe Helpu.',403);res.setHeader('Cache-Control','no-store');if(req.method==='GET')json(res,200,await localLaunch.read());else if(req.method==='POST')json(res,200,await localLaunch.update(user,await body(req)));else fail('Método não permitido.',405);return true;}
+    if(pathname==='/api/portal/local-products'){
+      res.setHeader('Cache-Control','no-store');
+      if(req.method==='GET')json(res,200,await localProducts.admin(user));
+      else if(req.method==='POST')json(res,200,await localProducts.admin(user,await body(req)));
+      else fail('Método não permitido.',405);return true;
+    }
+    if(pathname==='/api/portal/local-admin'){
+      if(req.method==='GET')json(res,200,await localMarketplace.listing(user));
+      else if(req.method==='POST'){const d=await body(req);json(res,200,await (d.action==='delete'?localMarketplace.remove(user,d):d.action==='restore'?localMarketplace.remove(user,d,true):d.action==='requests'?localCustomer.adminRequests(user,d):d.action==='request-state'?localCustomer.adminRequestState(user,d):d.action==='invite-status'?localCustomer.officialStatus(user,d):d.action==='invite-send'?localCustomer.sendInvite(user,d):d.action==='invite'?localCustomer.invite(user,d):d.action==='create'?localMarketplace.create(user,d):localMarketplace.update(user,d.id,d)));}
+      else fail('Método não permitido.',405);
+      return true;
+    }
     if (pathname === '/api/portal/bootstrap' && req.method === 'GET') {
       json(res, 200, {
         user,

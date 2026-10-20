@@ -2,6 +2,7 @@ import './admin-evolution.test.mjs';
 import './commercial.test.mjs';
 import './consultations.test.mjs';
 import './auth.test.mjs';
+import './local-recovery.test.mjs';
 import './signup-onboarding.test.mjs';
 import './contextual-help.test.mjs';
 import './assisted-publishing.test.mjs';
@@ -76,3 +77,7 @@ import './customer-portal.test.mjs';
 import './whatsapp-manual.test.mjs';
 
 import './video-direction.test.mjs';
+import './local-products.test.mjs';
+import './product-search.test.mjs';
+import './product-validation.test.mjs';
+import './product-editor.test.mjs';

@@ -17,7 +17,7 @@ function scripts(directory) {
 }
 const files = [
   ...fs.readdirSync(project).filter(name => /\.(mjs|js|cjs)$/.test(name)).map(name => path.join(project, name)),
-  ...['portal', 'api', 'scripts', 'services', 'dist/assets', 'tests'].flatMap(name => scripts(path.join(project, name))),
+  ...['portal', 'api', 'scripts', 'services', 'dist/assets', 'dist/local', 'tests'].flatMap(name => scripts(path.join(project, name))),
 ];
 for (const file of files) {
   const result = spawnSync(process.execPath, ['--check', file], {stdio: 'inherit'});

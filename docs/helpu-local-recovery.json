@@ -1,0 +1,174 @@
+{
+  "deploymentId": "3GEP1PRqztRrjxZWLnZJm8iTuUm5",
+  "source": "https://vercel.com/mateus-maraschin-forests-projects/helpu/3GEP1PRqztRrjxZWLnZJm8iTuUm5/source",
+  "productionDate": "2026-09-29",
+  "deploymentMethod": "vercel deploy",
+  "baselineCommit": "25058bac77b08e375990acd66e7ed9ce4cc1f9f5",
+  "recoveredAt": "2026-10-20",
+  "serverRecovery": "Authenticated deployment source viewer; clipboard transport; normalized line endings for existing files",
+  "publicRecovery": "https://www.helpumkt.com/; local/local.js compared to authenticated source ignoring line endings and trailing whitespace",
+  "scope": "Helpu Local modules, public interface and changed shared application files. Existing unrelated source retained from Git.",
+  "excluded": [
+    "production data",
+    "credentials",
+    "environment variables"
+  ],
+  "localAdjustments": [
+    "server.mjs: map /local and /local/ to /local/index.html; serve webmanifest MIME type",
+    "tests/local-recovery.test.mjs and tests/run.mjs: local recovery regression coverage"
+  ],
+  "files": [
+    {
+      "path": "dist/admin.html",
+      "sha256": "07eae6d49dae016356a0cd7f47bafe96377b50a7f0a07cd6c69edfb664b85283"
+    },
+    {
+      "path": "dist/assets/admin.css",
+      "sha256": "05832a4a3b1853232234671ea70cbe81b99a2100f3ba72733b3d81d2863c90ef"
+    },
+    {
+      "path": "dist/assets/admin.js",
+      "sha256": "2c25e0bf34c2704ecb931de475d1299064f507186b52668e07ca1277f610d023"
+    },
+    {
+      "path": "dist/assets/styles.css",
+      "sha256": "ee80ad774b9888d80eb4ec995b779a5318ff29fdd1fd2cb05a7b24e8ef9d0d30"
+    },
+    {
+      "path": "dist/index.html",
+      "sha256": "664aba79c0cf62d6d1f5b4af1f9bdc945fd6341aebe51ffa8a3bad95d81b242a"
+    },
+    {
+      "path": "portal/core.mjs",
+      "sha256": "69d6debb64dab4d8b0bf3f198cb905e48434a282adf58be5579221558418f308"
+    },
+    {
+      "path": "portal/storage.mjs",
+      "sha256": "e37ac4bb037afce50b84ddb7bf32d58b83ef5131073f24a7d140bffc3314f0ec"
+    },
+    {
+      "path": "vercel.json",
+      "sha256": "810bbf0c5a815fa400662d307ab68542e9eba435427e35ee760ec0e896512720"
+    },
+    {
+      "path": "dist/assets/helpu-wordmark-black.png",
+      "sha256": "104ae9da4e10477767aaef399945025f1b3c60b9f73e9379c73fca50b5bc1fc9"
+    },
+    {
+      "path": "dist/assets/local-admin-ui.js",
+      "sha256": "62342648909fb2341998f1ab4d2ddacf003a336ebae989d2aa36e5dccbb46061"
+    },
+    {
+      "path": "dist/local/assets/helpu-local-icon-dark.png",
+      "sha256": "82f8bacdd69b0b412c578b127ea77f8d108c0ade75d908c427b81c0aef491959"
+    },
+    {
+      "path": "dist/local/assets/helpu-local-icon.png",
+      "sha256": "c694e47f76ca65171cb06078b210455bd1ab91e681ad820dfea4d1a65424e662"
+    },
+    {
+      "path": "dist/local/assets/helpu-local-logo.png",
+      "sha256": "bbcfb98bb926684a6d136a31dae031ff2f1f821a41b5a239f29d3ee0635b24bf"
+    },
+    {
+      "path": "dist/local/business-logo.js",
+      "sha256": "50cca731392e5daf8c0c044ea9b8c4fb432334c58a0e2c1bef7e689e7ea220af"
+    },
+    {
+      "path": "dist/local/cliente.css",
+      "sha256": "0d4554cd083fcde9e2794f9873d96cbd9bc85146b447d52f9437de56b1f88303"
+    },
+    {
+      "path": "dist/local/cliente.html",
+      "sha256": "e21bea6a43f6ac7d040df7314122f96badae2222b5cf17da768e089e93d72aee"
+    },
+    {
+      "path": "dist/local/cliente.js",
+      "sha256": "7415712f2a90299b36101281117c09e00e1c614142af65e1fed84e82f3e3a419"
+    },
+    {
+      "path": "dist/local/customer-assistant.js",
+      "sha256": "140d378d4f76b09351a394d7b164470d9344d8ab4c8f5f7eaf152294fd774dd9"
+    },
+    {
+      "path": "dist/local/event-editor.js",
+      "sha256": "c48af25ecb219ae0212074605f25b53f98a09cf2566a5c173c847c12e290b6b2"
+    },
+    {
+      "path": "dist/local/index.html",
+      "sha256": "8cd776e775c07cefe32e9f05e10cf1cb30ac9d16d78c47ef81a00bb65cf195b4"
+    },
+    {
+      "path": "dist/local/local-state.js",
+      "sha256": "c0d7904dfc58bb22e4ac68cc0f04524bcbe782316c15eaac38693433252a4556"
+    },
+    {
+      "path": "dist/local/local.css",
+      "sha256": "8f5be98b96536eb1842b0fc3063ac243fe9d65031dd024b638c855f0493962cd"
+    },
+    {
+      "path": "dist/local/local.js",
+      "sha256": "4ac3ddd7bd0357892894ee1f7a5122d840e7ba6d2c1ebe8bc2c6f8b45b521457"
+    },
+    {
+      "path": "dist/local/manifest.webmanifest",
+      "sha256": "79f8cac823d4935860033e1b1b01bdf284c6a46e98fe2b683bbab88d82681b96"
+    },
+    {
+      "path": "dist/local/mobile.css",
+      "sha256": "8323825f79e92a6657ba40f6ddb8c6d4636d9339500c7c014817411ee54cc404"
+    },
+    {
+      "path": "dist/local/photos.png",
+      "sha256": "999c88e370bbcb26ce3ee225d6110f9298421d968046bd8e653531bab4229458"
+    },
+    {
+      "path": "dist/local/preview.html",
+      "sha256": "0b06cf085af6b96dac53c15fd9c80735fd92a03155353dd1b5a7ebf1c951e590"
+    },
+    {
+      "path": "dist/local/refinement.css",
+      "sha256": "37e08c1a981fae8729ed5019c4a7e9426bdfe4f380581f65ab5519c58f9416dc"
+    },
+    {
+      "path": "dist/local/sector-config.js",
+      "sha256": "5e33bcb5e52ce730e905f3f0634d770cbc6de3059f63a8af94ef2defdc4996c8"
+    },
+    {
+      "path": "dist/local/sector-flows.js",
+      "sha256": "39b17ad6a925039320ff9c31c3416ec692ab155b8f46275b4d451bd4b22cfde5"
+    },
+    {
+      "path": "dist/local/surfaces.css",
+      "sha256": "4c303f7df1b4b69e746163256234e75c78bbe72dbba499dd247562a24d8115fe"
+    },
+    {
+      "path": "dist/local/ui-icons.js",
+      "sha256": "4b51c7d3bd368aa08e1c27e33f855b7d57459c2786eb24a345fea348eeccea00"
+    },
+    {
+      "path": "portal/local-assistant.mjs",
+      "sha256": "9e38da01c5958c5f4d0f1e1561f6ffc898b8717361e7e164f17534f89b6fffb1"
+    },
+    {
+      "path": "portal/local-customer.mjs",
+      "sha256": "9f413a79d07465e56e5bd4998af746b97442b9bec585849694357413766e9542"
+    },
+    {
+      "path": "portal/local-events.mjs",
+      "sha256": "9a37f5afbd0ea2ceb49fd72257e07e50555d989a62e9a25f19280c3b299e4995"
+    },
+    {
+      "path": "portal/local-launch.mjs",
+      "sha256": "de26328d15249c98fa1149e9f5359307df687cc710f571633cb81d132076e2ce"
+    },
+    {
+      "path": "portal/local-marketplace.mjs",
+      "sha256": "8966a7350a4ed26b2543307914007c8f103021d3c78dcbbc08cef3959fd516f6"
+    },
+    {
+      "path": "portal/local-requests.mjs",
+      "sha256": "ed4346daefdaecfa27612495d739ba815d5c574ee5b4e32c30c569a8e47e0cf8"
+    }
+  ]
+}
