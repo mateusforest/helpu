@@ -26,12 +26,12 @@ export function createLocalProducts({db, customer, operator, now = Date.now}) {
   function version(old, d) { if (old.version !== d.version) fail('O anúncio mudou. Recarregue antes de tentar novamente.', 409); }
   async function own(token, id) {
     const a = await customer.authenticate(token), p = await read(id);
-    if (!p || p.businessId !== a.businessId) fail('Anúncio não encontrado.', 404);
+    if (!p || p.deletedAt || p.businessId !== a.businessId) fail('Anúncio não encontrado.', 404);
     return p;
   }
   async function listing(token) {
     const a = await customer.authenticate(token);
-    return {products: (await db.prepare("SELECT * FROM records WHERE org_id=? AND kind='local_product' AND json_extract(data,'$.businessId')=? ORDER BY created_at DESC").all(ORG, a.businessId)).map(decode)};
+    return {products: (await db.prepare("SELECT * FROM records WHERE org_id=? AND kind='local_product' AND json_extract(data,'$.businessId')=? ORDER BY created_at DESC").all(ORG, a.businessId)).map(decode).filter(p=>!p.deletedAt)};
   }
   async function edit(token, d) {
     const a = await customer.authenticate(token), old = d.id ? await own(token, d.id) : null;
@@ -66,6 +66,14 @@ export function createLocalProducts({db, customer, operator, now = Date.now}) {
       return {products};
     }
     const p = await read(d.id); if (!p) fail('Anúncio não encontrado.', 404); version(p, d);
+    if (['delete','restore'].includes(d.action)) {
+      const restore=d.action==='restore', reason=text(d.reason||'',1000);
+      if(reason.length<5)fail('Explique o motivo em pelo menos 5 caracteres.');
+      if(restore?!p.deletedAt:!!p.deletedAt)fail('O anúncio já mudou de situação. Atualize a lista.',409);
+      return save({...p,state:restore?(p.soldAt?'Vendido':'Rascunho'):'Excluído',approved:false,deletedAt:restore?null:now(),moderationReason:reason,
+        history:[...(p.history||[]),{at:now(),actor:String(user.id),state:restore?(p.soldAt?'Restaurado como vendido, fora da vitrine':'Restaurado como rascunho'):'Excluído',reason}].slice(-100)},p);
+    }
+    if(p.deletedAt)fail('Restaure o anúncio antes de moderar.',409);
     if (!['Publicado', 'Rejeitado', 'Pausado'].includes(d.state) || (d.state === 'Publicado' && (p.soldAt || p.state !== 'Em análise'))) fail('Mudança de moderação inválida.', 409);
     const b = await seller(p.businessId); if (!b || b.state === 'Inativo') fail('O anunciante está inativo.', 409);
     const reason = text(d.reason || '', 1000);
@@ -75,14 +83,14 @@ export function createLocalProducts({db, customer, operator, now = Date.now}) {
   }
   async function visible(id) {
     const p = await read(id), b = p && await seller(p.businessId);
-    if (!p || !p.approved || !['Publicado', 'Vendido'].includes(p.state) || !b || b.state === 'Inativo') fail('Anúncio indisponível.', 404);
+    if (!p || p.deletedAt || !p.approved || !['Publicado', 'Vendido'].includes(p.state) || !b || b.state === 'Inativo') fail('Anúncio indisponível.', 404);
     return {p, b};
   }
   async function publicList() {
     const rows = await db.prepare("SELECT * FROM records WHERE org_id=? AND kind='local_product' AND json_extract(data,'$.state') IN ('Publicado','Vendido') ORDER BY created_at DESC").all(ORG);
     const products = [];
     for (const row of rows) {
-      const p = decode(row), b = await seller(p.businessId); if (!p.approved || !b || b.state === 'Inativo') continue;
+      const p = decode(row), b = await seller(p.businessId); if (p.deletedAt || !p.approved || !b || b.state === 'Inativo') continue;
       products.push({id: p.id, title: p.title, description: p.description, city: p.city, category: p.category,
         condition: p.condition, priceCents: p.priceCents, state: p.state, createdAt: p.createdAt,
         sellerName: p.sellerName || b.name, sellerType: b.sellerType || 'Loja', phone: p.state === 'Publicado' ? p.phone : null,

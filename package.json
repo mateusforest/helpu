@@ -10,7 +10,7 @@
     "doctor": "node scripts/doctor.mjs",
     "check": "node scripts/check.mjs",
     "test": "node tests/run.mjs",
-    "test:marketplace": "node --test tests/local-real-estate.test.mjs tests/local-onboarding.test.mjs tests/local-email.test.mjs tests/local-products.test.mjs tests/local-recovery.test.mjs tests/auth.test.mjs tests/admin-routing.test.mjs tests/customer-portal.test.mjs tests/product-search.test.mjs tests/product-validation.test.mjs tests/product-editor.test.mjs"
+    "test:marketplace": "node --test tests/local-management.test.mjs tests/local-real-estate.test.mjs tests/local-onboarding.test.mjs tests/local-email.test.mjs tests/local-products.test.mjs tests/local-recovery.test.mjs tests/auth.test.mjs tests/admin-routing.test.mjs tests/customer-portal.test.mjs tests/product-search.test.mjs tests/product-validation.test.mjs tests/product-editor.test.mjs"
   },
   "engines": {
     "node": "22.x"

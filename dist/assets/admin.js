@@ -1,4 +1,4 @@
-import {createLocalAdminUI} from './local-admin-ui.js?v=20261022-contas';
+import {createLocalAdminUI} from './local-admin-ui.js?v=20261022-gestao';
 import {createAdminClientsUI} from './admin-clients-ui.js';
 import {createInternalMarketingUI} from './internal-marketing-ui.js';
 import {createManualWhatsAppUI} from './whatsapp-manual-ui.js';

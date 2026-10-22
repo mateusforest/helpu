@@ -41,7 +41,32 @@ Sem configuração, cadastro/login e preparação dos anúncios funcionam normal
 
 Esta entrega prepara e testa a integração com um remetente simulado. Não cria conta na Resend, não altera DNS e não confirma entrega externa sem credenciais. Nenhuma mensagem real é enviada pelos testes ou pelo servidor de demonstração.
 
-## Verificação
+## Administração de contas e conteúdo
+
+Em Administração → Helpu Local, as abas **Contas**, **Empresas**, **Produtos** e **Atividade** reúnem pessoas físicas, lojas, acessos de marketing e administradores. A área Clientes continua dedicada às empresas de marketing e aponta para essa gestão. O diretório interno da Helpu Local não aparece como cliente de marketing.
+
+- Bloquear uma conta encerra as sessões e impede novos logins. Desbloquear exige novo login; sessões antigas não voltam a funcionar. O bloqueio de acesso não modifica a vitrine: retire páginas e produtos separadamente, pelos controles de moderação.
+- Administradores configurados, inclusive o administrador atual e seus acessos locais com o mesmo e-mail, são protegidos contra bloqueio e exclusão.
+- Excluir uma conta remove definitivamente o login e suas sessões. Preserva empresas, produtos, imagens e histórico. Uma nova inscrição com o mesmo e-mail cria outro cadastro; para recuperar a gestão de uma empresa preservada, a equipe deve vincular o responsável por um convite de acesso ao cadastro existente.
+- A exclusão de produto retira o anúncio da vitrine e impede edição e reenvio pelo responsável. A equipe pode restaurá-lo como rascunho, sem aprovação automática. O estado de venda continua definitivo.
+- Notificações são mensagens internas no portal, com leitura registrada. Não dependem de Resend e não enviam e-mail ou WhatsApp. Cada anunciante só lê e confirma as mensagens do próprio cadastro.
+- O histórico reúne alterações das páginas, produtos e ações administrativas; a tela exibe as 200 atividades mais recentes disponíveis.
+
+### Limpeza de contas pelo backend
+
+A limpeza exige um administrador já configurado, uma prévia das contas e um identificador da lista revisada. Mudanças no inventário invalidam a prévia. Empresas, produtos e arquivos não são apagados. Contas com execuções pendentes impedem a operação; erros revertem a transação inteira.
+
+Além da tela administrativa, `scripts/local-account-cleanup.mjs` utiliza diretamente a conexão PostgreSQL autorizada. Configure `DATABASE_URL`, `DATABASE_CA_CERT` e `HELPU_OPERATOR_*` no ambiente seguro, sem salvar credenciais no Git. Execute primeiro:
+
+```text
+node scripts/local-account-cleanup.mjs --preserve-email EMAIL_DO_ADMINISTRADOR
+```
+
+Essa execução é somente de leitura. Revise os acessos que serão removidos, os administradores protegidos e todos os cadastros preservados. Para aplicar exatamente essa prévia, execute novamente com `--apply DIGEST_DA_PREVIA`. O relatório contém contatos privados; não deve ser publicado ou commitado. A ferramenta não usa Supabase Auth: as contas da Helpu estão no schema privado `helpu`.
+
+## Verificação da gestão
+
+`tests/local-management.test.mjs` verifica isolamento de notificações, revogação de sessões, proteção dos administradores, exclusão/restauração de produtos, concorrência na prévia, rollback de limpeza e preservação byte a byte de quatro cadastros e seus produtos. Executa em SQLite e PostgreSQL com a função restrita usada pela aplicação. Os testes não limpam a produção.
 
 `npm run test:marketplace` cobre cadastro, login, convites antigos, rascunho, recusa/correção, aprovação, pausa, permissões, fotos de produtos, confirmação, expiração e reutilização de links, falhas de envio e troca de senha. O fluxo novo roda em SQLite e em PostgreSQL local com as migrações e a função de banco da aplicação cloud. Não substitui teste de entrega externa na Resend.
 

@@ -1,4 +1,5 @@
 import {createLocalProducts} from './local-products.mjs';
+import {createLocalControl} from './local-control.mjs';
 import {createLocalLaunch} from './local-launch.mjs';
 import {createLocalEmail} from './local-email.mjs';
 import {createLocalCustomer} from './local-customer.mjs';
@@ -1591,12 +1592,14 @@ export async function createPortal({db, dataDir, userFrom, json, safeOrigin, pro
   async function handle(req, res, pathname) {
     const url = new URL(req.url, 'http://localhost');
     const localProducts=createLocalProducts({db,customer:localCustomer,operator:assisted.operator});
+    const localControl=createLocalControl({db,customer:localCustomer,operator:assisted.operator});
     if(pathname.startsWith('/api/local/customer/')){
       res.setHeader('Cache-Control','no-store');
       const token=(req.headers.cookie||'').split(';').map(s=>s.trim()).find(s=>s.startsWith('helpu_local='))?.slice(12)||'';
       const action=pathname.split('/').at(-1),address=cloud?String(req.headers['x-forwarded-for']||req.socket.remoteAddress).split(',')[0]:req.socket.remoteAddress;
       if(req.method==='GET'&&action==='photo'){const a=await localCustomer.photo(token,url.searchParams.get('id')),file=await assetPath(a.org_id,a.id),stat=fs.statSync(file);res.writeHead(200,{'Content-Type':a.mime,'Content-Length':stat.size,'Cache-Control':'no-store','X-Content-Type-Options':'nosniff'});fs.createReadStream(file).on('error',()=>res.destroy()).pipe(res);return true;}
       if(req.method==='GET'&&action==='products'){json(res,200,await localProducts.listing(token));return true;}
+      if(req.method==='GET'&&action==='notifications'){json(res,200,await localControl.notifications(token));return true;}
       if(req.method==='GET'&&action==='me'){const d=await localCustomer.dashboard(token);json(res,200,{...d,billing:d.business.productsOnly?null:await localLaunch.billing(d.business.id)});return true;}
       if(req.method!=='POST')fail('Método não permitido.',405);
       if(!safeOrigin(req))fail('Origem não permitida.',403);
@@ -1606,6 +1609,7 @@ export async function createPortal({db, dataDir, userFrom, json, safeOrigin, pro
         result=action==='register'?await localCustomer.register(d,address):action==='activate'?await localCustomer.activate(d):await localCustomer.login(d,address);
         res.setHeader('Set-Cookie','helpu_local='+result.token+'; HttpOnly; SameSite=Strict; Path=/api/local/customer; Max-Age=604800'+(cloud?'; Secure':''));result={ok:true};
       }else if(action==='products')result=await localProducts.edit(token,d);
+      else if(action==='notification-read')result=await localControl.notifications(token,d);
       else if(action==='product-state')result=await localProducts.transition(token,d);
       else if(action==='forgot-password')result=await localCustomer.forgotPassword(d,address);
       else if(action==='reset-password')result=await localCustomer.resetPassword(d,address);
@@ -1726,6 +1730,15 @@ export async function createPortal({db, dataDir, userFrom, json, safeOrigin, pro
     const user = await userFrom(req);
     if (!user) fail('Entre para acessar o portal.', 401);
     if (!['GET', 'HEAD'].includes(req.method) && !safeOrigin(req)) fail('Origem não permitida.', 403);
+    if(pathname==='/api/portal/local-control'){
+      res.setHeader('Cache-Control','no-store');
+      if(req.method==='GET')json(res,200,await localControl.listing(user));
+      else if(req.method==='POST'){
+        const d=await body(req);
+        json(res,200,await (d.action==='cleanup-preview'?localControl.cleanupPreview(user,d.preserveEmail):d.action==='cleanup'?localControl.cleanup(user,d):d.action==='notify'?localControl.notify(user,d):localControl.accountAction(user,d)));
+      }else fail('Método não permitido.',405);
+      return true;
+    }
     if(pathname==='/api/portal/local-admin-photo'&&req.method==='GET'){const a=await localMarketplace.adminPhoto(user,url.searchParams.get('business'),url.searchParams.get('id')),file=await assetPath(a.org_id,a.id),stat=fs.statSync(file);res.writeHead(200,{'Content-Type':a.mime,'Content-Length':stat.size,'Cache-Control':'no-store','X-Content-Type-Options':'nosniff'});fs.createReadStream(file).on('error',()=>res.destroy()).pipe(res);return true;}
     if(pathname==='/api/portal/local-launch'){if(!assisted.operator(user))fail('Acesso restrito à equipe Helpu.',403);res.setHeader('Cache-Control','no-store');if(req.method==='GET')json(res,200,await localLaunch.read());else if(req.method==='POST')json(res,200,await localLaunch.update(user,await body(req)));else fail('Método não permitido.',405);return true;}
     if(pathname==='/api/portal/local-products'){

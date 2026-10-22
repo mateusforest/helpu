@@ -1,4 +1,5 @@
 import {createAccount} from './portal/account.mjs';
+import {generalAccountBlocked} from './portal/local-control.mjs';
 import http from 'node:http';
 import fs from 'node:fs';
 import path from 'node:path';
@@ -70,7 +71,8 @@ export async function createHelpuServer({dataDir = process.env.HELPU_DATA_DIR ||
   }
   async function userFrom(req) {
     const token = tokenFrom(req);
-    return (/^[a-f0-9]{64}$/).test(token) ? await findSession.get(hashToken(token), Date.now()) : undefined;
+    const user=(/^[a-f0-9]{64}$/).test(token) ? await findSession.get(hashToken(token), Date.now()) : undefined;
+    return user && !(await generalAccountBlocked(db,user.id)) ? user : undefined;
   }
   async function session(res, id) {
     const token = randomBytes(32).toString('hex');
@@ -255,6 +257,7 @@ export async function createHelpuServer({dataDir = process.env.HELPU_DATA_DIR ||
           });
           return;
         }
+        if(await generalAccountBlocked(db,user.id)){json(res,403,{error:'Seu acesso está bloqueado. Entre em contato com a Helpu.'});return;}
         const previousToken = tokenFrom(req);
         if (previousToken) await removeSession.run(hashToken(previousToken));
         await session(res, user.id);
