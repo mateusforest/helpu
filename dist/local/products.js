@@ -5,7 +5,7 @@ const mode = document.body.dataset.mode;
 const admin = mode === 'manage' && new URLSearchParams(location.search).get('admin') === '1';
 const esc = v => String(v ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const money = v => (v / 100).toLocaleString('pt-BR', {style:'currency', currency:'BRL'});
-const categories = ['Eletrônicos', 'Casa e móveis', 'Moda', 'Esportes', 'Ferramentas', 'Infantil', 'Veículos', 'Outros'];
+const categories = ['Eletrônicos', 'Casa e móveis', 'Moda', 'Esportes', 'Ferramentas', 'Infantil', 'Veículos', 'Imóveis', 'Outros'];
 let products = [], photos = [], editing = null, account = null;
 let busy = false;
 function lockEditor(scope) {
@@ -44,7 +44,7 @@ function draw() {
   document.querySelector('#product-grid').innerHTML = list.length ? list.map(p => card(p, mode === 'manage')).join('') : '<div class="product-empty"><h2>Nenhum anúncio por aqui ainda.</h2><p>Experimente outros filtros ou anuncie o primeiro item.</p></div>';
 }
 function detail(p) {
-  root.innerHTML = `<a href="/local/produtos.html">← Todos os produtos</a><article class="product-detail"><div class="product-gallery">${p.photos.length ? p.photos.map(src => `<img src="${esc(src)}" alt="${esc(p.title)}">`).join('') : '<div class="product-placeholder">Sem foto</div>'}</div><section><span class="product-badge">${esc(p.state === 'Vendido' ? 'Vendido' : p.condition)}</span><h1>${esc(p.title)}</h1><strong class="product-price">${money(p.priceCents)}</strong><p>${esc(p.category)} · ${esc(p.city)}</p><p class="product-description">${esc(p.description)}</p><p>Anunciado por <strong>${esc(p.sellerName)}</strong> · ${esc(p.sellerType)}</p>${p.phone ? `<a class="product-primary" href="https://wa.me/${encodeURIComponent(p.phone)}?text=${encodeURIComponent('Olá! Tenho interesse no anúncio: ' + p.title)}" target="_blank" rel="noopener">Conversar com anunciante ↗</a>` : '<p class="product-sold">Este item já foi vendido.</p>'}<p class="product-note">Combine pagamento e entrega diretamente com o anunciante. Confira o produto antes de pagar.</p></section></article>`;
+  root.innerHTML = `<a href="/local/produtos.html">← Todos os produtos</a><article class="product-detail"><div class="product-gallery">${p.photos.length ? p.photos.map(src => `<img src="${esc(src)}" alt="${esc(p.title)}">`).join('') : '<div class="product-placeholder">Sem foto</div>'}</div><section><span class="product-badge">${esc(p.state === 'Vendido' ? 'Vendido' : p.condition)}</span><h1>${esc(p.title)}</h1><strong class="product-price">${money(p.priceCents)}</strong><p>${esc(p.category)} · ${esc(p.city)}</p><p class="product-description">${esc(p.description)}</p><p>Anunciado por <strong>${esc(p.sellerName)}</strong> · ${esc(p.sellerType)}</p>${p.phone ? `<a class="product-primary" href="https://wa.me/${encodeURIComponent(p.phone)}?text=${encodeURIComponent('Olá! Tenho interesse no anúncio: ' + p.title)}" target="_blank" rel="noopener">Conversar com anunciante ↗</a>` : '<p class="product-sold">Este item já foi vendido.</p>'}<p class="product-note">${p.category==='Imóveis'?'Consulte o anunciante sobre visitas, documentação e condições de negociação.':'Combine pagamento e entrega diretamente com o anunciante. Confira o produto antes de pagar.'}</p></section></article>`;
 }
 async function load() {
   if (mode === 'register') { register(); return; }

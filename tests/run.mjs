@@ -83,3 +83,4 @@ import './local-products.test.mjs';
 import './product-search.test.mjs';
 import './product-validation.test.mjs';
 import './product-editor.test.mjs';
+import './local-real-estate.test.mjs';

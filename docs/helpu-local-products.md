@@ -20,6 +20,8 @@ Encerre esse processo antes de iniciar novamente o servidor normal. Credenciais,
 
 ## Fluxo
 
+**Imobiliárias** é o segmento das empresas no catálogo, no portal e na administração. A página permite apresentar imóveis e receber solicitações de visita, que dependem de confirmação da imobiliária. **Imóveis** é a categoria dos anúncios no marketplace, disponível no cadastro, nos filtros da vitrine e na revisão administrativa. Os mesmos controles de aprovação, edição e pausa se aplicam.
+
 O anunciante cria a própria conta e entra imediatamente no portal. Empresas e lojas têm página comercial e produtos no mesmo acesso; pessoas físicas anunciam produtos. Acessos antigos por convite continuam válidos e seguem a mesma regra de aprovação. Não há contratação ou cobrança automática. Veja [cadastro e e-mail](helpu-local-accounts.md). O nome público identifica o anunciante; e-mail, histórico e informações de moderação não aparecem na vitrine.
 
 Cada anúncio tem título, descrição, categoria, condição Novo/Usado, preço em centavos, cidade, WhatsApp público e até seis fotos JPG/PNG/WebP de 3 MB cada. O limite é de 200 anúncios por conta. As imagens usam o armazenamento de arquivos já existente.

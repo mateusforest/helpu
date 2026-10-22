@@ -21,7 +21,7 @@ const paths={
  receipt:'<path d="M5 3h14v18l-3-2-4 2-4-2-3 2V3ZM8 8h8m-8 4h8m-8 4h4"/>',pin:'<path d="M20 10c0 6-8 12-8 12S4 16 4 10a8 8 0 1 1 16 0Z"/><circle cx="12" cy="10" r="3"/>',check:'<path d="m5 12 4 4L19 6"/>'
 };
 export function icon(name){return `<svg class="ui-icon" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false">${paths[name]||paths.grid}</svg>`;}
-export const categoryIconNames={'Para você':'home',Gastronomia:'food',Compras:'bag',Moda:'shirt','Serviços':'tool',Eventos:'calendar',Viagens:'plane','Automóveis':'car',Hospedagem:'bed','Beleza e bem-estar':'spark','Saúde':'health','Educação':'book',Esportes:'ball',Pets:'paw','Casa e construção':'home',Tecnologia:'monitor','Experiências':'compass',Outro:'grid'};
+export const categoryIconNames={'Para você':'home',Gastronomia:'food',Compras:'bag',Moda:'shirt','Serviços':'tool',Eventos:'calendar',Viagens:'plane','Automóveis':'car',Hospedagem:'bed','Beleza e bem-estar':'spark','Saúde':'health','Educação':'book',Esportes:'ball',Pets:'paw','Casa e construção':'home','Imobiliárias':'home',Tecnologia:'monitor','Experiências':'compass',Outro:'grid'};
 // Only interface controls are decorated; business descriptions and other user content stay intact.
 const glyphs={'↗':'arrow','←':'back','×':'close','✦':'spark','♡':'heart','♥':'heart'};
 function decorate(root){

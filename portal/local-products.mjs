@@ -1,7 +1,7 @@
 import {randomUUID} from 'node:crypto';
 
 const ORG = 'helpu-local-directory';
-export const PRODUCT_CATEGORIES = ['Eletrônicos', 'Casa e móveis', 'Moda', 'Esportes', 'Ferramentas', 'Infantil', 'Veículos', 'Outros'];
+export const PRODUCT_CATEGORIES = ['Eletrônicos', 'Casa e móveis', 'Moda', 'Esportes', 'Ferramentas', 'Infantil', 'Veículos', 'Imóveis', 'Outros'];
 const fail = (message, status = 400) => { throw Object.assign(new Error(message), {status}); };
 const decode = r => r ? {...JSON.parse(r.data), id: r.id, version: r.version} : null;
 function text(v, max) {
@@ -54,7 +54,7 @@ export function createLocalProducts({db, customer, operator, now = Date.now}) {
     const p = await own(token, d.id); version(p, d);
     if (!['Pausado', 'Vendido', 'Em análise'].includes(d.state)) fail('Situação inválida.');
     if (p.soldAt || (d.state === 'Vendido' && (!p.approved || !['Publicado', 'Pausado'].includes(p.state)))) fail('Esta mudança não está disponível para o anúncio.', 409);
-    return save({...p, sellerName:d.state==='Publicado'?b.name:p.sellerName, state: d.state, approved: d.state === 'Em análise' ? false : p.approved, soldAt: d.state === 'Vendido' ? now() : null,
+    return save({...p, state: d.state, approved: d.state === 'Em análise' ? false : p.approved, soldAt: d.state === 'Vendido' ? now() : null,
       history: [...(p.history || []), {at: now(), actor: p.businessId, state: d.state}].slice(-100)}, p);
   }
   async function admin(user, d) {
