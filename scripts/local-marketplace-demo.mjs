@@ -21,7 +21,7 @@ if (!fs.existsSync(credentialsFile)) fs.writeFileSync(credentialsFile, JSON.stri
 const accounts = JSON.parse(fs.readFileSync(credentialsFile,'utf8'));
 const {createHelpuServer} = await import('../server.mjs');
 const server = await createHelpuServer({dataDir, portalOptions:{startScheduler:false,
-  operatorEnv:{HELPU_OPERATOR_USER_IDS:'1'}, whatsappChatEnv:{}, openaiEnv:{}, instagramLoginEnv:{}, stripeEnv:{}, runtimeEnv:{}}});
+  localEmailEnv:{},operatorEnv:{HELPU_OPERATOR_USER_IDS:'1'}, whatsappChatEnv:{}, openaiEnv:{}, instagramLoginEnv:{}, stripeEnv:{}, runtimeEnv:{}}});
 const origin = 'http://127.0.0.1:4173';
 await new Promise((resolve,reject) => {server.once('error',reject);server.listen(4173,'127.0.0.1',resolve);});
 async function request(url, body, cookie = '') {

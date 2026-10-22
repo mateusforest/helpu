@@ -1,5 +1,6 @@
 import {createLocalProducts} from './local-products.mjs';
 import {createLocalLaunch} from './local-launch.mjs';
+import {createLocalEmail} from './local-email.mjs';
 import {createLocalCustomer} from './local-customer.mjs';
 import {createLocalMarketplace} from './local-marketplace.mjs';
 import {createAdminClients,clientControl} from './admin-clients.mjs';
@@ -74,7 +75,7 @@ const statuses = {
   messages: ['draft', 'recorded'],
   tasks: ['todo', 'doing', 'done']
 };
-export async function createPortal({db, dataDir, userFrom, json, safeOrigin, providers = createProviders(), startScheduler = true, browserLaunch, conversationRespond, publicationFetch, publicationResolve,cloud=false,storageClient,instagramLoginFetch,instagramLoginEnv,stripeFetch,stripeEnv,runtimeEnv,runtimeFetch,whatsappChatEnv=process.env,whatsappChatFetch,openaiEnv=process.env,deliveryOnly=true,creationRespond,reelsRenderer,operatorEnv=process.env,assistedNow=Date.now}) {
+export async function createPortal({db, dataDir, userFrom, json, safeOrigin, providers = createProviders(), startScheduler = true, browserLaunch, conversationRespond, publicationFetch, publicationResolve,cloud=false,storageClient,instagramLoginFetch,instagramLoginEnv,stripeFetch,stripeEnv,runtimeEnv,runtimeFetch,whatsappChatEnv=process.env,whatsappChatFetch,openaiEnv=process.env,deliveryOnly=true,creationRespond,reelsRenderer,operatorEnv=process.env,assistedNow=Date.now,localEmailEnv,localEmailFetch}) {
   const cloudRuntime=createCloudRuntime({env:runtimeEnv,fetcher:runtimeFetch});
   if(db.dialect==='postgres'){
     const migration=await db.prepare('SELECT version FROM portal_migrations ORDER BY version DESC LIMIT 1').get();
@@ -857,7 +858,7 @@ export async function createPortal({db, dataDir, userFrom, json, safeOrigin, pro
   const commerce=createCommerce({db,operator:assisted.operator,finance,creations,now:assistedNow});
   const localLaunch=createLocalLaunch({db,operator:assisted.operator});
   const localMarketplace=createLocalMarketplace({db,operator:assisted.operator,access});
-  const localCustomer=createLocalCustomer({db,operator:assisted.operator,marketplace:localMarketplace,storeAsset,assetType,manualWhatsApp,assist:async({business,brief,guidance,request,mode})=>{
+  const localCustomer=createLocalCustomer({db,email:createLocalEmail({env:localEmailEnv,fetcher:localEmailFetch}),operator:assisted.operator,marketplace:localMarketplace,storeAsset,assetType,manualWhatsApp,assist:async({business,brief,guidance,request,mode})=>{
     const org='helpu-local-directory',config=await integration(org,'openai');
     if(!config.apiKey)fail('A ajuda por IA está indisponível no momento. A equipe Helpu precisa ativar a conexão.',503);
     return providers.text(config,{agent:mode==='reply'?'relationship':'strategy',company:business,brief:brief+' Orientações do responsável: '+guidance,records:request?[request]:[],onUsage:response=>recordProviderUsage(db,{org_id:org,operationId:randomUUID()},response,{operation:'agent',model:response.configuredModel})});
@@ -1606,6 +1607,11 @@ export async function createPortal({db, dataDir, userFrom, json, safeOrigin, pro
         res.setHeader('Set-Cookie','helpu_local='+result.token+'; HttpOnly; SameSite=Strict; Path=/api/local/customer; Max-Age=604800'+(cloud?'; Secure':''));result={ok:true};
       }else if(action==='products')result=await localProducts.edit(token,d);
       else if(action==='product-state')result=await localProducts.transition(token,d);
+      else if(action==='forgot-password')result=await localCustomer.forgotPassword(d,address);
+      else if(action==='reset-password')result=await localCustomer.resetPassword(d,address);
+      else if(action==='verify-email')result=await localCustomer.verifyEmail(d,address);
+      else if(action==='resend-verification')result=await localCustomer.resendVerification(token);
+      else if(action==='business-pause')result=await localCustomer.pause(token,d);
       else if(action==='profile')result=await localCustomer.edit(token,d);
       else if(action==='assistant')result=await localCustomer.assistant(token,d);
       else if(action==='lead')result=await localCustomer.leadState(token,d);
@@ -1647,7 +1653,7 @@ export async function createPortal({db, dataDir, userFrom, json, safeOrigin, pro
       if(req.method!=='POST')fail('Método não permitido.',405);
       if(!safeOrigin(req))fail('Origem não permitida.',403);
       if(!captureAllowed(req))fail('Aguarde alguns minutos antes de tentar novamente.',429);
-      json(res,201,await localMarketplace.submit(await body(req)));return true;
+      fail('O cadastro mudou. Crie sua conta em /local/cadastro.html para acessar seu portal.',410);
     }
     if(pathname.startsWith('/api/presentations/')){
       const match=/^\/api\/presentations\/([a-f\d-]{36})(?:\/(interest|media)(?:\/(\d))?)?$/.exec(pathname);
@@ -1730,7 +1736,7 @@ export async function createPortal({db, dataDir, userFrom, json, safeOrigin, pro
     }
     if(pathname==='/api/portal/local-admin'){
       if(req.method==='GET')json(res,200,await localMarketplace.listing(user));
-      else if(req.method==='POST'){const d=await body(req);json(res,200,await (d.action==='delete'?localMarketplace.remove(user,d):d.action==='restore'?localMarketplace.remove(user,d,true):d.action==='requests'?localCustomer.adminRequests(user,d):d.action==='request-state'?localCustomer.adminRequestState(user,d):d.action==='invite-status'?localCustomer.officialStatus(user,d):d.action==='invite-send'?localCustomer.sendInvite(user,d):d.action==='invite'?localCustomer.invite(user,d):d.action==='create'?localMarketplace.create(user,d):localMarketplace.update(user,d.id,d)));}
+      else if(req.method==='POST'){const d=await body(req);json(res,200,await (d.action==='moderate'?localMarketplace.moderate(user,d):d.action==='delete'?localMarketplace.remove(user,d):d.action==='restore'?localMarketplace.remove(user,d,true):d.action==='requests'?localCustomer.adminRequests(user,d):d.action==='request-state'?localCustomer.adminRequestState(user,d):d.action==='invite-status'?localCustomer.officialStatus(user,d):d.action==='invite-send'?localCustomer.sendInvite(user,d):d.action==='invite'?localCustomer.invite(user,d):d.action==='create'?fail('Compartilhe /local/cadastro.html?tipo=empresa para a empresa criar sua própria conta.',410):localMarketplace.update(user,d.id,d)));}
       else fail('Método não permitido.',405);
       return true;
     }

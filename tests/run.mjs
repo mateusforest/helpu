@@ -3,6 +3,8 @@ import './commercial.test.mjs';
 import './consultations.test.mjs';
 import './auth.test.mjs';
 import './local-recovery.test.mjs';
+import './local-onboarding.test.mjs';
+import './local-email.test.mjs';
 import './signup-onboarding.test.mjs';
 import './contextual-help.test.mjs';
 import './assisted-publishing.test.mjs';

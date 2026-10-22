@@ -54,7 +54,7 @@ export function createLocalProducts({db, customer, operator, now = Date.now}) {
     const p = await own(token, d.id); version(p, d);
     if (!['Pausado', 'Vendido', 'Em análise'].includes(d.state)) fail('Situação inválida.');
     if (p.soldAt || (d.state === 'Vendido' && (!p.approved || !['Publicado', 'Pausado'].includes(p.state)))) fail('Esta mudança não está disponível para o anúncio.', 409);
-    return save({...p, state: d.state, approved: d.state === 'Em análise' ? false : p.approved, soldAt: d.state === 'Vendido' ? now() : null,
+    return save({...p, sellerName:d.state==='Publicado'?b.name:p.sellerName, state: d.state, approved: d.state === 'Em análise' ? false : p.approved, soldAt: d.state === 'Vendido' ? now() : null,
       history: [...(p.history || []), {at: now(), actor: p.businessId, state: d.state}].slice(-100)}, p);
   }
   async function admin(user, d) {
@@ -71,7 +71,7 @@ export function createLocalProducts({db, customer, operator, now = Date.now}) {
     const reason = text(d.reason || '', 1000);
     const moderationReason = d.state === 'Publicado' ? '' : reason;
     if (d.state !== 'Publicado' && moderationReason.length < 3) fail('Informe o motivo para orientar o anunciante.');
-    return save({...p, state: d.state, approved: d.state === 'Publicado', moderationReason, history: [...(p.history || []), {at: now(), actor: String(user.id), state: d.state, reason}].slice(-100)}, p);
+    return save({...p, sellerName:d.state==='Publicado'?b.name:p.sellerName, state: d.state, approved: d.state === 'Publicado', moderationReason, history: [...(p.history || []), {at: now(), actor: String(user.id), state: d.state, reason}].slice(-100)}, p);
   }
   async function visible(id) {
     const p = await read(id), b = p && await seller(p.businessId);
@@ -85,7 +85,7 @@ export function createLocalProducts({db, customer, operator, now = Date.now}) {
       const p = decode(row), b = await seller(p.businessId); if (!p.approved || !b || b.state === 'Inativo') continue;
       products.push({id: p.id, title: p.title, description: p.description, city: p.city, category: p.category,
         condition: p.condition, priceCents: p.priceCents, state: p.state, createdAt: p.createdAt,
-        sellerName: b.name, sellerType: b.sellerType || 'Loja', phone: p.state === 'Publicado' ? p.phone : null,
+        sellerName: p.sellerName || b.name, sellerType: b.sellerType || 'Loja', phone: p.state === 'Publicado' ? p.phone : null,
         photos: p.photos.map(id => '/api/local/product-photo?product=' + encodeURIComponent(p.id) + '&id=' + encodeURIComponent(id))});
     }
     return {products};

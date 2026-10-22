@@ -85,7 +85,7 @@ Esta instalação está funcionando localmente. Para páginas de captação exte
 
 O proxy deve preservar o Host público e terminar o HTTPS. Quando há origem pública, cookies recebem `Secure`. Informe a mesma origem em Autonomia → Endereço público e configure os callbacks em Integrações. Cada canal usa app secret e verify token próprios.
 
-Cadastro local não verifica o e-mail e não inclui recuperação por e-mail ou convites de equipe. Planos e faturamento têm integração com Stripe preparada, com ativação descrita em CONTA-E-CONEXOES.md. Esta entrega não é um lançamento comercial público.
+O cadastro do portal de marketing não verifica e-mail nem inclui recuperação por e-mail ou convites de equipe. A Helpu Local tem cadastro próprio, confirmação e recuperação de acesso descritos em docs/helpu-local-accounts.md. Planos e faturamento têm integração com Stripe preparada, com ativação descrita em CONTA-E-CONEXOES.md. Esta entrega não é um lançamento comercial público.
 
 ## Dados e manutenção
 

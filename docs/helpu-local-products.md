@@ -20,7 +20,7 @@ Encerre esse processo antes de iniciar novamente o servidor normal. Credenciais,
 
 ## Fluxo
 
-O anunciante cria uma conta ou usa o acesso existente recebido por convite. O cadastro exclusivo para produtos não publica uma página comercial nem ativa o plano de negócios. O nome público identifica o anunciante; e-mail, histórico e informações de moderação não aparecem na vitrine.
+O anunciante cria a própria conta e entra imediatamente no portal. Empresas e lojas têm página comercial e produtos no mesmo acesso; pessoas físicas anunciam produtos. Acessos antigos por convite continuam válidos e seguem a mesma regra de aprovação. Não há contratação ou cobrança automática. Veja [cadastro e e-mail](helpu-local-accounts.md). O nome público identifica o anunciante; e-mail, histórico e informações de moderação não aparecem na vitrine.
 
 Cada anúncio tem título, descrição, categoria, condição Novo/Usado, preço em centavos, cidade, WhatsApp público e até seis fotos JPG/PNG/WebP de 3 MB cada. O limite é de 200 anúncios por conta. As imagens usam o armazenamento de arquivos já existente.
 
@@ -30,7 +30,7 @@ Um anúncio aprovado pode ser marcado como **Vendido**, inclusive após pausa fe
 
 A navegação da Helpu Local está liberada pelo código, inclusive quando existe uma configuração antiga de pré-lançamento. Somente empresas publicadas e produtos aprovados ficam visíveis; rascunhos e dados privados continuam protegidos. A configuração histórica de lançamento é preservada para faturamento: liberar a navegação não inicia cobranças nem altera períodos de isenção. Pagamento e entrega dos produtos são combinados diretamente entre as partes; não há checkout, frete ou pagamento integrado.
 
-Na administração, “Excluir do catálogo” retira a empresa e seus produtos do público e bloqueia o acesso do responsável. A exclusão exige confirmação e pode ser revertida pelo filtro “Excluídas”. A restauração mantém o cadastro inativo até revisão e nova publicação. Apenas administradores podem excluir ou restaurar, com controle de versão para impedir alterações sobre cadastros desatualizados.
+Na administração, “Excluir do catálogo” retira a empresa e seus produtos do público e bloqueia o acesso do responsável. A exclusão exige confirmação e pode ser revertida pelo filtro “Excluídas”. A restauração mantém o cadastro inativo. A equipe pode reabilitá-lo salvando como rascunho; o responsável então envia a página pelo portal para nova aprovação. Apenas administradores podem excluir ou restaurar, com controle de versão para impedir alterações sobre cadastros desatualizados.
 
 ## Persistência e segurança
 
@@ -38,14 +38,14 @@ Registros `local_product` pertencem ao negócio/contêiner do anunciante (`busin
 
 As rotas do cliente mantêm cookie HttpOnly e SameSite Strict, validação de origem, autenticação e verificação de proprietário. Modificações usam a versão do registro para evitar sobrescritas concorrentes. Fotos privadas exigem posse; fotos públicas exigem vínculo com anúncio aprovado e visível. Anunciantes inativos deixam de aparecer publicamente.
 
-O cadastro tem limitação de tentativas e unicidade de e-mail. A recuperação de acesso continua assistida pela equipe Helpu; não foi adicionado envio de e-mail nem verificação automática de identidade.
+O cadastro tem limitação de tentativas e unicidade de e-mail. A recuperação e a confirmação de e-mail estão integradas à Resend, condicionadas à configuração privada do serviço. A confirmação valida o endereço de e-mail, não a identidade civil. Sem o serviço, cadastro e login funcionam; a tela informa que o envio ainda não foi ativado.
 
 ## Validação local
 
 Com Node 22:
 
 ```text
-node --test tests/local-products.test.mjs tests/local-recovery.test.mjs tests/auth.test.mjs tests/admin-routing.test.mjs tests/customer-portal.test.mjs
+npm run test:marketplace
 node scripts/check.mjs
 node --check dist/local/products.js
 node --check dist/local/cliente.js

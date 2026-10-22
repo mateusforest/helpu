@@ -1,4 +1,5 @@
 import test from 'node:test';
+import {legacyBusiness} from './local-legacy-fixture.mjs';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import os from 'node:os';
@@ -39,19 +40,20 @@ test('Helpu Local recuperada: rotas, cadastro, administração e acesso do clien
       assert.equal((await request('/api/local/customer/me')).status, 401);
       assert.equal((await request('/api/portal/local-admin')).status, 401);
     });
-    await t.test('cadastro público persiste uma única solicitação por chave', async () => {
-      assert.equal((await request('/api/local/apply', application)).status, 201);
-      assert.equal((await request('/api/local/apply', application)).status, 201);
+    await t.test('cadastro antigo foi retirado; empresas existentes continuam administráveis', async () => {
+      assert.equal((await request('/api/local/apply', application)).status, 410);
+      assert.equal((await request('/api/local/apply', application)).status, 410);
       const signup = await request('/api/auth/signup', {name: 'Equipe teste',
         email: 'operator@example.test', password: 'recovery-test-password-2026'});
       assert.equal(signup.status, 201);
       adminCookie = signup.headers.get('set-cookie').split(';')[0];
+      await legacyBusiness(server.database,application);
       const listing = await request('/api/portal/local-admin', null, adminCookie);
       assert.equal(listing.status, 200);
       const data = await listing.json();
       assert.equal(data.businesses.length, 1);
       business = data.businesses[0];
-      assert.equal(business.state, 'Novo cadastro');
+      assert.equal(business.state, 'Rascunho');
     });
     await t.test('equipe emite convite; cliente ativa acesso separado', async () => {
       const response = await request('/api/portal/local-admin', {
@@ -74,12 +76,14 @@ test('Helpu Local recuperada: rotas, cadastro, administração e acesso do clien
     });
     await t.test('catálogo ignora bloqueio antigo, mas exige publicação e preserva dados privados', async () => {
       assert.equal((await (await request('/api/local/businesses')).json()).businesses.length,0);
-      const published = await request('/api/portal/local-admin', {...business, action: 'update',
-        state: 'Publicado', approval: true, description: 'Loja de tecnologia criada apenas para este teste.',
+      const submitted = await request('/api/local/customer/profile', {...business,publish:true, description: 'Loja de tecnologia criada apenas para este teste.',
         publicPhone: '54999997777', notes: 'Anotação privada de teste',
         catalog: [{id: randomUUID(), name: 'Computador de teste', description: 'Item sintético',
           priceCents: 150000, available: true}],
-      }, adminCookie);
+      }, customerCookie);
+      assert.equal(submitted.status,200,await submitted.text());
+      const pending=(await (await request('/api/local/customer/me',null,customerCookie)).json()).business;
+      const published=await request('/api/portal/local-admin',{action:'moderate',id:pending.id,version:pending.version,state:'Publicado'},adminCookie);
       assert.equal(published.status, 200, await published.text());
       assert.equal((await (await request('/api/local/businesses')).json()).businesses.length,1);
       const launch = await request('/api/portal/local-launch', {
@@ -118,7 +122,7 @@ test('Helpu Local recuperada: rotas, cadastro, administração e acesso do clien
       const restored=await (await request('/api/portal/local-admin',restore,adminCookie)).json();
       assert.equal(restored.deletedAt,null);assert.equal(restored.state,'Inativo');
       assert.equal((await (await request('/api/local/businesses')).json()).businesses.length,0);
-      assert.equal((await request('/api/portal/local-admin',{...current,version:restored.version},adminCookie)).status,200);
+      assert.equal((await request('/api/portal/local-admin',{...current,state:'Rascunho',version:restored.version},adminCookie)).status,200);
       assert.equal((await request('/api/local/customer/me',null,customerCookie)).status,200);
     });
     await t.test('logout encerra o acesso do cliente', async () => {

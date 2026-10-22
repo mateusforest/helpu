@@ -1,4 +1,5 @@
 import test from 'node:test';
+import {legacyBusiness} from './local-legacy-fixture.mjs';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import os from 'node:os';
@@ -92,7 +93,7 @@ test('marketplace: pessoas, lojas, moderação, fotos, privacidade e venda', asy
         const d = {name:type === 'Loja' ? 'Loja Teste' : 'Maria Teste',email:type === 'Loja' ? 'shop@products.test' : 'person@products.test',password:'products-test-password',phone:'54999998888',sellerType:type};
         const r = await request('/api/local/customer/register',d); assert.equal(r.status,200,await r.clone().text());
         const c = cookie(r); if (type === 'Loja') shop = c; else person = c;
-        const me = await ok('/api/local/customer/me',null,c);assert.equal(me.business.sellerType,type);assert.equal(me.billing,null);
+        const me = await ok('/api/local/customer/me',null,c);assert.equal(me.business.sellerType,type);if(type==='Pessoa física')assert.equal(me.billing,null);else{assert.equal(me.business.productsOnly,false);assert.equal(me.billing.automaticCharge,false);}
       }
       assert.equal((await request('/api/local/customer/register',{name:'Duplicado',email:'person@products.test',password:'products-test-password',phone:'54999998888',sellerType:'Pessoa física'})).status,409);
       assert.equal((await request('/api/local/customer/login',{email:'person@products.test',password:'errada'})).status,401);
@@ -247,7 +248,7 @@ test('marketplace: pessoas, lojas, moderação, fotos, privacidade e venda', asy
       await ok('/api/local/customer/logout',{},person);assert.equal((await request('/api/local/customer/products',null,person)).status,401);
     });
     await t.test('loja com acesso por convite usa o marketplace sem migrar a conta', async () => {
-      const b = await ok('/api/portal/local-admin',{action:'create',name:'Loja já cadastrada',owner:'Responsável',phone:'54999998888',sector:'Tecnologia',requestKey:crypto.randomUUID()},admin);
+      const b = await legacyBusiness(server.database,{name:'Loja já cadastrada'});
       const invite = await ok('/api/portal/local-admin',{action:'invite',id:b.id,email:'invited@products.test'},admin);
       const activated = await request('/api/local/customer/activate',{token:new URL(invite.url).hash.slice('#ativar='.length),password:'products-test-password'});
       const c = cookie(activated);
