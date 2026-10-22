@@ -1,7 +1,7 @@
 # Produção da Helpu
 
 - Vercel: projeto **helpu**, equipe **mateus-maraschin-forests-projects**.
-- Endereço principal: https://helpu-seven.vercel.app.
+- Endereço principal: https://www.helpumkt.com (alias original: https://helpu-seven.vercel.app).
 - GitHub: https://github.com/mateusforest/helpu.git, branch **main** conectada à Vercel.
 - Supabase: **pgwoyxtcrkwtricejdbl**, schema privado **helpu**, bucket privado **helpu-private**.
 
@@ -37,6 +37,9 @@ após verificar sessão e empresa.
 
 ## Configuração privada
 
+Para conectar a cópia no VS Code, consulte [Conexões locais](docs/conexoes-locais.md).
+Arquivos privados e chaves não acompanham o clone do GitHub.
+
 Variáveis do ambiente Production da Vercel:
 
 - `DATABASE_URL`: pooler com o papel exclusivo helpu_runtime.
@@ -44,7 +47,7 @@ Variáveis do ambiente Production da Vercel:
 - `SUPABASE_URL`: https://pgwoyxtcrkwtricejdbl.supabase.co.
 - `SUPABASE_SERVICE_ROLE_KEY`: chave de Storage somente no backend.
 - `HELPU_INTEGRATION_KEY`: os mesmos 32 bytes originais, em base64, para ler o cofre.
-- `HELPU_PUBLIC_URL`: https://helpu-seven.vercel.app.
+- `HELPU_PUBLIC_URL`: https://www.helpumkt.com.
 - `CRON_SECRET`: segredo exclusivo do worker, também guardado no Supabase Vault.
 - `HELPU_AUTOMATIONS_ENABLED`: true para habilitar o worker validado.
 
