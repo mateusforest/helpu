@@ -79,6 +79,40 @@ Para conferir somente presença, sem mostrar valores, com Node 22:
 node --input-type=module -e "import fs from 'node:fs'; import {parseEnv} from 'node:util'; const e=parseEnv(fs.readFileSync('.env.production.local','utf8')); for(const k of ['DATABASE_URL','DATABASE_CA_CERT','SUPABASE_URL','SUPABASE_SERVICE_ROLE_KEY','HELPU_INTEGRATION_KEY','HELPU_PUBLIC_URL','CRON_SECRET']) console.log(k, e[k] && e[k] !== '[SENSITIVE]' ? 'configurada' : 'ausente');"
 ```
 
+## Acesso administrativo ao Supabase pelo terminal
+
+Em 22/10/2026, este computador foi autorizado como **Helpu VS Code** usando
+a CLI oficial 2.121.0. A pasta foi vinculada ao projeto `pgwoyxtcrkwtricejdbl`.
+O projeto retornou `ACTIVE_HEALTHY`; uma consulta confirmou o schema `helpu`
+com 18 tabelas. Nenhuma conta ou cadastro foi alterado nessa verificação.
+
+O vínculo fica em `supabase/.temp/project-ref`, ignorado pelo Git. A credencial
+de login é gerenciada pela CLI fora do código; não deve ser copiada para o
+repositório. O login no navegador e o login da CLI são separados.
+
+Para verificar o acesso, depois de preparar o terminal conforme acima:
+
+```powershell
+npx supabase@2.121.0 projects list --output json
+npx supabase@2.121.0 db query --linked --project-ref pgwoyxtcrkwtricejdbl --output json "select count(*) as table_count from information_schema.tables where table_schema='helpu';"
+```
+
+Esses comandos apenas consultam o projeto. A CLI permite administrar o banco
+com a autorização da conta, mesmo sem `DATABASE_URL` local. Isso não preenche
+as variáveis da aplicação: `.env.production.local` continua parcial e
+`npm run dev` continua usando SQLite. O script de limpeza abaixo usa conexão
+PostgreSQL própria e ainda exige sua configuração completa.
+
+Se for necessário autenticar outro computador:
+
+```powershell
+npx supabase@2.121.0 login --name "Helpu VS Code" --no-browser --agent no --output-format text
+npx supabase@2.121.0 link --project-ref pgwoyxtcrkwtricejdbl
+```
+
+Abra o link emitido pela CLI na conta que possui a Helpu e informe o código
+temporário no terminal. Não salve códigos nem tokens neste documento.
+
 ## Conferência sem alterar dados
 
 `https://www.helpumkt.com/api/health` verifica o backend publicado e uma leitura
