@@ -1,4 +1,5 @@
 import {createAccount} from './portal/account.mjs';
+import {localSeparation} from './portal/local-separation.mjs';
 import {generalAccountBlocked} from './portal/local-control.mjs';
 import http from 'node:http';
 import fs from 'node:fs';
@@ -139,6 +140,12 @@ export async function createHelpuServer({dataDir = process.env.HELPU_DATA_DIR ||
       return;
     }
     try {
+      const moved=localSeparation(pathname,req.method);
+      if(moved){
+        if(moved.status===308)res.writeHead(308,{Location:moved.destination+new URL(req.url,'http://localhost').search,'Cache-Control':'no-store'}).end();
+        else json(res,410,{error:'A Helpu Local agora tem um portal próprio. Acesse helpulocal.com para continuar.',url:moved.destination});
+        return;
+      }
       if (await handleAccount(req,res,pathname)) return;
       if (await portal.handle(req, res, pathname)) return;
       if (pathname.startsWith('/api/')) {

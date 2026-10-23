@@ -1,0 +1,98 @@
+{
+  "$schema": "https://openapi.vercel.sh/vercel.json",
+  "framework": null,
+  "installCommand": "npm ci --omit=dev --ignore-scripts",
+  "buildCommand": "node scripts/build-production.mjs",
+  "outputDirectory": "dist",
+  "rewrites": [
+    {
+      "source": "/apresenta%C3%A7%C3%A3o",
+      "destination": "/apresentacao-publica/index.html"
+    },
+    {
+      "source": "/apresenta%C3%A7%C3%A3o/",
+      "destination": "/apresentacao-publica/index.html"
+    },
+    {
+      "source": "/apresenta%c3%a7%c3%a3o",
+      "destination": "/apresentacao-publica/index.html"
+    },
+    {
+      "source": "/apresenta%c3%a7%c3%a3o/",
+      "destination": "/apresentacao-publica/index.html"
+    },
+    {
+      "source": "/apresenta\u00e7\u00e3o",
+      "destination": "/apresentacao-publica/index.html"
+    },
+    {
+      "source": "/apresenta\u00e7\u00e3o/",
+      "destination": "/apresentacao-publica/index.html"
+    },
+    {
+      "source": "/apresentacao",
+      "destination": "/apresentacao-publica/index.html"
+    },
+    {
+      "source": "/apresentacao/",
+      "destination": "/apresentacao-publica/index.html"
+    },
+    {
+      "source": "/api/:path*",
+      "destination": "/api/runtime"
+    },
+    {
+      "source": "/webhooks/helpu-whatsapp",
+      "destination": "/api/runtime"
+    },
+    {
+      "source": "/webhooks/helpu-stripe",
+      "destination": "/api/runtime"
+    }
+  ],
+  "functions": {
+    "api/**/*.mjs": {
+      "maxDuration": 300,
+      "includeFiles": "{portal/migrations/**,node_modules/{ffmpeg-static/{ffmpeg*,package.json},@ffprobe-installer/linux-x64/{ffprobe,package.json,README.md},dejavu-fonts-ttf/{package.json,LICENSE,ttf/*.ttf}}}",
+      "excludeFiles": "{services/**,deploy/**,runtime-data/**,.local-data/**,.superdesign/**,.git/**,.vercel/**,.env*,supabase/**,tests/**,**/*.sqlite*,**/integration.key,**/browser-profiles/**}"
+    }
+  },
+  "regions": [
+    "iad1"
+  ],
+  "headers": [
+    {
+      "source": "/(.*)",
+      "headers": [
+        {
+          "key": "X-Content-Type-Options",
+          "value": "nosniff"
+        },
+        {
+          "key": "X-Frame-Options",
+          "value": "DENY"
+        },
+        {
+          "key": "Referrer-Policy",
+          "value": "strict-origin-when-cross-origin"
+        },
+        {
+          "key": "Content-Security-Policy",
+          "value": "default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data: https://pgwoyxtcrkwtricejdbl.supabase.co; media-src 'self' https://pgwoyxtcrkwtricejdbl.supabase.co; font-src 'self'; connect-src 'self' https://pgwoyxtcrkwtricejdbl.supabase.co; base-uri 'self'; form-action 'self'; frame-ancestors 'none'"
+        }
+      ]
+    }
+  ],
+  "redirects": [
+    {
+      "source": "/local",
+      "destination": "https://helpulocal.com/",
+      "permanent": true
+    },
+    {
+      "source": "/local/:path*",
+      "destination": "https://helpulocal.com/:path*",
+      "permanent": true
+    }
+  ]
+}
